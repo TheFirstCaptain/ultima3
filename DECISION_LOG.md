@@ -67,3 +67,14 @@ Status: Accepted
 - The harness should avoid Carbon, QuickTime, legacy SDKs, resource files, NIBs, and app startup.
 - The first harness may copy narrow deterministic legacy functions into an isolated test executable with source references when compiling the full legacy file would require broad unrelated platform shims.
 - Future extraction work should replace copied harness implementations with shared portable game-core code once a clean boundary exists.
+
+## 2026-05-30: Seed Portable Core Under Top-Level Core Directory
+
+Status: Accepted
+
+- The first shared portable game-core modules should live under a new top-level `Core/` directory, outside legacy `Sources/`.
+- Use `Core/include/u3_<domain>.h` for public portable headers and `Core/src/u3_<domain>.c` for implementations.
+- Portable public C symbols should use a lowercase `u3_` prefix, such as `u3_map_get_heading`; public constants should use `U3_<DOMAIN>_<NAME>`.
+- Core headers should not expose Classic Mac types. Byte-sensitive legacy layouts should use portable fixed-width C types, including a core-owned Pascal string byte alias when needed.
+- Behavior that previously depended on globals should move toward small caller-owned state structs passed explicitly into core functions.
+- Harness-only compatibility shims stay under `harness/`; reusable game behavior belongs under `Core/`.

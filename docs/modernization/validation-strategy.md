@@ -4,7 +4,7 @@ Use this document to define how modernization work proves behavior was preserved
 
 ## Current State
 
-The legacy app may not build or run on modern Apple silicon Macs. A first command-line characterization harness now exists for bounded C behavior that can be tested without the full app.
+The legacy app may not build or run on modern Apple silicon Macs. A command-line harness now exists for bounded C behavior that can be tested without the full app. The first shared portable core modules live under `Core/` and are compiled by the harness.
 
 ## Harness Commands
 
@@ -24,9 +24,9 @@ make -C harness test
 
 | Target | Legacy Reference | Harness/Test Approach | Status |
 | --- | --- | --- | --- |
-| Map/math accessors | `Sources/UltimaMisc.c`: `GetHeading`, `Absolute`, `GetXY`, `PutXY`, `MapConstrain`, `GetXYVal`, `PutXYVal` | `harness/map_math_accessors_tests.c`; drives synthetic globals and arrays; asserts returned values and state mutations, including wraparound and out-of-bounds map behavior. | Harness passing |
-| Pascal string helpers | `Sources/UltimaText.c`: `StringLocation`, `SearchReplace`, `IsNewline`, `AddString` | `harness/pascal_string_helpers_tests.c`; uses byte-level `Str255` fixtures and local move shims; asserts exact length byte, content bytes, terminal-match quirks, replacement mutation, newline detection, append behavior, and length-byte wrapping. | Harness passing |
-| Combat movement predicates | `Sources/UltimaSpellCombat.c`: `CombatValidMove`, `CombatMonsterHere`, `CombatCharacterHere` | `harness/combat_predicates_tests.c`; populates combat globals; asserts passability return codes, monster lookup priority, character lookup priority, and inactive-coordinate behavior. `ValidMove` remains deferred because it has audio side effects. | Harness passing |
+| Map/math accessors | `Sources/UltimaMisc.c`: `GetHeading`, `Absolute`, `GetXY`, `PutXY`, `MapConstrain`, `GetXYVal`, `PutXYVal` | `harness/map_math_accessors_tests.c` compiles `Core/src/u3_map_math.c`; drives synthetic state and asserts returned values and state mutations, including wraparound and out-of-bounds map behavior. | Harness passing; extracted to `Core/` |
+| Pascal string helpers | `Sources/UltimaText.c`: `StringLocation`, `SearchReplace`, `IsNewline`, `AddString` | `harness/pascal_string_helpers_tests.c` compiles `Core/src/u3_pascal_string.c`; uses byte-level fixtures and asserts exact length byte, content bytes, terminal-match quirks, replacement mutation, newline detection, append behavior, and length-byte wrapping. | Harness passing; extracted to `Core/` |
+| Combat movement predicates | `Sources/UltimaSpellCombat.c`: `CombatValidMove`, `CombatMonsterHere`, `CombatCharacterHere` | `harness/combat_predicates_tests.c` compiles `Core/src/u3_combat.c`; populates combat state and asserts passability return codes, monster lookup priority, character lookup priority, and inactive-coordinate behavior. `ValidMove` remains deferred because it has audio side effects. | Harness passing; extracted to `Core/` |
 | Autocombat targeting helpers | `Sources/UltimaAutocombat.c`: `ThreatValue`, `MonsterNearby`, `MonsterLinedUp`, `AutoMoveChar` | Populate party/monster/future-position globals; shim no-diagonal preference; assert keypad command outputs. | Candidate |
 | Dungeon navigation deltas | `Sources/UltimaDngn.c`: `Forward`, `Retreat`, `Left`, `Right`, `dDescend`, `dKlimb` | Stub rendering/messages; drive dungeon cells and heading globals; assert position, heading, level, and exit state. | Later candidate |
 

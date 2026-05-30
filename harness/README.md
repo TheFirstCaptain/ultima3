@@ -14,4 +14,4 @@ make -C harness test
 - `pascal_string_helpers_tests.c` characterizes byte-level Pascal string helper behavior from `Sources/UltimaText.c`: `StringLocation`, `SearchReplace`, `IsNewline`, and `AddString`.
 - `combat_predicates_tests.c` characterizes combat movement and lookup predicates from `Sources/UltimaSpellCombat.c`: `CombatValidMove`, `CombatMonsterHere`, and `CombatCharacterHere`.
 
-These harnesses copy only the small target functions into test executables with references back to the legacy source. This keeps the validation path executable on a modern compiler while avoiding broad platform shims for unrelated legacy file dependencies.
+These harnesses compile small shared portable implementations from `Core/src/` and keep references back to the legacy source in the core files. This keeps the validation path executable on a modern compiler while avoiding broad platform shims for unrelated legacy file dependencies.

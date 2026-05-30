@@ -1,73 +1,8 @@
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef unsigned char Str255[256];
-typedef bool Boolean;
-
-static void BlockMoveData(const void *src, void *dst, size_t len)
-{
-    memmove(dst, src, len);
-}
-
-static void BlockMove(const void *src, void *dst, size_t len)
-{
-    memmove(dst, src, len);
-}
-
-static unsigned char StringLocation(Str255 source, Str255 search)
-{
-    /* Legacy reference: Sources/UltimaText.c StringLocation. */
-    unsigned char i = 1;
-    while (i < (source[0] - search[0])) {
-        unsigned char j = 0;
-        while (j < search[0] && (source[j + i] == search[j + 1])) {
-            j++;
-        }
-        if (j == search[0])
-            return i;
-        i++;
-    }
-    return 0;
-}
-
-static void SearchReplace(Str255 source, Str255 search, Str255 replace)
-{
-    /* Legacy reference: Sources/UltimaText.c SearchReplace. */
-    if (1) {
-        char i = 1;
-        char diff = replace[0] - search[0];
-        while (i < source[0] - search[0]) {
-            Boolean match = true;
-            char offset = 0;
-            while (match && offset < search[0]) {
-                match = (source[i + offset] == search[1 + offset]);
-                offset++;
-            }
-            if (match) {
-                if (diff != 0)
-                    BlockMoveData(source + i + search[0], source + i + replace[0], source[0] - i + diff + 1);
-                BlockMoveData(replace + 1, source + i, replace[0]);
-                source[0] += diff;
-            }
-            ++i;
-        }
-    }
-}
-
-static bool IsNewline(unsigned char ch)
-{
-    /* Legacy reference: Sources/UltimaText.c IsNewline. */
-    return (ch == 0xB5 || ch == 0x0A);
-}
-
-static void AddString(Str255 str1, Str255 str2)
-{
-    /* Legacy reference: Sources/UltimaText.c AddString. */
-    BlockMove(str2 + 1, str1 + str1[0] + 1, str2[0]);
-    str1[0] += str2[0];
-}
+#include "u3_pascal_string.h"
 
 #define ASSERT_EQ_INT(expected, actual) assert_eq_int((expected), (actual), __FILE__, __LINE__)
 #define ASSERT_PSTR(expected, actual) assert_pstr((expected), (actual), __FILE__, __LINE__)
@@ -80,7 +15,7 @@ static void assert_eq_int(int expected, int actual, const char *file, int line)
     }
 }
 
-static void assert_pstr(const char *expected, const Str255 actual, const char *file, int line)
+static void assert_pstr(const char *expected, const u3_pascal_string actual, const char *file, int line)
 {
     size_t expected_len = strlen(expected);
     size_t i;
@@ -103,7 +38,7 @@ static void assert_pstr(const char *expected, const Str255 actual, const char *f
     }
 }
 
-static void set_pstr(Str255 dest, const char *src)
+static void set_pstr(u3_pascal_string dest, const char *src)
 {
     size_t len = strlen(src);
 
@@ -119,114 +54,114 @@ static void set_pstr(Str255 dest, const char *src)
 
 static void test_string_location_finds_non_terminal_match(void)
 {
-    Str255 source;
-    Str255 search;
+    u3_pascal_string source;
+    u3_pascal_string search;
 
     set_pstr(source, "say friend now");
     set_pstr(search, "friend");
 
-    ASSERT_EQ_INT(5, StringLocation(source, search));
+    ASSERT_EQ_INT(5, u3_string_location(source, search));
 }
 
 static void test_string_location_misses_last_possible_match(void)
 {
-    Str255 source;
-    Str255 search;
+    u3_pascal_string source;
+    u3_pascal_string search;
 
     set_pstr(source, "say friend");
     set_pstr(search, "friend");
 
-    ASSERT_EQ_INT(0, StringLocation(source, search));
+    ASSERT_EQ_INT(0, u3_string_location(source, search));
 }
 
 static void test_string_location_misses_equal_length_match(void)
 {
-    Str255 source;
-    Str255 search;
+    u3_pascal_string source;
+    u3_pascal_string search;
 
     set_pstr(source, "friend");
     set_pstr(search, "friend");
 
-    ASSERT_EQ_INT(0, StringLocation(source, search));
+    ASSERT_EQ_INT(0, u3_string_location(source, search));
 }
 
 static void test_search_replace_same_length(void)
 {
-    Str255 source;
-    Str255 search;
-    Str255 replace;
+    u3_pascal_string source;
+    u3_pascal_string search;
+    u3_pascal_string replace;
 
     set_pstr(source, "gold gem gold");
     set_pstr(search, "gold");
     set_pstr(replace, "coin");
 
-    SearchReplace(source, search, replace);
+    u3_search_replace(source, search, replace);
 
     ASSERT_PSTR("coin gem gold", source);
 }
 
 static void test_search_replace_grows_string(void)
 {
-    Str255 source;
-    Str255 search;
-    Str255 replace;
+    u3_pascal_string source;
+    u3_pascal_string search;
+    u3_pascal_string replace;
 
     set_pstr(source, "a x b x c");
     set_pstr(search, "x");
     set_pstr(replace, "gem");
 
-    SearchReplace(source, search, replace);
+    u3_search_replace(source, search, replace);
 
     ASSERT_PSTR("a gem b gem c", source);
 }
 
 static void test_search_replace_shrinks_string(void)
 {
-    Str255 source;
-    Str255 search;
-    Str255 replace;
+    u3_pascal_string source;
+    u3_pascal_string search;
+    u3_pascal_string replace;
 
     set_pstr(source, "open door open door");
     set_pstr(search, "door");
     set_pstr(replace, "d");
 
-    SearchReplace(source, search, replace);
+    u3_search_replace(source, search, replace);
 
     ASSERT_PSTR("open d open door", source);
 }
 
 static void test_search_replace_misses_last_possible_match(void)
 {
-    Str255 source;
-    Str255 search;
-    Str255 replace;
+    u3_pascal_string source;
+    u3_pascal_string search;
+    u3_pascal_string replace;
 
     set_pstr(source, "door open door");
     set_pstr(search, "door");
     set_pstr(replace, "gate");
 
-    SearchReplace(source, search, replace);
+    u3_search_replace(source, search, replace);
 
     ASSERT_PSTR("gate open door", source);
 }
 
 static void test_is_newline(void)
 {
-    ASSERT_EQ_INT(1, IsNewline(0x0A));
-    ASSERT_EQ_INT(1, IsNewline(0xB5));
-    ASSERT_EQ_INT(0, IsNewline('\r'));
-    ASSERT_EQ_INT(0, IsNewline(' '));
+    ASSERT_EQ_INT(1, u3_is_newline(0x0A));
+    ASSERT_EQ_INT(1, u3_is_newline(0xB5));
+    ASSERT_EQ_INT(0, u3_is_newline('\r'));
+    ASSERT_EQ_INT(0, u3_is_newline(' '));
 }
 
 static void test_add_string_appends_bytes_and_length(void)
 {
-    Str255 first;
-    Str255 second;
+    u3_pascal_string first;
+    u3_pascal_string second;
 
     set_pstr(first, "Ultima");
     set_pstr(second, " III");
 
-    AddString(first, second);
+    u3_add_string(first, second);
 
     ASSERT_PSTR("Ultima III", first);
     ASSERT_PSTR(" III", second);
@@ -243,7 +178,7 @@ static void test_add_string_allows_length_byte_wrap(void)
     first[0] = 250;
     second[0] = 10;
 
-    AddString(first, second);
+    u3_add_string(first, second);
 
     ASSERT_EQ_INT(4, first[0]);
     for (i = 251; i <= 255; i++) {

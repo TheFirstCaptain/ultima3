@@ -37,8 +37,8 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-002B | Map/Math Accessor Characterization | Complete | Done | [F-002B.md](./F-002B.md) | 2026-05-30 | Initial map/math accessor characterization added and passing. |
 | F-002C | Pascal String Helper Characterization | Complete | Done | [F-002C.md](./F-002C.md) | 2026-05-30 | Pascal string helper characterization added and passing. |
 | F-002D | Combat Predicate Characterization | Complete | Done | [F-002D.md](./F-002D.md) | 2026-05-30 | Combat predicate characterization added and passing. |
-| F-003 | Portable Core Seed | Proposed | Proposed | [F-003.md](./F-003.md) | 2026-05-30 | First extraction milestone: move characterized behavior into shared portable core code. |
-| F-003A | Portable Core Layout Decision | Proposed | Proposed | [F-003A.md](./F-003A.md) | 2026-05-30 | Decide initial portable core structure, naming, and state guidance. |
-| F-003B | Extract Map/Math Accessors | Proposed | Proposed | [F-003B.md](./F-003B.md) | 2026-05-30 | Replace copied map/math harness behavior with shared portable implementation. |
-| F-003C | Extract Pascal String Helpers | Proposed | Proposed | [F-003C.md](./F-003C.md) | 2026-05-30 | Replace copied Pascal string harness behavior with shared portable implementation. |
-| F-003D | Extract Combat Predicates | Proposed | Proposed | [F-003D.md](./F-003D.md) | 2026-05-30 | Replace copied combat predicate harness behavior with shared portable implementation. |
+| F-003 | Portable Core Seed | Complete | Done | [F-003.md](./F-003.md) | 2026-05-30 | First portable core modules added under `Core/` and used by the harness. |
+| F-003A | Portable Core Layout Decision | Complete | Done | [F-003A.md](./F-003A.md) | 2026-05-30 | Accepted top-level `Core/` with `u3_` plain C APIs and explicit caller-owned state guidance. |
+| F-003B | Extract Map/Math Accessors | Complete | Done | [F-003B.md](./F-003B.md) | 2026-05-30 | Map/math behavior moved to `Core/` and harness-integrated. |
+| F-003C | Extract Pascal String Helpers | Complete | Done | [F-003C.md](./F-003C.md) | 2026-05-30 | Pascal string helper behavior moved to `Core/` and harness-integrated. |
+| F-003D | Extract Combat Predicates | Complete | Done | [F-003D.md](./F-003D.md) | 2026-05-30 | Combat predicate behavior moved to `Core/` and harness-integrated. |

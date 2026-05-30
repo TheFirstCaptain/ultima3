@@ -33,7 +33,15 @@ Likely early sequence:
 2. Characterize map/math accessors with synthetic globals and arrays.
 3. Characterize byte-level Pascal string helpers.
 4. Characterize combat movement predicates.
-5. Use those results to decide the first extraction or port boundary.
+5. Seed shared portable modules under `Core/include/u3_<domain>.h` and `Core/src/u3_<domain>.c`.
+6. Update harness tests to compile those modules directly instead of local copied behavior.
+
+Initial extraction guidance:
+
+- Keep `Core/` outside legacy `Sources/` until integration with the app target is intentional.
+- Use lowercase `u3_` names for public C APIs and `U3_<DOMAIN>_<NAME>` for public constants.
+- Prefer explicit caller-owned state structs for behavior that currently reads or mutates globals.
+- Keep harness-only shims in `harness/`; move only reusable game behavior into `Core/`.
 
 ## Risks
 

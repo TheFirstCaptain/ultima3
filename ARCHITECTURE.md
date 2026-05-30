@@ -70,6 +70,20 @@ Modern macOS app shell
 - State mutations should become explicit and testable over time.
 - Asset conversion should be documented and reproducible when historical formats are replaced.
 
+## Portable Core Layout
+
+The initial shared portable game core will live under a new top-level `Core/` directory rather than inside legacy `Sources/`:
+
+```text
+Core/
+  include/
+    u3_<domain>.h
+  src/
+    u3_<domain>.c
+```
+
+The core is plain C. Public headers and functions use a lowercase `u3_` prefix, constants use `U3_<DOMAIN>_<NAME>`, and stateful legacy globals should become small caller-owned structs passed explicitly into functions. Core headers should use fixed-width standard C types and should not expose Classic Mac types such as `Str255`; exact Pascal string behavior can use a portable 256-byte alias owned by the relevant core header. Harness-only shims remain in `harness/`.
+
 ## Migration Strategy
 
 1. Inventory legacy files, globals, data formats, and platform API touchpoints.
