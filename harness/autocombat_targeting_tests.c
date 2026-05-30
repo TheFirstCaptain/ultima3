@@ -24,6 +24,7 @@ static void reset_state(void)
     memset(state.tile_array, 2, sizeof(state.tile_array));
     for (character = 0; character < U3_COMBAT_CHARACTER_COUNT; character++) {
         state.character_alive[character] = 1;
+        state.character_hp[character] = 100;
     }
     state.allow_diagonal = true;
 }
@@ -69,6 +70,59 @@ static void test_threat_value_doubles_poisonous_types(void)
     place_monster(1, 2, 2, 1);
 
     ASSERT_EQ_INT(28, u3_autocombat_threat_value(&state));
+}
+
+static void test_monster_can_attack_checks_adjacent_monsters(void)
+{
+    reset_state();
+    place_monster(0, 4, 4, 1);
+    place_monster(1, 8, 8, 1);
+
+    ASSERT_EQ_INT(1, u3_autocombat_monster_can_attack(&state, 5, 5));
+    ASSERT_EQ_INT(0, u3_autocombat_monster_can_attack(&state, 6, 6));
+}
+
+static void test_monster_can_attack_allows_dragon_diagonal_shots(void)
+{
+    reset_state();
+    state.combat.monster_type = 0x3A;
+    place_monster(0, 8, 8, 1);
+    place_monster(1, 2, 7, 0);
+
+    ASSERT_EQ_INT(1, u3_autocombat_monster_can_attack(&state, 5, 5));
+    ASSERT_EQ_INT(0, u3_autocombat_monster_can_attack(&state, 3, 5));
+}
+
+static void test_monster_can_attack_ignores_dragon_line_for_other_types(void)
+{
+    reset_state();
+    state.combat.monster_type = 0x38;
+    place_monster(0, 8, 8, 1);
+
+    ASSERT_EQ_INT(0, u3_autocombat_monster_can_attack(&state, 5, 5));
+}
+
+static void test_nearly_dead_checks_specific_character_hp_only(void)
+{
+    reset_state();
+    state.character_hp[1] = 49;
+    state.character_alive[2] = 0;
+
+    ASSERT_EQ_INT(1, u3_autocombat_nearly_dead(&state, 2));
+    ASSERT_EQ_INT(0, u3_autocombat_nearly_dead(&state, 3));
+}
+
+static void test_nearly_dead_anybody_checks_dead_or_low_hp_party_members(void)
+{
+    reset_state();
+    ASSERT_EQ_INT(0, u3_autocombat_nearly_dead(&state, 0));
+
+    state.character_hp[3] = 49;
+    ASSERT_EQ_INT(1, u3_autocombat_nearly_dead(&state, 0));
+
+    reset_state();
+    state.character_alive[0] = 0;
+    ASSERT_EQ_INT(1, u3_autocombat_nearly_dead(&state, 0));
 }
 
 static void test_monster_nearby_cardinal_priority(void)
@@ -279,6 +333,11 @@ int main(void)
 {
     test_threat_value_counts_live_monsters();
     test_threat_value_doubles_poisonous_types();
+    test_monster_can_attack_checks_adjacent_monsters();
+    test_monster_can_attack_allows_dragon_diagonal_shots();
+    test_monster_can_attack_ignores_dragon_line_for_other_types();
+    test_nearly_dead_checks_specific_character_hp_only();
+    test_nearly_dead_anybody_checks_dead_or_low_hp_party_members();
     test_monster_nearby_cardinal_priority();
     test_monster_nearby_diagonal_policy_and_priority();
     test_monster_lined_up_returns_shooting_direction_for_non_character();

@@ -28,6 +28,55 @@ static bool u3_autocombat_combat_char_here(const u3_autocombat_state *state, int
     return is_one_here;
 }
 
+bool u3_autocombat_monster_can_attack(const u3_autocombat_state *state, int16_t x, int16_t y)
+{
+    /* Legacy reference: Sources/UltimaAutocombat.c MonsterCanAttack. */
+    int16_t monster;
+    bool result = false;
+
+    result |= (u3_combat_monster_here(&state->combat, x - 1, y - 1) != U3_COMBAT_NO_SLOT);
+    result |= (u3_combat_monster_here(&state->combat, x, y - 1) != U3_COMBAT_NO_SLOT);
+    result |= (u3_combat_monster_here(&state->combat, x + 1, y - 1) != U3_COMBAT_NO_SLOT);
+    result |= (u3_combat_monster_here(&state->combat, x - 1, y) != U3_COMBAT_NO_SLOT);
+    result |= (u3_combat_monster_here(&state->combat, x + 1, y) != U3_COMBAT_NO_SLOT);
+    result |= (u3_combat_monster_here(&state->combat, x - 1, y + 1) != U3_COMBAT_NO_SLOT);
+    result |= (u3_combat_monster_here(&state->combat, x, y + 1) != U3_COMBAT_NO_SLOT);
+    result |= (u3_combat_monster_here(&state->combat, x + 1, y + 1) != U3_COMBAT_NO_SLOT);
+
+    if (state->combat.monster_type == 0x3A) {
+        for (monster = 0; monster < U3_COMBAT_MONSTER_COUNT; monster++) {
+            if (state->combat.monster_hp[monster]) {
+                if (u3_map_math_absolute((int16_t)(state->combat.monster_x[monster] - x)) ==
+                    u3_map_math_absolute((int16_t)(state->combat.monster_y[monster] - y)))
+                    result = true;
+            }
+        }
+    }
+    return result;
+}
+
+bool u3_autocombat_nearly_dead(const u3_autocombat_state *state, int16_t who)
+{
+    /* Legacy reference: Sources/UltimaAutocombat.c NearlyDead. */
+    int16_t character;
+    bool nearly_dead = false;
+
+    if (who > 0) {
+        character = who - 1;
+        if (state->character_hp[character] < 50)
+            nearly_dead = true;
+    } else {
+        for (character = 0; character < U3_COMBAT_CHARACTER_COUNT; character++) {
+            if (!state->character_alive[character]) {
+                nearly_dead = true;
+            } else if (state->character_hp[character] < 50) {
+                nearly_dead = true;
+            }
+        }
+    }
+    return nearly_dead;
+}
+
 void u3_autocombat_setup_now(u3_autocombat_state *state)
 {
     /* Legacy reference: Sources/UltimaAutocombat.c SetupNow. */

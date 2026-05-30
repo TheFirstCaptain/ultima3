@@ -15,9 +15,12 @@ typedef struct u3_autocombat_state {
     uint8_t experience[17];
     uint8_t tile_array[U3_AUTOCOMBAT_TILE_COUNT];
     uint8_t character_alive[U3_COMBAT_CHARACTER_COUNT];
+    uint16_t character_hp[U3_COMBAT_CHARACTER_COUNT];
     bool allow_diagonal;
 } u3_autocombat_state;
 
+bool u3_autocombat_monster_can_attack(const u3_autocombat_state *state, int16_t x, int16_t y);
+bool u3_autocombat_nearly_dead(const u3_autocombat_state *state, int16_t who);
 void u3_autocombat_setup_now(u3_autocombat_state *state);
 void u3_autocombat_setup_future(u3_autocombat_state *state);
 bool u3_autocombat_future_monster_here(const u3_autocombat_state *state, int16_t x, int16_t y);
