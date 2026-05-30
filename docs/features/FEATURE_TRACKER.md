@@ -42,3 +42,5 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-003B | Extract Map/Math Accessors | Complete | Done | [F-003B.md](./F-003B.md) | 2026-05-30 | Map/math behavior moved to `Core/` and harness-integrated. |
 | F-003C | Extract Pascal String Helpers | Complete | Done | [F-003C.md](./F-003C.md) | 2026-05-30 | Pascal string helper behavior moved to `Core/` and harness-integrated. |
 | F-003D | Extract Combat Predicates | Complete | Done | [F-003D.md](./F-003D.md) | 2026-05-30 | Combat predicate behavior moved to `Core/` and harness-integrated. |
+| F-004 | Autocombat Targeting Core | Complete | Done | [F-004.md](./F-004.md) | 2026-05-30 | Autocombat targeting helpers moved to `Core/` and harness-integrated. |
+| F-005 | Autocombat Movement Forecast Core | Complete | Done | [F-005.md](./F-005.md) | 2026-05-30 | Autocombat forecast helpers added to `u3_autocombat` and harness-covered. |
