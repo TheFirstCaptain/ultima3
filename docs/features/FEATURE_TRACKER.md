@@ -27,8 +27,8 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 
 | ID | Title | Status | Phase | Feature Doc | Last Updated | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| F-001 | Modernization Analysis Baseline | Proposed | Proposed | [F-001.md](./F-001.md) | 2026-05-30 | Umbrella analysis milestone for the first legacy inventory pass. |
-| F-001A | Source Responsibility Inventory | Proposed | Proposed | [F-001A.md](./F-001A.md) | 2026-05-30 | Candidate subagent task. |
-| F-001B | Platform Dependency Inventory | Proposed | Proposed | [F-001B.md](./F-001B.md) | 2026-05-30 | Candidate subagent task. |
-| F-001C | State and Coupling Inventory | Proposed | Proposed | [F-001C.md](./F-001C.md) | 2026-05-30 | Candidate subagent task. |
-| F-001D | Characterization Candidate Analysis | Proposed | Proposed | [F-001D.md](./F-001D.md) | 2026-05-30 | Candidate subagent task. |
+| F-001 | Modernization Analysis Baseline | Complete | Done | [F-001.md](./F-001.md) | 2026-05-30 | Initial legacy inventory and characterization target analysis complete. |
+| F-001A | Source Responsibility Inventory | Complete | Done | [F-001A.md](./F-001A.md) | 2026-05-30 | Initial source responsibility inventory added to modernization docs. |
+| F-001B | Platform Dependency Inventory | Complete | Done | [F-001B.md](./F-001B.md) | 2026-05-30 | Platform dependency inventory added to modernization docs. |
+| F-001C | State and Coupling Inventory | Complete | Done | [F-001C.md](./F-001C.md) | 2026-05-30 | State and coupling inventory added to modernization docs. |
+| F-001D | Characterization Candidate Analysis | Complete | Done | [F-001D.md](./F-001D.md) | 2026-05-30 | Recommended first target: map/math accessors in `UltimaMisc.c`. |

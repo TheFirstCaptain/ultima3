@@ -25,10 +25,20 @@ Use this document to plan the modernization path from the legacy Mac application
 
 Prefer subsystems with clear inputs and outputs before tightly coupled UI/rendering work.
 
+The first recommended characterization target is the map/math accessor slice in `Sources/UltimaMisc.c`: `GetHeading`, `Absolute`, `GetXY`, `PutXY`, `MapConstrain`, `GetXYVal`, and `PutXYVal`. This slice appears deterministic and mostly independent of Carbon, QuickDraw, QuickTime, resource files, and app startup.
+
+Likely early sequence:
+
+1. Create a small harness/test structure for legacy C behavior.
+2. Characterize map/math accessors with synthetic globals and arrays.
+3. Characterize byte-level Pascal string helpers.
+4. Characterize combat movement predicates.
+5. Use those results to decide the first extraction or port boundary.
+
 ## Risks
 
 - Legacy global state may make extraction difficult.
 - Classic Mac types may be mixed into game logic.
 - Resource loading and rendering may be tightly coupled.
 - Some original behavior may be hard to observe if the app cannot run.
-
+- Early harness work may require shims for Mac types, handles, Pascal strings, or globals before any useful test can compile.
