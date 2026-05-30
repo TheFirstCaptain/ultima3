@@ -32,3 +32,8 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-001B | Platform Dependency Inventory | Complete | Done | [F-001B.md](./F-001B.md) | 2026-05-30 | Platform dependency inventory added to modernization docs. |
 | F-001C | State and Coupling Inventory | Complete | Done | [F-001C.md](./F-001C.md) | 2026-05-30 | State and coupling inventory added to modernization docs. |
 | F-001D | Characterization Candidate Analysis | Complete | Done | [F-001D.md](./F-001D.md) | 2026-05-30 | Recommended first target: map/math accessors in `UltimaMisc.c`. |
+| F-002 | First Porting Harness | Proposed | Proposed | [F-002.md](./F-002.md) | 2026-05-30 | Umbrella milestone for the first executable characterization path. |
+| F-002A | Harness Tooling Decision | Proposed | Proposed | [F-002A.md](./F-002A.md) | 2026-05-30 | Decide the minimal test/harness approach before implementation. |
+| F-002B | Map/Math Accessor Characterization | Proposed | Proposed | [F-002B.md](./F-002B.md) | 2026-05-30 | First recommended characterization target from F-001D. |
+| F-002C | Pascal String Helper Characterization | Proposed | Proposed | [F-002C.md](./F-002C.md) | 2026-05-30 | Candidate second characterization target. |
+| F-002D | Combat Predicate Characterization | Proposed | Proposed | [F-002D.md](./F-002D.md) | 2026-05-30 | Candidate third characterization target. |
