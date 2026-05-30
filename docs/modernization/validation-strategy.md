@@ -4,7 +4,13 @@ Use this document to define how modernization work proves behavior was preserved
 
 ## Current State
 
-The legacy app may not build or run on modern Apple silicon Macs. There is no automated test suite yet.
+The legacy app may not build or run on modern Apple silicon Macs. A first command-line characterization harness now exists for bounded C behavior that can be tested without the full app.
+
+## Harness Commands
+
+```bash
+make -C harness test
+```
 
 ## Validation Levels
 
@@ -18,9 +24,9 @@ The legacy app may not build or run on modern Apple silicon Macs. There is no au
 
 | Target | Legacy Reference | Harness/Test Approach | Status |
 | --- | --- | --- | --- |
-| Map/math accessors | `Sources/UltimaMisc.c`: `GetHeading`, `Absolute`, `GetXY`, `PutXY`, `MapConstrain`, `GetXYVal`, `PutXYVal` | Drive synthetic globals and arrays; assert returned values and state mutations, including wraparound and out-of-bounds map behavior. | Recommended first |
-| Pascal string helpers | `Sources/UltimaText.c`: `StringLocation`, `SearchReplace`, `IsNewline`, `AddString` | Use byte-level `Str255` fixtures; assert exact length byte and content bytes after mutation. | Candidate |
-| Combat movement predicates | `Sources/UltimaSpellCombat.c`: `CombatValidMove`, `CombatMonsterHere`, `CombatCharacterHere` | Populate combat globals; assert passability return codes and entity lookup priority. Stub sound before including `ValidMove`. | Candidate |
+| Map/math accessors | `Sources/UltimaMisc.c`: `GetHeading`, `Absolute`, `GetXY`, `PutXY`, `MapConstrain`, `GetXYVal`, `PutXYVal` | `harness/map_math_accessors_tests.c`; drives synthetic globals and arrays; asserts returned values and state mutations, including wraparound and out-of-bounds map behavior. | Harness passing |
+| Pascal string helpers | `Sources/UltimaText.c`: `StringLocation`, `SearchReplace`, `IsNewline`, `AddString` | `harness/pascal_string_helpers_tests.c`; uses byte-level `Str255` fixtures and local move shims; asserts exact length byte, content bytes, terminal-match quirks, replacement mutation, newline detection, append behavior, and length-byte wrapping. | Harness passing |
+| Combat movement predicates | `Sources/UltimaSpellCombat.c`: `CombatValidMove`, `CombatMonsterHere`, `CombatCharacterHere` | `harness/combat_predicates_tests.c`; populates combat globals; asserts passability return codes, monster lookup priority, character lookup priority, and inactive-coordinate behavior. `ValidMove` remains deferred because it has audio side effects. | Harness passing |
 | Autocombat targeting helpers | `Sources/UltimaAutocombat.c`: `ThreatValue`, `MonsterNearby`, `MonsterLinedUp`, `AutoMoveChar` | Populate party/monster/future-position globals; shim no-diagonal preference; assert keypad command outputs. | Candidate |
 | Dungeon navigation deltas | `Sources/UltimaDngn.c`: `Forward`, `Retreat`, `Left`, `Right`, `dDescend`, `dKlimb` | Stub rendering/messages; drive dungeon cells and heading globals; assert position, heading, level, and exit state. | Later candidate |
 
@@ -37,3 +43,5 @@ Start with the map/math accessors in `Sources/UltimaMisc.c`. They are determinis
 ## Skipped Validation
 
 Record skipped checks with the reason, date, and impact.
+
+- 2026-05-30: Legacy Xcode build not attempted for the first harness step. The affected validation target is isolated C behavior and does not require the legacy app target.

@@ -57,3 +57,13 @@ Status: Accepted
 - Feature work will be tracked under `docs/features/` using `FEATURE_TEMPLATE.md` and `docs/features/FEATURE_TRACKER.md`.
 - Bugs, regressions, build failures, and behavior mismatches will be tracked under `docs/bugs/` using `BUG_TEMPLATE.md` and `docs/bugs/BUG_TRACKER.md`.
 - Trackers may remain empty until real modernization work discovers concrete features or bugs.
+
+## 2026-05-30: Use a Plain C Command-Line Characterization Harness
+
+Status: Accepted
+
+- Early behavior characterization will use a small command-line C harness under `harness/`.
+- The harness command is `make -C harness test`.
+- The harness should avoid Carbon, QuickTime, legacy SDKs, resource files, NIBs, and app startup.
+- The first harness may copy narrow deterministic legacy functions into an isolated test executable with source references when compiling the full legacy file would require broad unrelated platform shims.
+- Future extraction work should replace copied harness implementations with shared portable game-core code once a clean boundary exists.

@@ -32,8 +32,13 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-001B | Platform Dependency Inventory | Complete | Done | [F-001B.md](./F-001B.md) | 2026-05-30 | Platform dependency inventory added to modernization docs. |
 | F-001C | State and Coupling Inventory | Complete | Done | [F-001C.md](./F-001C.md) | 2026-05-30 | State and coupling inventory added to modernization docs. |
 | F-001D | Characterization Candidate Analysis | Complete | Done | [F-001D.md](./F-001D.md) | 2026-05-30 | Recommended first target: map/math accessors in `UltimaMisc.c`. |
-| F-002 | First Porting Harness | Proposed | Proposed | [F-002.md](./F-002.md) | 2026-05-30 | Umbrella milestone for the first executable characterization path. |
-| F-002A | Harness Tooling Decision | Proposed | Proposed | [F-002A.md](./F-002A.md) | 2026-05-30 | Decide the minimal test/harness approach before implementation. |
-| F-002B | Map/Math Accessor Characterization | Proposed | Proposed | [F-002B.md](./F-002B.md) | 2026-05-30 | First recommended characterization target from F-001D. |
-| F-002C | Pascal String Helper Characterization | Proposed | Proposed | [F-002C.md](./F-002C.md) | 2026-05-30 | Candidate second characterization target. |
-| F-002D | Combat Predicate Characterization | Proposed | Proposed | [F-002D.md](./F-002D.md) | 2026-05-30 | Candidate third characterization target. |
+| F-002 | First Porting Harness | Complete | Done | [F-002.md](./F-002.md) | 2026-05-30 | First executable characterization harness complete with map/math, Pascal string, and combat predicate coverage. |
+| F-002A | Harness Tooling Decision | Complete | Done | [F-002A.md](./F-002A.md) | 2026-05-30 | Plain C command-line harness accepted; command is `make -C harness test`. |
+| F-002B | Map/Math Accessor Characterization | Complete | Done | [F-002B.md](./F-002B.md) | 2026-05-30 | Initial map/math accessor characterization added and passing. |
+| F-002C | Pascal String Helper Characterization | Complete | Done | [F-002C.md](./F-002C.md) | 2026-05-30 | Pascal string helper characterization added and passing. |
+| F-002D | Combat Predicate Characterization | Complete | Done | [F-002D.md](./F-002D.md) | 2026-05-30 | Combat predicate characterization added and passing. |
+| F-003 | Portable Core Seed | Proposed | Proposed | [F-003.md](./F-003.md) | 2026-05-30 | First extraction milestone: move characterized behavior into shared portable core code. |
+| F-003A | Portable Core Layout Decision | Proposed | Proposed | [F-003A.md](./F-003A.md) | 2026-05-30 | Decide initial portable core structure, naming, and state guidance. |
+| F-003B | Extract Map/Math Accessors | Proposed | Proposed | [F-003B.md](./F-003B.md) | 2026-05-30 | Replace copied map/math harness behavior with shared portable implementation. |
+| F-003C | Extract Pascal String Helpers | Proposed | Proposed | [F-003C.md](./F-003C.md) | 2026-05-30 | Replace copied Pascal string harness behavior with shared portable implementation. |
+| F-003D | Extract Combat Predicates | Proposed | Proposed | [F-003D.md](./F-003D.md) | 2026-05-30 | Replace copied combat predicate harness behavior with shared portable implementation. |
