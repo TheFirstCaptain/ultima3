@@ -19,8 +19,15 @@ Use this tracker for known defects, regressions, build failures, compatibility i
 - `P2`: Important but does not block broad progress.
 - `P3`: Minor, cosmetic, or documentation-only.
 
+## Tracking Conventions
+
+- Use one bug entry for one reproducible defect, build failure, compatibility issue, or blocker.
+- Use a blocker entry when the issue affects multiple future features and cannot be cleanly assigned to one feature.
+- Keep investigation notes in linked bug documents instead of expanding the tracker table.
+- Link bugs to affected feature docs when a defect blocks or is found during feature work.
+- Prefer `Deferred` over deleting known issues that are intentionally postponed.
+
 ## Tracker
 
 | ID | Title | Status | Priority | Bug Doc | Last Updated | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-

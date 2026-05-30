@@ -27,6 +27,15 @@ This document is the operating guide for modernizing this repository. The goal i
 - Replacement platform layers should remain isolated by concern: rendering, input, audio, persistence, resource loading, and application shell.
 - When extracting logic from legacy code, keep references to the original file/function names in comments or tests where useful.
 
+## Project Documentation
+
+- `ARCHITECTURE.md`: observed legacy architecture and target modernization boundaries.
+- `DECISION_LOG.md`: durable architecture, tooling, workflow, compatibility, and behavior decisions.
+- `AGENT_TASK_TEMPLATE.md`: standard shape for future agent tasks.
+- `docs/features/`: feature templates, feature tracker, and feature-specific planning docs.
+- `docs/bugs/`: bug templates, bug tracker, and defect or blocker docs.
+- `docs/modernization/`: legacy inventory, porting strategy, and validation strategy.
+
 ## Validation Loop
 
 Early modernization work may not have a runnable app. Use the strongest practical validation for the task:
@@ -44,7 +53,7 @@ If the legacy build is not available, document the failure or why it was skipped
 3. Prefer characterization tests or small harness executables before changing logic.
 4. Implement the smallest coherent change.
 5. Run applicable validation and record skipped checks.
-6. Update harness, architecture, or decision documentation when the work changes boundaries or strategy.
+6. Update feature, bug, modernization, architecture, or decision documentation when the work changes status, boundaries, or strategy.
 
 ## Initial Inventory Targets
 
