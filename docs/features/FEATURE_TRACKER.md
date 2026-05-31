@@ -45,7 +45,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-004 | Autocombat Targeting Core | Complete | Done | [F-004.md](./F-004.md) | 2026-05-30 | Autocombat targeting helpers moved to `Core/` and harness-integrated. |
 | F-005 | Autocombat Movement Forecast Core | Complete | Done | [F-005.md](./F-005.md) | 2026-05-30 | Autocombat forecast helpers added to `u3_autocombat` and harness-covered. |
 | F-006 | Autocombat Danger Core | Complete | Done | [F-006.md](./F-006.md) | 2026-05-30 | `MonsterCanAttack` and `NearlyDead` added to `u3_autocombat` and harness-covered. |
-| F-007 | Autocombat Macro Decision Core | Proposed | Proposed | [F-007.md](./F-007.md) | 2026-05-30 | Next likely extraction: characterize full `AutoCombat` macro decision flow as portable command generation. |
+| F-007 | Autocombat Macro Decision Core | Complete | Done | [F-007.md](./F-007.md) | 2026-05-31 | Full `AutoCombat` macro decision flow extracted as portable command generation and harness-covered. |
 | F-008 | Dungeon Navigation Core | Proposed | Proposed | [F-008.md](./F-008.md) | 2026-05-31 | Characterize and extract bounded dungeon movement, turning, level, and exit state transitions. |
 | F-009 | Combat Action Resolution Inventory | Proposed | Proposed | [F-009.md](./F-009.md) | 2026-05-31 | Map combat action side effects before extracting larger combat resolution behavior. |
 | F-010 | Save and Resource Format Inventory | Proposed | Proposed | [F-010.md](./F-010.md) | 2026-05-31 | Inventory mutable save/resource data and compatibility constraints before format decisions. |

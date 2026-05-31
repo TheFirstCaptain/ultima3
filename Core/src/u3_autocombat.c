@@ -28,6 +28,46 @@ static bool u3_autocombat_combat_char_here(const u3_autocombat_state *state, int
     return is_one_here;
 }
 
+static void u3_autocombat_add_macro(u3_autocombat_macro *macro, char command)
+{
+    uint8_t index;
+
+    if (macro->length < U3_AUTOCOMBAT_MACRO_CAPACITY) {
+        macro->length++;
+    }
+    for (index = (uint8_t)(macro->length - 1); index > 0; index--) {
+        macro->commands[index] = macro->commands[index - 1];
+    }
+    macro->commands[0] = command;
+}
+
+static bool u3_autocombat_is_multi(const u3_autocombat_state *state, int16_t character)
+{
+    uint8_t character_class = state->character_class[character];
+
+    return (character_class == state->career_table[8] || character_class == state->career_table[10]);
+}
+
+static bool u3_autocombat_is_wizard(const u3_autocombat_state *state, int16_t character)
+{
+    uint8_t character_class = state->character_class[character];
+
+    return (character_class == state->career_table[2] ||
+            character_class == state->career_table[6] ||
+            character_class == state->career_table[9] ||
+            u3_autocombat_is_multi(state, character));
+}
+
+static bool u3_autocombat_is_cleric(const u3_autocombat_state *state, int16_t character)
+{
+    uint8_t character_class = state->character_class[character];
+
+    return (character_class == state->career_table[1] ||
+            character_class == state->career_table[4] ||
+            character_class == state->career_table[7] ||
+            u3_autocombat_is_multi(state, character));
+}
+
 bool u3_autocombat_monster_can_attack(const u3_autocombat_state *state, int16_t x, int16_t y)
 {
     /* Legacy reference: Sources/UltimaAutocombat.c MonsterCanAttack. */
@@ -177,6 +217,8 @@ char u3_autocombat_dir_to_nearest_monster(const u3_autocombat_state *state, int1
             }
         }
     }
+    if (closest_monster == U3_COMBAT_MONSTER_COUNT)
+        return ' ';
     delta_x = u3_map_math_get_heading((int16_t)(state->future_monster_x[closest_monster] - state->combat.character_x[character]));
     delta_y = u3_map_math_get_heading((int16_t)(state->future_monster_y[closest_monster] - state->combat.character_y[character]));
     return u3_autocombat_auto_move_char(state, character, delta_x, delta_y);
@@ -444,4 +486,164 @@ do_key_now:
     if (delta_x == 1 && delta_y == -1)
         key_to_press = '9';
     return key_to_press;
+}
+
+u3_autocombat_macro u3_autocombat_auto_combat(u3_autocombat_state *state, int16_t character)
+{
+    /* Legacy reference: Sources/UltimaAutocombat.c AutoCombat. */
+    u3_autocombat_macro macro = {0, {0}};
+    int16_t x;
+    int16_t y;
+    int16_t other_character;
+    int16_t lowest_hp;
+    int16_t low_character;
+    uint8_t magic;
+    uint8_t weapon;
+    char direction;
+    bool is_multi;
+    bool is_wizard;
+    bool is_cleric;
+    bool cast_mittar;
+
+    if (character < 0 || character >= U3_COMBAT_CHARACTER_COUNT)
+        return macro;
+
+    magic = state->character_magic[character];
+    weapon = state->character_weapon[character];
+    is_multi = u3_autocombat_is_multi(state, character);
+    is_wizard = u3_autocombat_is_wizard(state, character);
+    is_cleric = u3_autocombat_is_cleric(state, character);
+    x = state->combat.character_x[character];
+    y = state->combat.character_y[character];
+
+    if (u3_autocombat_nearly_dead(state, character + 1) && u3_autocombat_monster_can_attack(state, x, y)) {
+        if (!u3_autocombat_monster_can_attack(state, x, y + 1) && !u3_autocombat_combat_char_here(state, x, y + 1)) {
+            u3_autocombat_add_macro(&macro, '2');
+            return macro;
+        }
+        if (state->allow_diagonal) {
+            if (!u3_autocombat_monster_can_attack(state, x - 1, y + 1) && !u3_autocombat_combat_char_here(state, x - 1, y + 1)) {
+                u3_autocombat_add_macro(&macro, '1');
+                return macro;
+            }
+            if (!u3_autocombat_monster_can_attack(state, x + 1, y + 1) && !u3_autocombat_combat_char_here(state, x + 1, y + 1)) {
+                u3_autocombat_add_macro(&macro, '3');
+                return macro;
+            }
+        }
+        if (!u3_autocombat_monster_can_attack(state, x - 1, y) && !u3_autocombat_combat_char_here(state, x - 1, y)) {
+            u3_autocombat_add_macro(&macro, '4');
+            return macro;
+        }
+        if (!u3_autocombat_monster_can_attack(state, x + 1, y) && !u3_autocombat_combat_char_here(state, x + 1, y)) {
+            u3_autocombat_add_macro(&macro, '6');
+            return macro;
+        }
+        if (!u3_autocombat_monster_can_attack(state, x, y - 1) && !u3_autocombat_combat_char_here(state, x, y - 1)) {
+            u3_autocombat_add_macro(&macro, '8');
+            return macro;
+        }
+        if (state->allow_diagonal) {
+            if (!u3_autocombat_monster_can_attack(state, x - 1, y - 1) && !u3_autocombat_combat_char_here(state, x - 1, y - 1)) {
+                u3_autocombat_add_macro(&macro, '7');
+                return macro;
+            }
+            if (!u3_autocombat_monster_can_attack(state, x + 1, y - 1) && !u3_autocombat_combat_char_here(state, x + 1, y - 1)) {
+                u3_autocombat_add_macro(&macro, '9');
+                return macro;
+            }
+        }
+    }
+
+    if (state->combat.monster_type == 0x30 && !state->repond_cast && is_wizard) {
+        u3_autocombat_add_macro(&macro, 'A');
+        if (is_multi)
+            u3_autocombat_add_macro(&macro, 'W');
+        u3_autocombat_add_macro(&macro, 'C');
+        return macro;
+    }
+
+    if (state->combat.monster_type == 0x32 && !state->pontori_cast && is_cleric) {
+        u3_autocombat_add_macro(&macro, 'A');
+        if (is_multi)
+            u3_autocombat_add_macro(&macro, 'C');
+        u3_autocombat_add_macro(&macro, 'C');
+        return macro;
+    }
+
+    if (magic >= 75 && is_wizard && u3_autocombat_threat_value(state) > 60) {
+        u3_autocombat_add_macro(&macro, 'P');
+        if (is_multi)
+            u3_autocombat_add_macro(&macro, 'W');
+        u3_autocombat_add_macro(&macro, 'C');
+        return macro;
+    }
+
+    if (magic >= 70 && is_cleric && u3_autocombat_threat_value(state) > 80) {
+        u3_autocombat_add_macro(&macro, 'O');
+        if (is_multi)
+            u3_autocombat_add_macro(&macro, 'C');
+        u3_autocombat_add_macro(&macro, 'C');
+        return macro;
+    }
+
+    if (magic >= 10 && is_cleric) {
+        lowest_hp = 9999;
+        low_character = -1;
+        for (other_character = 0; other_character < U3_COMBAT_CHARACTER_COUNT; other_character++) {
+            if (state->character_alive[other_character] && state->character_hp[other_character] < lowest_hp) {
+                lowest_hp = (int16_t)state->character_hp[other_character];
+                low_character = other_character;
+            }
+        }
+        if (lowest_hp < 75) {
+            u3_autocombat_add_macro(&macro, (char)('1' + low_character));
+            u3_autocombat_add_macro(&macro, 'C');
+            if (is_multi)
+                u3_autocombat_add_macro(&macro, 'C');
+            u3_autocombat_add_macro(&macro, 'C');
+            return macro;
+        }
+    }
+
+    cast_mittar = false;
+    if (magic >= 5 && is_wizard && weapon != 9 && weapon != 13)
+        cast_mittar = true;
+
+    if (weapon == 3 || weapon == 5 || weapon == 9 || weapon == 13 || cast_mittar) {
+        u3_autocombat_setup_now(state);
+        direction = u3_autocombat_monster_lined_up(state, U3_COMBAT_CHARACTER_COUNT + 1, x, y);
+        if (direction != 0 && direction != ' ') {
+            if (cast_mittar) {
+                u3_autocombat_add_macro(&macro, direction);
+                u3_autocombat_add_macro(&macro, 'B');
+                if (is_multi)
+                    u3_autocombat_add_macro(&macro, 'W');
+                u3_autocombat_add_macro(&macro, 'C');
+            } else {
+                u3_autocombat_add_macro(&macro, direction);
+                u3_autocombat_add_macro(&macro, 'A');
+            }
+            return macro;
+        }
+        u3_autocombat_setup_future(state);
+        direction = u3_autocombat_line_up_to_monster(state, character);
+        u3_autocombat_add_macro(&macro, direction);
+    } else {
+        if (u3_autocombat_nearly_dead(state, character + 1) && state->combat.character_y[character] < 10) {
+            u3_autocombat_add_macro(&macro, ' ');
+            return macro;
+        }
+        direction = u3_autocombat_monster_nearby(state, character);
+        if (direction != 0) {
+            u3_autocombat_add_macro(&macro, direction);
+            u3_autocombat_add_macro(&macro, 'A');
+            return macro;
+        }
+        u3_autocombat_setup_future(state);
+        direction = u3_autocombat_dir_to_nearest_monster(state, character);
+        u3_autocombat_add_macro(&macro, direction);
+    }
+
+    return macro;
 }

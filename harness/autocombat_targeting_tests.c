@@ -7,6 +7,7 @@
 static u3_autocombat_state state;
 
 #define ASSERT_EQ_INT(expected, actual) assert_eq_int((expected), (actual), __FILE__, __LINE__)
+#define ASSERT_MACRO(expected, actual) assert_macro((expected), (actual), __FILE__, __LINE__)
 
 static void assert_eq_int(int expected, int actual, const char *file, int line)
 {
@@ -16,15 +17,37 @@ static void assert_eq_int(int expected, int actual, const char *file, int line)
     }
 }
 
+static void assert_macro(const char *expected, u3_autocombat_macro actual, const char *file, int line)
+{
+    size_t expected_len = strlen(expected);
+    size_t i;
+
+    if (actual.length != expected_len) {
+        fprintf(stderr, "%s:%d: expected macro length %zu, got %u\n", file, line, expected_len, actual.length);
+        exit(1);
+    }
+    for (i = 0; i < expected_len; i++) {
+        if (actual.commands[i] != expected[i]) {
+            fprintf(stderr, "%s:%d: expected macro byte %zu to be '%c', got '%c'\n",
+                    file, line, i, expected[i], actual.commands[i]);
+            exit(1);
+        }
+    }
+}
+
 static void reset_state(void)
 {
     int character;
+    int career;
 
     memset(&state, 0, sizeof(state));
     memset(state.tile_array, 2, sizeof(state.tile_array));
     for (character = 0; character < U3_COMBAT_CHARACTER_COUNT; character++) {
         state.character_alive[character] = 1;
         state.character_hp[character] = 100;
+    }
+    for (career = 0; career < U3_AUTOCOMBAT_CAREER_COUNT; career++) {
+        state.career_table[career] = (uint8_t)career;
     }
     state.allow_diagonal = true;
 }
@@ -329,6 +352,148 @@ static void test_line_up_to_monster_uses_nearest_fallback_when_diagonals_disable
     ASSERT_EQ_INT('2', u3_autocombat_line_up_to_monster(&state, 0));
 }
 
+static void test_auto_combat_low_hp_flees_from_danger(void)
+{
+    reset_state();
+    place_character(0, 5, 5);
+    place_monster(0, 5, 4, 1);
+    state.character_hp[0] = 49;
+
+    ASSERT_MACRO("2", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_casts_repond_against_orcs(void)
+{
+    reset_state();
+    state.combat.monster_type = 0x30;
+    state.character_class[0] = state.career_table[2];
+
+    ASSERT_MACRO("CA", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_casts_pontori_against_skeletons_for_multi_class(void)
+{
+    reset_state();
+    state.combat.monster_type = 0x32;
+    state.character_class[0] = state.career_table[8];
+
+    ASSERT_MACRO("CCA", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_casts_high_threat_wizard_spell(void)
+{
+    reset_state();
+    state.combat.monster_type = 0x10;
+    state.experience[(0x10 / 2) & 0x0F] = 31;
+    state.character_class[0] = state.career_table[2];
+    state.character_magic[0] = 75;
+    place_monster(0, 2, 2, 1);
+    place_monster(1, 8, 8, 1);
+
+    ASSERT_MACRO("CP", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_casts_high_threat_cleric_spell(void)
+{
+    reset_state();
+    state.combat.monster_type = 0x10;
+    state.experience[(0x10 / 2) & 0x0F] = 41;
+    state.character_class[0] = state.career_table[1];
+    state.character_magic[0] = 70;
+    place_monster(0, 2, 2, 1);
+    place_monster(1, 8, 8, 1);
+
+    ASSERT_MACRO("CO", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_casts_sanctu_for_lowest_alive_character(void)
+{
+    reset_state();
+    state.character_class[0] = state.career_table[1];
+    state.character_magic[0] = 10;
+    state.character_hp[1] = 70;
+    state.character_hp[2] = 50;
+    state.character_hp[3] = 40;
+    state.character_alive[3] = 0;
+
+    ASSERT_MACRO("CC3", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_casts_mittar_for_lined_up_wizard(void)
+{
+    reset_state();
+    place_character(0, 5, 5);
+    place_monster(0, 9, 5, 1);
+    state.character_class[0] = state.career_table[2];
+    state.character_magic[0] = 5;
+    state.character_weapon[0] = 0;
+
+    ASSERT_MACRO("CB6", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_projectile_weapon_attacks_lined_up_monster(void)
+{
+    reset_state();
+    place_character(0, 5, 5);
+    place_monster(0, 9, 5, 1);
+    state.character_weapon[0] = 9;
+
+    ASSERT_MACRO("A6", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_projectile_weapon_moves_to_line_up(void)
+{
+    reset_state();
+    place_character(0, 4, 5);
+    place_character(1, 10, 10);
+    place_character(2, 10, 10);
+    place_character(3, 10, 10);
+    place_monster(0, 8, 6, 1);
+    state.character_weapon[0] = 9;
+    state.allow_diagonal = false;
+
+    ASSERT_MACRO("6", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_melee_attacks_adjacent_monster(void)
+{
+    reset_state();
+    place_character(0, 5, 5);
+    place_monster(0, 5, 4, 1);
+
+    ASSERT_MACRO("A8", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_melee_moves_toward_nearest_monster(void)
+{
+    reset_state();
+    place_character(0, 5, 5);
+    place_character(1, 10, 10);
+    place_character(2, 10, 10);
+    place_character(3, 10, 10);
+    place_monster(0, 5, 2, 1);
+
+    ASSERT_MACRO("8", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_nearly_dead_melee_passes_instead_of_advancing(void)
+{
+    reset_state();
+    place_character(0, 5, 5);
+    place_monster(0, 5, 2, 1);
+    state.character_hp[0] = 49;
+
+    ASSERT_MACRO(" ", u3_autocombat_auto_combat(&state, 0));
+}
+
+static void test_auto_combat_no_live_monsters_passes_without_out_of_bounds_lookup(void)
+{
+    reset_state();
+    place_character(0, 5, 5);
+
+    ASSERT_MACRO(" ", u3_autocombat_auto_combat(&state, 0));
+}
+
 int main(void)
 {
     test_threat_value_counts_live_monsters();
@@ -355,6 +520,19 @@ int main(void)
     test_dir_to_nearest_monster_uses_future_positions();
     test_line_up_to_monster_left_and_right_half_priority();
     test_line_up_to_monster_uses_nearest_fallback_when_diagonals_disabled();
+    test_auto_combat_low_hp_flees_from_danger();
+    test_auto_combat_casts_repond_against_orcs();
+    test_auto_combat_casts_pontori_against_skeletons_for_multi_class();
+    test_auto_combat_casts_high_threat_wizard_spell();
+    test_auto_combat_casts_high_threat_cleric_spell();
+    test_auto_combat_casts_sanctu_for_lowest_alive_character();
+    test_auto_combat_casts_mittar_for_lined_up_wizard();
+    test_auto_combat_projectile_weapon_attacks_lined_up_monster();
+    test_auto_combat_projectile_weapon_moves_to_line_up();
+    test_auto_combat_melee_attacks_adjacent_monster();
+    test_auto_combat_melee_moves_toward_nearest_monster();
+    test_auto_combat_nearly_dead_melee_passes_instead_of_advancing();
+    test_auto_combat_no_live_monsters_passes_without_out_of_bounds_lookup();
 
     puts("autocombat targeting characterization passed");
     return 0;
