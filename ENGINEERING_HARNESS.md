@@ -54,6 +54,7 @@ If the legacy build is not available, document the failure or why it was skipped
 4. Implement the smallest coherent change.
 5. Run applicable validation and record skipped checks.
 6. Update feature, bug, modernization, architecture, or decision documentation when the work changes status, boundaries, or strategy.
+7. For code changes, and for documentation-only changes that record major decisions, feature contracts, or workflow rules, run an independent subagent review before handoff when subagent tooling is available.
 
 ## Initial Inventory Targets
 
@@ -81,3 +82,4 @@ If the legacy build is not available, document the failure or why it was skipped
 - Prefer adapters and isolated replacement layers over direct platform rewrites.
 - Preserve user work and avoid destructive git or filesystem commands.
 - State uncertainty explicitly when the code does not prove behavior.
+- After code changes, or major decision/contract/workflow documentation changes, use an independent subagent review as a second set of eyes before final handoff when tooling is available.
