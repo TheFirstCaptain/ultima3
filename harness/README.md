@@ -15,5 +15,6 @@ make -C harness test
 - `combat_predicates_tests.c` characterizes combat movement and lookup predicates from `Sources/UltimaSpellCombat.c`: `CombatValidMove`, `CombatMonsterHere`, and `CombatCharacterHere`.
 - `autocombat_targeting_tests.c` characterizes autocombat targeting, danger checks, and movement forecast helpers from `Sources/UltimaAutocombat.c`: `ThreatValue`, `MonsterCanAttack`, `NearlyDead`, `MonsterNearby`, `MonsterLinedUp`, `AutoMoveChar`, `SetupNow`, `SetupFuture`, `FutureMonsterHere`, `DirToNearestMonster`, and `LineUpToMonster`.
 - `autocombat_targeting_tests.c` also characterizes the top-level `AutoCombat` macro decision flow as a portable bounded command sequence.
+- `dungeon_navigation_tests.c` characterizes bounded dungeon navigation behavior from `Sources/UltimaDngn.c`: `Forward`, `Retreat`, `Left`, `Right`, `dDescend`, and `dKlimb`.
 
 These harnesses compile small shared portable implementations from `Core/src/` and keep references back to the legacy source in the core files. This keeps the validation path executable on a modern compiler while avoiding broad platform shims for unrelated legacy file dependencies.

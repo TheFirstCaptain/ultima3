@@ -7,7 +7,8 @@ TESTS = \
 	$(BUILD_DIR)/map_math_accessors_tests \
 	$(BUILD_DIR)/pascal_string_helpers_tests \
 	$(BUILD_DIR)/combat_predicates_tests \
-	$(BUILD_DIR)/autocombat_targeting_tests
+	$(BUILD_DIR)/autocombat_targeting_tests \
+	$(BUILD_DIR)/dungeon_navigation_tests
 
 .PHONY: test clean
 
@@ -28,6 +29,9 @@ $(BUILD_DIR)/combat_predicates_tests: combat_predicates_tests.c $(CORE_SRC)/u3_c
 
 $(BUILD_DIR)/autocombat_targeting_tests: autocombat_targeting_tests.c $(CORE_SRC)/u3_autocombat.c $(CORE_INCLUDE)/u3_autocombat.h $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h $(CORE_SRC)/u3_map_math.c $(CORE_INCLUDE)/u3_map_math.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) autocombat_targeting_tests.c $(CORE_SRC)/u3_autocombat.c $(CORE_SRC)/u3_combat.c $(CORE_SRC)/u3_map_math.c -o $@
+
+$(BUILD_DIR)/dungeon_navigation_tests: dungeon_navigation_tests.c $(CORE_SRC)/u3_dungeon.c $(CORE_INCLUDE)/u3_dungeon.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) dungeon_navigation_tests.c $(CORE_SRC)/u3_dungeon.c -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)
