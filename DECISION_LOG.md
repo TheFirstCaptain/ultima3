@@ -119,3 +119,23 @@ Status: Accepted
 - Record accepted durable decisions in `DECISION_LOG.md` before implementation.
 - If no decision is needed, state that explicitly and proceed with the feature.
 - This checkpoint applies to feature and milestone work, not trivial bug fixes or documentation cleanups unless they change project direction.
+
+## 2026-05-31: Characterization Core Is Not Final App API
+
+Status: Accepted
+
+- Early `Core/` functions are characterization surfaces extracted from legacy behavior, not necessarily final application-facing API contracts.
+- Characterization APIs may expose raw legacy values and narrow preconditions while behavior is still being mapped.
+- Harness coverage documents the currently validated subset of extracted behavior; legacy source remains the reference for uncovered cases unless an intentional behavior change is recorded.
+- Future stable core facades or app integration layers may wrap, harden, rename, or replace characterization APIs with safer contracts once their behavior and consumers are better understood.
+- Any helper promoted to a stable app-facing API should have explicit precondition documentation, validation coverage, or input hardening.
+
+## 2026-05-31: Autocombat Macro Results Use Legacy Execution Order
+
+Status: Accepted
+
+- `u3_autocombat_macro.commands[0]` is the next command to execute.
+- This matches legacy input handling, where `GetKeyMouse` consumes `Macro[0]`.
+- This intentionally differs from raw `AddMacro` call order because legacy `AddMacro` pushes each new key to the front of the macro buffer.
+- Direct consumers should execute `u3_autocombat_macro.commands` from index `0` through `length - 1`.
+- Adapters that enqueue through legacy `AddMacro` must preserve `Macro[0]` as the next command to execute, for example by enqueueing returned commands in reverse order or by writing the legacy macro buffer directly.
