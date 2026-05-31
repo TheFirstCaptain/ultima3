@@ -50,11 +50,12 @@ If the legacy build is not available, document the failure or why it was skipped
 
 1. Read the relevant legacy files, project metadata, README, and harness docs before editing.
 2. Identify the affected behavior and boundary: inventory, characterization, extraction, adapter, replacement, or modern UI work.
-3. Prefer characterization tests or small harness executables before changing logic.
-4. Implement the smallest coherent change.
-5. Run applicable validation and record skipped checks.
-6. Update feature, bug, modernization, architecture, or decision documentation when the work changes status, boundaries, or strategy.
-7. For code changes, and for documentation-only changes that record major decisions, feature contracts, or workflow rules, run an independent subagent review before handoff when subagent tooling is available.
+3. Before starting feature or milestone work, pause to identify decisions that should be made first. Record accepted durable decisions before implementation; if no decision is needed, state that and proceed.
+4. Prefer characterization tests or small harness executables before changing logic.
+5. Implement the smallest coherent change.
+6. Run applicable validation and record skipped checks.
+7. Update feature, bug, modernization, architecture, or decision documentation when the work changes status, boundaries, or strategy.
+8. For code changes, and for documentation-only changes that record major decisions, feature contracts, or workflow rules, run an independent subagent review before handoff when subagent tooling is available.
 
 ## Initial Inventory Targets
 
@@ -83,3 +84,4 @@ If the legacy build is not available, document the failure or why it was skipped
 - Preserve user work and avoid destructive git or filesystem commands.
 - State uncertainty explicitly when the code does not prove behavior.
 - After code changes, or major decision/contract/workflow documentation changes, use an independent subagent review as a second set of eyes before final handoff when tooling is available.
+- Before feature or milestone work, identify what decisions need to be made first; ask the user only when the decision requires input, and if no decision is needed, say so and proceed.

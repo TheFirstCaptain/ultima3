@@ -99,3 +99,23 @@ Status: Accepted
 - The review should use a code-review stance and prioritize behavior drift, missing tests, portability leaks, API/state boundary problems, and C correctness issues.
 - Documentation-only changes do not require a subagent review unless the change records a major decision, feature contract, or workflow rule that would benefit from independent review.
 - The implementing agent remains responsible for resolving or explicitly documenting review findings before final handoff.
+
+## 2026-05-31: Portable Core Side Effect Modeling
+
+Status: Accepted
+
+- Portable core functions should model observable side effects as return values, result structs, events, command buffers, or explicit state transitions.
+- The portable core should not directly render, play audio, show text, wait for input, read preferences, access files, or call application lifecycle APIs.
+- Platform adapters are responsible for translating core results into rendering, sound, text, input, persistence, and application behavior.
+- During characterization, result structs and events may expose raw legacy values such as tile IDs, headings, message IDs, command keys, dungeon cell values, or status bytes.
+- Harness tests should assert core state transitions and returned results or events, not platform-specific effects.
+
+## 2026-05-31: Decision Checkpoint Before Feature Work
+
+Status: Accepted
+
+- Before starting a new feature or milestone, pause to identify decisions that should be made first.
+- The checkpoint should surface architecture, boundary, validation, compatibility, workflow, and behavior-preservation choices that could affect the feature.
+- Record accepted durable decisions in `DECISION_LOG.md` before implementation.
+- If no decision is needed, state that explicitly and proceed with the feature.
+- This checkpoint applies to feature and milestone work, not trivial bug fixes or documentation cleanups unless they change project direction.
