@@ -78,3 +78,15 @@ Status: Accepted
 - Core headers should not expose Classic Mac types. Byte-sensitive legacy layouts should use portable fixed-width C types, including a core-owned Pascal string byte alias when needed.
 - Behavior that previously depended on globals should move toward small caller-owned state structs passed explicitly into core functions.
 - Harness-only compatibility shims stay under `harness/`; reusable game behavior belongs under `Core/`.
+
+## 2026-05-31: Portable Core Extraction Rules
+
+Status: Accepted
+
+- Extracted gameplay logic remains plain portable C for now, compatible with the existing command-line harness approach.
+- The portable core must not depend on macOS UI, rendering, audio, input, preferences, filesystem, resource, or application lifecycle APIs.
+- Core behavior should use explicit caller-owned state passed through public APIs instead of reading or mutating legacy globals directly.
+- Core APIs should return values, result structs, events, command buffers, or other testable outputs instead of performing UI, audio, input, file, or rendering side effects.
+- Raw legacy numeric values such as tile IDs, monster types, weapon IDs, class IDs, spell flags, and byte-level status values may remain at extraction boundaries during characterization.
+- Named constants and stronger domain types may be introduced as behavior becomes well understood, but they should not obscure byte-for-byte legacy compatibility.
+- The command-line harness remains the first validation consumer for portable core work until a legacy or modern app integration point is intentionally chosen.
