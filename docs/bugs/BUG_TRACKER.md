@@ -31,4 +31,4 @@ Use this tracker for known defects, regressions, build failures, compatibility i
 
 | ID | Title | Status | Priority | Bug Doc | Last Updated | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| B-001 | Pascal String Search/Replace Uses Non-Portable Char Arithmetic | Open | P2 | [B-001.md](./B-001.md) | 2026-05-31 | Found during independent review of F-001 through F-006 portable core code. |
+| B-001 | Pascal String Search/Replace Uses Non-Portable Char Arithmetic | Resolved | P2 | [B-001.md](./B-001.md) | 2026-06-02 | Fixed with explicit `int` arithmetic and unsigned-char harness validation. |

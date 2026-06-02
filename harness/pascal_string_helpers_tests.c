@@ -130,6 +130,56 @@ static void test_search_replace_shrinks_string(void)
     ASSERT_PSTR("open d open door", source);
 }
 
+static void test_search_replace_shrinks_with_large_tail(void)
+{
+    u3_pascal_string source;
+    u3_pascal_string search;
+    u3_pascal_string replace;
+    int i;
+
+    memset(source, 'z', sizeof(source));
+    source[0] = 200;
+    for (i = 1; i <= 200; i++) {
+        source[i] = 'a';
+    }
+    source[20] = 'd';
+    source[21] = 'o';
+    source[22] = 'o';
+    source[23] = 'r';
+    set_pstr(search, "door");
+    set_pstr(replace, "d");
+
+    u3_search_replace(source, search, replace);
+
+    ASSERT_EQ_INT(197, source[0]);
+    ASSERT_EQ_INT('d', source[20]);
+    for (i = 21; i <= 197; i++) {
+        ASSERT_EQ_INT('a', source[i]);
+    }
+}
+
+static void test_search_replace_finds_match_after_signed_char_limit(void)
+{
+    u3_pascal_string source;
+    u3_pascal_string search;
+    u3_pascal_string replace;
+    int i;
+
+    memset(source, 0, sizeof(source));
+    source[0] = 180;
+    for (i = 1; i <= 180; i++) {
+        source[i] = 'a';
+    }
+    source[140] = 'x';
+    set_pstr(search, "x");
+    set_pstr(replace, "y");
+
+    u3_search_replace(source, search, replace);
+
+    ASSERT_EQ_INT(180, source[0]);
+    ASSERT_EQ_INT('y', source[140]);
+}
+
 static void test_search_replace_misses_last_possible_match(void)
 {
     u3_pascal_string source;
@@ -194,6 +244,8 @@ int main(void)
     test_search_replace_same_length();
     test_search_replace_grows_string();
     test_search_replace_shrinks_string();
+    test_search_replace_shrinks_with_large_tail();
+    test_search_replace_finds_match_after_signed_char_limit();
     test_search_replace_misses_last_possible_match();
     test_is_newline();
     test_add_string_appends_bytes_and_length();

@@ -32,12 +32,12 @@ uint8_t u3_string_location(u3_pascal_string source, u3_pascal_string search)
 void u3_search_replace(u3_pascal_string source, u3_pascal_string search, u3_pascal_string replace)
 {
     if (1) {
-        char i = 1;
-        char diff = replace[0] - search[0];
+        int i = 1;
+        int diff = (int)replace[0] - (int)search[0];
 
         while (i < source[0] - search[0]) {
             bool match = true;
-            char offset = 0;
+            int offset = 0;
 
             while (match && offset < search[0]) {
                 match = (source[i + offset] == search[1 + offset]);
