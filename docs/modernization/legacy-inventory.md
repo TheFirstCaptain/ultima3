@@ -82,6 +82,53 @@ Use this document to inventory legacy files, data formats, platform dependencies
 - Search terms included `extern`, broad `#import` patterns, global declarations, shared headers, and high-traffic subsystem files.
 - This pass identifies coupling risks and candidate state boundaries; it does not define the final state model.
 
+## Combat Action Resolution Inventory
+
+`Sources/UltimaSpellCombat.c` is the legacy reference for combat action resolution, but it is not one clean subsystem. It mixes spell selection, player attacks, projectile animation, monster damage, monster turn behavior, poison, pilfering, combat setup, victory, rendering, text, sound, input, preferences, resource loading, and global state restoration.
+
+### Main Combat Functions
+
+| Function | Responsibility | Primary state touched | Platform or side effects | Extraction notes |
+| --- | --- | --- | --- | --- |
+| `Combat` | Full combat setup and turn loop, including player commands, monster turns, victory checks, autocombat handoff, and return to map or dungeon. | `Party`, `Player`, `Monsters`, `TileArray`, `CharX/Y/Tile/Shape`, `MonsterX/Y/Tile/HP`, `g835D/E/F`, `gSongCurrent`, `gSongNext`, `gTimeNegate`, `gUpdateWhere`, `gMouseState`, `gChnum`, `gKeyPress`, `Macro`, `zp`, `cHide`. | Reads preferences, flushes events, polls input, animates and draws tiles, prints messages, plays sounds, obscures cursor, calls UI commands such as stats, volume, ready weapon, and prompt drawing. | Too broad for first extraction. Treat as orchestration to split after smaller action results are characterized. |
+| `CombatAttack` | Resolves a player attack after choosing attack command and direction. Handles weapon text, projectile or melee targeting, dagger throwing, Exodus Castle weapon rule, hit chance, hit animation, damage roll, and `DamageMonster`. | `Party`, `Player`, `MonsterX/Y/Tile/HP`, `CharX/Y`, `gMonType`, `gMonVarType`, `gBallTileBackground`, `zp`, `dx`, `dy`. | Reads weapon strings, prints attack text and monster text, asks direction, plays weapon/hit sounds, draws projectile and hit effects. | Good second extraction target if direction and random values are supplied explicitly and output events model text, sound, projectile, hit, miss, and inventory changes. |
+| `DamageMonster` | Applies damage to one combat monster, handles death, experience message, experience award, restoring tile under monster, clearing HP, and redraw. | `MonsterHP`, `MonsterTile`, `MonsterX/Y`, `Player` through `AddExp`, `Experience`, `gMonType`, `TileArray`. | Builds Pascal strings from resources, prints experience message, draws tiles. `AddExp` can also play the level-up sound and refresh character display. | Best first combat-resolution extraction target. Core can return death, experience award, tile restore, level-up, character-redraw, and message-id/value events. |
+| `Projectile` | Direction-based spell projectile in combat and damage handoff. | `Party`, `CharX/Y`, `MonsterX/Y/Tile`, `gBallTileBackground`, `zp`, `dx`, `dy`. | Asks direction, flashes spell, animates shot, plays hit or failed sounds, shows hit. | Defer until `Shoot` and event modeling are ready. |
+| `BigDeath` | Area spell damage against all live combat monsters with random skip chance. | `MonsterHP`, `MonsterX/Y/Tile`, `TileArray`, `gBallTileBackground`. | Flash, random checks, temporary tile mutation, drawing, hit sound, pause, `DamageMonster`. | Defer until `DamageMonster` and deterministic random event sequencing are established. |
+| `Necorp` | Sets all live combat monsters to 5 HP with hit animation. | `MonsterHP`, `MonsterX/Y/Tile`, `TileArray`, `gBallTileBackground`. | Flash, temporary tile mutation, drawing, hit sound, pause. | Possible later spell-effect extraction after common hit-event modeling exists. |
+| `Poison` | Randomly poisons a targeted living character. | `Player[rosNum][17]`, `Party`, `wx`. | Prints attack/target and poison messages, plays `Ouch`. | Small extractable side-effect helper once target and random value are explicit. |
+| `Pilfer` | Randomly removes a carried weapon or armour item from the target. | `Player[rosNum][40..56]`, `Party`, `wx`. | Prints attack/target and pilfer messages, plays `Ouch`. | Small extractable side-effect helper; needs explicit random draws and equipment indices. |
+| `FigureNewMonPosition` | Chooses a monster target and movement vector. | `CharX/Y`, `MonsterX/Y`, `Player`, `Party`, `gMonType`, `zp`, `dx`, `dy`, `TileArray`. | None directly beyond shared globals. | Already related to extracted autocombat forecast logic, but still mutates `zp`, `dx`, and `dy`; could become part of monster-turn core. |
+| `Shoot` | Advances projectile through combat grid until out of bounds or monster hit. | `TileArray`, `MonsterX/Y/Tile/HP`, `CharX/Y/Tile`, `gBallTileBackground`, `zp`, `dx`, `dy`. | Draws projectile and pauses each step. | Needs event-return model for projectile path before extraction. |
+| `HandleMove` | Moves a combat character one tile if passable. | `CharX/Y/Tile`, `CharShape`, `TileArray`, `xs`, `ys`, `dx`, `dy`. | Step, bump, text, tile mutation. | Existing `CombatValidMove` coverage helps, but movement side effects need separate characterization. |
+| `Victory` | Restores post-combat context and draws map or dungeon. | `gTimeNegate`, `gSongCurrent`, `gSongNext`, `Party[3]`, `g835E/F`. | Victory text, sound, window refresh, dungeon or map draw. | Defer until combat orchestration boundary exists. |
+| `GetScreen` | Loads combat screen fixture data from `CONS` resource. | `TileArray`, `MonsterX/Y/Tile/HP`, `CharX/Y/Tile/Shape`. | Classic Resource Manager load/release. | Resource-backed data should become explicit fixture input before portable combat setup. |
+
+### Side-Effect Categories
+
+- State mutations: party location mode, player status/HP/MP/equipment/experience, combat monster HP/position/tile-under, combat character position/tile-under/shape, tile grid bytes, global direction registers, `zp` scratch registers, combat music fields, time-negate fields, and UI update state.
+- Random dependencies: spell success checks, teleport/relocation coordinates, heal amounts, area spell monster skip checks, monster count and starting HP, monster turn choices, monster hit chance and damage, player attack hit chance and damage, poison chance, and pilfer branch/item choice.
+- Text dependencies: message IDs around spell failure, combat prompts, hit/miss, victory, attack target, poison, pilfer, and experience award strings; weapon and monster names from plist-backed string tables.
+- Rendering dependencies: tile writes for characters, monsters, projectile balls, hit effects, map pauses, mini-map/dungeon drawing, inverse tile or character flashes, prompt and frame redraws.
+- Audio dependencies: combat start/victory, failed spell, spell-specific sounds, step, bump, attack, shoot, hit, monster spell, weapon swishes, ouch.
+- Input and preference dependencies: spell selection, direction selection, target character selection, combat command input, manual/autocombat preference, diagonal movement preference, and hit-effect preference in `ShowHit`.
+- Resource dependencies: `GetScreen` reads `CONS` resources; attack text and experience output read plist-backed Pascal strings.
+
+### Recommended Extraction Sequence
+
+1. `DamageMonster`: characterize monster damage, death, tile restoration, and experience award as a pure state transition plus events.
+2. `CombatAttack`: after direction is supplied by the caller, characterize player attack targeting, hit/miss, dagger inventory mutation, Exodus Castle restriction, damage roll, and handoff to `DamageMonster`.
+3. Monster turn side effects: characterize `Poison`, `Pilfer`, target/hit/miss/damage behavior, shooting, spell targeting, and movement as a bounded monster action result.
+
+Do not extract `Combat()` as the next step. Its current coupling would force adapters for input, drawing, sound, preferences, resources, autocombat, and UI commands before the combat state model is stable.
+
+### F-009 Inspection Notes
+
+- Inspected `Sources/UltimaSpellCombat.c`, `Sources/UltimaSpellCombat.h`, `Sources/UltimaIncludes.h`, existing feature docs, and modernization strategy docs.
+- Function search included `Combat`, `CombatAttack`, `DamageMonster`, `Projectile`, `BigDeath`, `Necorp`, `Poison`, `Pilfer`, `FigureNewMonPosition`, `Shoot`, `HandleMove`, `Victory`, and `GetScreen`.
+- Side-effect search terms included `UPrint`, `PlaySoundFile`, `Draw`, `Inverse`, `GetKey`, `GetChar`, `GetDirection`, `RandNum`, `CFPreferences`, `GetResource`, `PutXY`, `GetXY`, `Show`, `HPAdd`, `HPSubtract`, `AddExp`, `CheckAlive`, `ReadyWeapon`, `NegateTime`, `Stats`, `Volume`, `What2`, `ScrollThings`, `AnimateTiles`, `FlushEvents`, `ObscureCursor`, `AutoCombat`, `AgeChars`, `Damage`, `Poison`, and `Pilfer`.
+- This pass is an inventory and sequencing recommendation; it does not prove exact combat behavior or replace harness characterization.
+
 ## Data and Asset Formats
 
 | Asset/Data Area | Paths / References | Notes |
