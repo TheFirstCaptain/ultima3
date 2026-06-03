@@ -8,13 +8,14 @@ TESTS = \
 	$(BUILD_DIR)/pascal_string_helpers_tests \
 	$(BUILD_DIR)/combat_predicates_tests \
 	$(BUILD_DIR)/combat_damage_tests \
+	$(BUILD_DIR)/combat_attack_tests \
 	$(BUILD_DIR)/autocombat_targeting_tests \
 	$(BUILD_DIR)/dungeon_navigation_tests
 
 .PHONY: test clean
 
 test: $(TESTS)
-	@for test in $(TESTS); do ./$$test; done
+	@set -e; for test in $(TESTS); do ./$$test; done
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -30,6 +31,9 @@ $(BUILD_DIR)/combat_predicates_tests: combat_predicates_tests.c $(CORE_SRC)/u3_c
 
 $(BUILD_DIR)/combat_damage_tests: combat_damage_tests.c $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) combat_damage_tests.c $(CORE_SRC)/u3_combat.c -o $@
+
+$(BUILD_DIR)/combat_attack_tests: combat_attack_tests.c $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) combat_attack_tests.c $(CORE_SRC)/u3_combat.c -o $@
 
 $(BUILD_DIR)/autocombat_targeting_tests: autocombat_targeting_tests.c $(CORE_SRC)/u3_autocombat.c $(CORE_INCLUDE)/u3_autocombat.h $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h $(CORE_SRC)/u3_map_math.c $(CORE_INCLUDE)/u3_map_math.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) autocombat_targeting_tests.c $(CORE_SRC)/u3_autocombat.c $(CORE_SRC)/u3_combat.c $(CORE_SRC)/u3_map_math.c -o $@
