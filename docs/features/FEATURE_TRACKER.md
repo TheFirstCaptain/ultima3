@@ -48,7 +48,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-007 | Autocombat Macro Decision Core | Complete | Done | [F-007.md](./F-007.md) | 2026-05-31 | Full `AutoCombat` macro decision flow extracted as portable command generation and harness-covered. |
 | F-008 | Dungeon Navigation Core | Complete | Done | [F-008.md](./F-008.md) | 2026-05-31 | Bounded dungeon movement, turning, level, and exit state transitions extracted and harness-covered. |
 | F-009 | Combat Action Resolution Inventory | Complete | Done | [F-009.md](./F-009.md) | 2026-06-02 | Combat action side effects inventoried; next extraction targets proposed. |
-| F-009A | Monster Damage Resolution Core | Proposed | Proposed | [F-009A.md](./F-009A.md) | 2026-06-02 | First recommended combat extraction target from F-009. |
+| F-009A | Monster Damage Resolution Core | Complete | Done | [F-009A.md](./F-009A.md) | 2026-06-03 | `DamageMonster` extracted to portable core and harness-covered. |
 | F-009B | Player Combat Attack Resolution Core | Proposed | Proposed | [F-009B.md](./F-009B.md) | 2026-06-02 | Recommended after monster damage resolution core exists. |
 | F-009C | Monster Combat Action Resolution Core | Proposed | Proposed | [F-009C.md](./F-009C.md) | 2026-06-02 | Recommended after player and monster damage handling are characterized. |
 | F-010 | Save and Resource Format Inventory | Proposed | Proposed | [F-010.md](./F-010.md) | 2026-05-31 | Inventory mutable save/resource data and compatibility constraints before format decisions. |

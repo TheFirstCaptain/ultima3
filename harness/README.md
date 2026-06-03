@@ -13,6 +13,7 @@ make -C harness test
 - `map_math_accessors_tests.c` characterizes the map/math accessor behavior from `Sources/UltimaMisc.c`: `GetHeading`, `Absolute`, `GetXY`, `PutXY`, `MapConstrain`, `GetXYVal`, and `PutXYVal`.
 - `pascal_string_helpers_tests.c` characterizes byte-level Pascal string helper behavior from `Sources/UltimaText.c`: `StringLocation`, `SearchReplace`, `IsNewline`, and `AddString`.
 - `combat_predicates_tests.c` characterizes combat movement and lookup predicates from `Sources/UltimaSpellCombat.c`: `CombatValidMove`, `CombatMonsterHere`, and `CombatCharacterHere`.
+- `combat_damage_tests.c` characterizes monster damage resolution from `Sources/UltimaSpellCombat.c`: `DamageMonster` HP subtraction, defeat threshold, Lord British immunity, experience event data, tile restoration, and redraw signaling.
 - `autocombat_targeting_tests.c` characterizes autocombat targeting, danger checks, and movement forecast helpers from `Sources/UltimaAutocombat.c`: `ThreatValue`, `MonsterCanAttack`, `NearlyDead`, `MonsterNearby`, `MonsterLinedUp`, `AutoMoveChar`, `SetupNow`, `SetupFuture`, `FutureMonsterHere`, `DirToNearestMonster`, and `LineUpToMonster`.
 - `autocombat_targeting_tests.c` also characterizes the top-level `AutoCombat` macro decision flow as a portable bounded command sequence.
 - `dungeon_navigation_tests.c` characterizes bounded dungeon navigation behavior from `Sources/UltimaDngn.c`: `Forward`, `Retreat`, `Left`, `Right`, `dDescend`, and `dKlimb`.
