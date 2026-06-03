@@ -55,6 +55,14 @@ static void u3_combat_put_tile(u3_combat_state *state, int16_t value, int16_t x,
     state->tile_array[(y * 11) + x] = (uint8_t)value;
 }
 
+static uint8_t u3_combat_get_tile(const u3_combat_state *state, int16_t x, int16_t y)
+{
+    /* Legacy reference: Sources/UltimaMisc.c GetXYTile. */
+    if (x < 0 || x > 10 || y < 0 || y > 10)
+        return 0;
+    return state->tile_array[(y * 11) + x];
+}
+
 static uint8_t u3_combat_is_projectile_weapon(uint8_t weapon)
 {
     return weapon == 3 || weapon == 5 || weapon == 9 || weapon == 13;
@@ -65,6 +73,32 @@ static void u3_combat_set_attack_miss(u3_combat_attack_result *result)
     result->miss = 1;
     result->message_id = U3_COMBAT_ATTACK_MISS_MESSAGE;
     result->redraw_tiles = 1;
+}
+
+static uint8_t u3_combat_is_magic_monster(uint8_t monster_type)
+{
+    return monster_type == 0x1A ||
+           monster_type == 0x1C ||
+           monster_type == 0x2C ||
+           monster_type == 0x36 ||
+           monster_type == 0x3A ||
+           monster_type == 0x3C;
+}
+
+static uint8_t u3_combat_is_poison_monster(uint8_t monster_type)
+{
+    return monster_type == 0x1C || monster_type == 0x3C || monster_type == 0x38;
+}
+
+static uint8_t u3_combat_subtract_character_hp(u3_combat_state *state, uint8_t character, uint16_t amount)
+{
+    if (state->character_hp[character] < amount + 1) {
+        state->character_hp[character] = 0;
+        state->character_status[character] = U3_COMBAT_STATUS_DEAD;
+        return 1;
+    }
+    state->character_hp[character] = (uint16_t)(state->character_hp[character] - amount);
+    return 0;
 }
 
 u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
@@ -106,6 +140,209 @@ u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
         state->monster_hp[monster] = (uint8_t)(state->monster_hp[monster] - damage);
     }
 
+    return result;
+}
+
+static void u3_combat_move_monster(u3_combat_state *state,
+                                   const u3_combat_monster_action_input *input,
+                                   u3_combat_monster_action_result *result)
+{
+    uint8_t monster = input->monster;
+    uint8_t draw_tile = input->monster_tile_value;
+
+    if (draw_tile == 0)
+        draw_tile = (uint8_t)state->monster_type;
+
+    result->moved = 1;
+    result->redraw_tiles = 1;
+    result->moved_from_x = state->monster_x[monster];
+    result->moved_from_y = state->monster_y[monster];
+    result->moved_to_x = input->move_x;
+    result->moved_to_y = input->move_y;
+
+    u3_combat_put_tile(state, state->monster_tile[monster], state->monster_x[monster], state->monster_y[monster]);
+    state->monster_x[monster] = input->move_x;
+    state->monster_y[monster] = input->move_y;
+    state->monster_tile[monster] = u3_combat_get_tile(state, state->monster_x[monster], state->monster_y[monster]);
+    u3_combat_put_tile(state, draw_tile, state->monster_x[monster], state->monster_y[monster]);
+}
+
+static void u3_combat_try_poison(u3_combat_state *state,
+                                 const u3_combat_monster_action_input *input,
+                                 u3_combat_monster_action_result *result,
+                                 uint8_t target)
+{
+    if (!u3_combat_is_poison_monster((uint8_t)state->monster_type))
+        return;
+    if ((input->poison_roll & 0x03) != 0)
+        return;
+    if (state->character_status[target] != U3_COMBAT_STATUS_GOOD)
+        return;
+
+    state->character_status[target] = U3_COMBAT_STATUS_POISONED;
+    result->poisoned = 1;
+    result->status_message_id = U3_COMBAT_POISON_MESSAGE;
+    result->play_ouch_sound = 1;
+}
+
+static void u3_combat_try_pilfer(u3_combat_state *state,
+                                 const u3_combat_monster_action_input *input,
+                                 u3_combat_monster_action_result *result,
+                                 uint8_t target)
+{
+    uint8_t item = input->pilfer_item_roll;
+
+    if (state->monster_type != 0x2E)
+        return;
+
+    if (input->pilfer_branch_roll < 128) {
+        item &= 0x0F;
+        if (item == 0)
+            return;
+        if (state->character_weapon[target] == item)
+            return;
+        if (state->character_weapon_inventory[target][item] == 0)
+            return;
+        state->character_weapon_inventory[target][item] = 0;
+        result->pilfered_weapon = 1;
+    } else {
+        item &= 0x07;
+        if (item == 0)
+            return;
+        if (state->character_armour[target] == item)
+            return;
+        if (state->character_armour_inventory[target][item] == 0)
+            return;
+        state->character_armour_inventory[target][item] = 0;
+        result->pilfered_armour = 1;
+    }
+
+    result->pilfered = 1;
+    result->pilfer_item = item;
+    result->status_message_id = U3_COMBAT_PILFER_MESSAGE;
+    result->play_ouch_sound = 1;
+}
+
+static void u3_combat_apply_monster_hit(u3_combat_state *state,
+                                        const u3_combat_monster_action_input *input,
+                                        u3_combat_monster_action_result *result,
+                                        uint8_t target,
+                                        uint8_t hit_tile,
+                                        uint8_t emit_hit_message)
+{
+    uint16_t level = state->character_experience[target] / 100;
+    uint16_t damage_max = (uint16_t)(((input->monster_hp_start / 8) + level) | 1);
+    uint16_t damage = (uint16_t)((input->damage_roll % (damage_max + 1)) + 1);
+    uint16_t exodus_damage = (uint16_t)((input->exodus_damage_flags & 0x03) * 16);
+
+    damage = (uint16_t)(damage + exodus_damage);
+
+    result->hit = 1;
+    if (emit_hit_message) {
+        result->message_id = U3_COMBAT_MONSTER_HIT_MESSAGE;
+        result->outcome_message_id = U3_COMBAT_MONSTER_HIT_MESSAGE;
+    }
+    result->play_hit_sound = 1;
+    result->pause_after_hit = 1;
+    result->redraw_tiles = 1;
+    result->hit_x = state->character_x[target];
+    result->hit_y = state->character_y[target];
+    result->hit_tile = hit_tile;
+    result->damage_amount = (uint8_t)damage;
+
+    result->character_died = u3_combat_subtract_character_hp(state, target, damage);
+    u3_combat_put_tile(state, state->character_shape[target], state->character_x[target], state->character_y[target]);
+    if (result->character_died) {
+        result->death_message_id = U3_COMBAT_CHARACTER_DIED_MESSAGE;
+        u3_combat_put_tile(state, state->character_tile[target], state->character_x[target], state->character_y[target]);
+        state->character_x[target] = 0xFF;
+        state->character_y[target] = 0xFF;
+    }
+}
+
+u3_combat_monster_action_result u3_combat_monster_action(u3_combat_state *state,
+                                                          const u3_combat_monster_action_input *input)
+{
+    /* Legacy reference: Sources/UltimaSpellCombat.c monster turn flow, $85A6-$878C. */
+    u3_combat_monster_action_result result = {0};
+    uint8_t target = input->target_character;
+    uint8_t hit_tile = U3_COMBAT_ATTACK_HIT_TILE;
+
+    result.target_character = U3_COMBAT_NO_SLOT;
+
+    if (input->monster >= U3_COMBAT_MONSTER_COUNT || state->monster_hp[input->monster] == 0) {
+        result.no_action = 1;
+        return result;
+    }
+    if (input->target_distance != 0) {
+        if (target < input->party_size &&
+            target < U3_COMBAT_CHARACTER_COUNT &&
+            state->monster_type == 0x3A &&
+            input->shoot_choice_roll < 128) {
+            result.shot = 1;
+            result.play_shoot_sound = 1;
+            target = input->projectile_hit_character;
+            if (target >= input->party_size ||
+                target >= U3_COMBAT_CHARACTER_COUNT ||
+                state->character_status[target] == U3_COMBAT_STATUS_DEAD ||
+                state->character_status[target] == U3_COMBAT_STATUS_ASH) {
+                result.projectile_missed = 1;
+                result.pause_after_projectile = 1;
+                result.redraw_tiles = 1;
+                return result;
+            }
+            result.target_character = target;
+            u3_combat_apply_monster_hit(state, input, &result, target, U3_COMBAT_ATTACK_HIT_TILE, 0);
+            return result;
+        }
+
+        if (input->magic_choice_roll > 127 && u3_combat_is_magic_monster((uint8_t)state->monster_type)) {
+            target = input->magic_target_character;
+            if (target < input->party_size &&
+                target < U3_COMBAT_CHARACTER_COUNT &&
+                state->character_status[target] == U3_COMBAT_STATUS_GOOD) {
+                result.cast_spell = 1;
+                result.play_monster_spell_sound = 1;
+                hit_tile = 0x78;
+            } else if (input->target_distance < 0x80) {
+                u3_combat_move_monster(state, input, &result);
+                return result;
+            } else {
+                result.no_action = 1;
+                return result;
+            }
+        } else if (input->target_distance < 0x80) {
+            u3_combat_move_monster(state, input, &result);
+            return result;
+        } else {
+            result.no_action = 1;
+            return result;
+        }
+    }
+
+    if (target >= input->party_size || target >= U3_COMBAT_CHARACTER_COUNT) {
+        result.no_action = 1;
+        return result;
+    }
+
+    result.target_character = target;
+    result.attacked = 1;
+    result.play_attack_sound = 1;
+    result.attack_message_id = U3_COMBAT_MONSTER_ATTACK_MESSAGE;
+
+    u3_combat_try_poison(state, input, &result, target);
+    u3_combat_try_pilfer(state, input, &result, target);
+
+    if (!(input->exodus_castle_active && state->character_armour[target] != 7)) {
+        if (input->armour_hit_roll >= 8) {
+            result.miss = 1;
+            result.message_id = U3_COMBAT_MONSTER_MISS_MESSAGE;
+            result.outcome_message_id = U3_COMBAT_MONSTER_MISS_MESSAGE;
+            return result;
+        }
+    }
+
+    u3_combat_apply_monster_hit(state, input, &result, target, hit_tile, 1);
     return result;
 }
 

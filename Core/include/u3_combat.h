@@ -13,11 +13,30 @@
 #define U3_COMBAT_ATTACK_HIT_MESSAGE 146
 #define U3_COMBAT_ATTACK_MISS_MESSAGE 147
 #define U3_COMBAT_ATTACK_HIT_TILE 0x7A
+#define U3_COMBAT_MONSTER_ATTACK_MESSAGE 141
+#define U3_COMBAT_MONSTER_MISS_MESSAGE 142
+#define U3_COMBAT_MONSTER_HIT_MESSAGE 143
+#define U3_COMBAT_CHARACTER_DIED_MESSAGE 144
+#define U3_COMBAT_PILFER_MESSAGE 148
+#define U3_COMBAT_POISON_MESSAGE 149
+#define U3_COMBAT_STATUS_GOOD 'G'
+#define U3_COMBAT_STATUS_DEAD 'D'
+#define U3_COMBAT_STATUS_ASH 'A'
+#define U3_COMBAT_STATUS_POISONED 'P'
 
 typedef struct u3_combat_state {
     int16_t monster_type;
     uint8_t character_x[U3_COMBAT_CHARACTER_COUNT];
     uint8_t character_y[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_tile[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_shape[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_status[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_armour[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_weapon[U3_COMBAT_CHARACTER_COUNT];
+    uint16_t character_hp[U3_COMBAT_CHARACTER_COUNT];
+    uint16_t character_experience[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_armour_inventory[U3_COMBAT_CHARACTER_COUNT][8];
+    uint8_t character_weapon_inventory[U3_COMBAT_CHARACTER_COUNT][16];
     uint8_t monster_x[U3_COMBAT_MONSTER_COUNT];
     uint8_t monster_y[U3_COMBAT_MONSTER_COUNT];
     uint8_t monster_tile[U3_COMBAT_MONSTER_COUNT];
@@ -79,6 +98,69 @@ typedef struct u3_combat_attack_result {
     u3_combat_damage_result damage_result;
 } u3_combat_attack_result;
 
+typedef struct u3_combat_monster_action_input {
+    uint8_t monster;
+    uint8_t party_size;
+    uint8_t target_character;
+    uint8_t target_distance;
+    uint8_t move_x;
+    uint8_t move_y;
+    int8_t shoot_delta_x;
+    int8_t shoot_delta_y;
+    uint8_t shoot_choice_roll;
+    uint8_t magic_choice_roll;
+    uint8_t magic_target_character;
+    uint8_t projectile_hit_character;
+    uint8_t monster_hp_start;
+    uint8_t monster_tile_value;
+    uint8_t poison_roll;
+    uint8_t pilfer_branch_roll;
+    uint8_t pilfer_item_roll;
+    uint8_t exodus_castle_active;
+    uint8_t exodus_damage_flags;
+    uint8_t armour_hit_roll;
+    uint8_t damage_roll;
+} u3_combat_monster_action_input;
+
+typedef struct u3_combat_monster_action_result {
+    uint8_t no_action;
+    uint8_t moved;
+    uint8_t shot;
+    uint8_t projectile_missed;
+    uint8_t cast_spell;
+    uint8_t attacked;
+    uint8_t miss;
+    uint8_t hit;
+    uint8_t poisoned;
+    uint8_t pilfered;
+    uint8_t pilfered_weapon;
+    uint8_t pilfered_armour;
+    uint8_t character_died;
+    uint8_t redraw_tiles;
+    uint8_t pause_after_projectile;
+    uint8_t pause_after_hit;
+    uint8_t play_attack_sound;
+    uint8_t play_hit_sound;
+    uint8_t play_ouch_sound;
+    uint8_t play_shoot_sound;
+    uint8_t play_monster_spell_sound;
+    uint8_t target_character;
+    uint8_t message_id;
+    uint8_t attack_message_id;
+    uint8_t status_message_id;
+    uint8_t outcome_message_id;
+    uint8_t death_message_id;
+    uint8_t pilfer_item;
+    uint8_t hit_x;
+    uint8_t hit_y;
+    uint8_t hit_tile;
+    uint8_t damage_amount;
+    uint8_t moved_from_x;
+    uint8_t moved_from_y;
+    uint8_t moved_to_x;
+    uint8_t moved_to_y;
+} u3_combat_monster_action_result;
+
 uint8_t u3_combat_valid_move(const u3_combat_state *state, int16_t tile);
 uint8_t u3_combat_monster_here(const u3_combat_state *state, int16_t x, int16_t y);
 uint8_t u3_combat_character_here(const u3_combat_state *state, int16_t x, int16_t y);
@@ -90,5 +172,7 @@ u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
 u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
                                           const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
                                           const u3_combat_attack_input *input);
+u3_combat_monster_action_result u3_combat_monster_action(u3_combat_state *state,
+                                                          const u3_combat_monster_action_input *input);
 
 #endif

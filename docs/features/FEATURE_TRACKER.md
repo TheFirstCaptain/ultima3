@@ -50,6 +50,6 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-009 | Combat Action Resolution Inventory | Complete | Done | [F-009.md](./F-009.md) | 2026-06-02 | Combat action side effects inventoried; next extraction targets proposed. |
 | F-009A | Monster Damage Resolution Core | Complete | Done | [F-009A.md](./F-009A.md) | 2026-06-03 | `DamageMonster` extracted to portable core and harness-covered. |
 | F-009B | Player Combat Attack Resolution Core | Complete | Done | [F-009B.md](./F-009B.md) | 2026-06-03 | Post-direction `CombatAttack` extracted to portable core and harness-covered. |
-| F-009C | Monster Combat Action Resolution Core | Proposed | Proposed | [F-009C.md](./F-009C.md) | 2026-06-02 | Recommended after player and monster damage handling are characterized. |
+| F-009C | Monster Combat Action Resolution Core | Complete | Done | [F-009C.md](./F-009C.md) | 2026-06-03 | Bounded monster action resolution extracted to portable core and harness-covered. |
 | F-010 | Save and Resource Format Inventory | Proposed | Proposed | [F-010.md](./F-010.md) | 2026-05-31 | Inventory mutable save/resource data and compatibility constraints before format decisions. |
 | F-011 | Modern App Shell Decision Spike | Proposed | Proposed | [F-011.md](./F-011.md) | 2026-05-31 | Compare modern macOS shell options and record an accepted or deferred direction. |
