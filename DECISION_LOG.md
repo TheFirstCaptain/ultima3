@@ -95,10 +95,20 @@ Status: Accepted
 
 Status: Accepted
 
-- After code changes, run an independent subagent code review before handoff when subagent tooling is available.
+- After every coding task, run an independent subagent code review before final handoff.
 - The review should use a code-review stance and prioritize behavior drift, missing tests, portability leaks, API/state boundary problems, and C correctness issues.
+- Review findings are part of the task and should be resolved before handoff, or explicitly documented as accepted residual risk.
+- If subagent tooling is unavailable, record that in the handoff.
 - Documentation-only changes do not require a subagent review unless the change records a major decision, feature contract, or workflow rule that would benefit from independent review.
 - The implementing agent remains responsible for resolving or explicitly documenting review findings before final handoff.
+
+## 2026-06-03: Mandatory Subagent Review After Coding Tasks
+
+Status: Accepted
+
+- The previous review guidance is strengthened from conditional guidance to a mandatory completion step for coding tasks.
+- A coding task is not ready for final handoff until an independent subagent code review has run, unless subagent tooling is unavailable.
+- The final handoff should mention the review outcome and any unresolved residual risk.
 
 ## 2026-05-31: Portable Core Side Effect Modeling
 

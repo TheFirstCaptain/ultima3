@@ -20,6 +20,8 @@ Match the existing style. Use C/Objective-C files with `.c`, `.m`, and `.h` exte
 
 There is no automated test suite or dedicated test directory. Validate changes by building the `Ultima3` target where possible and manually exercising affected gameplay, UI dialogs, resources, or sound paths. For future tests, keep them isolated from bundled historical assets and name test files after the module under test, for example `UltimaGraphicsTests`.
 
+After completing any coding task, run an independent subagent code review before final handoff. Treat review findings as part of the task: resolve them, or explicitly document why they are accepted residual risk. If subagent tooling is unavailable, state that clearly in the handoff.
+
 ## Commit & Pull Request Guidelines
 
 Git history is minimal and uses short, sentence-case commit subjects such as `Initial commit` and `Final state of code for public release`. Keep new commit messages concise and imperative, for example `Fix sound volume clamping`. Pull requests should describe the changed behavior, note whether a legacy or modern Xcode build was attempted, list manual verification steps, and include screenshots for UI or rendering changes.
