@@ -171,7 +171,7 @@ The roster file is not only a character roster. It owns active party bytes, rost
 
 `Resources/English.lproj/MainResources.rsrc` remains runtime-critical. The Xcode project includes it in a `PBXRezBuildPhase`; modern build/resource folders do not yet replace all Resource Manager reads.
 
-Observed read-only resource families include `MAPS`, `MONS`, `TLKS`, `MISC`, `PRTY`, `ROST`, `CONS`, `DEMO`, `SGNT`, `snd `, legacy string lists, dialogs, alerts, and default save templates. `DeRez Resources/English.lproj/MainResources.rsrc` failed locally with `eofErr (-39)`, so complete binary enumeration remains a follow-up task.
+Observed read-only resource families include `MAPS`, `MONS`, `TLKS`, `MISC`, `PRTY`, `ROST`, `CONS`, `DEMO`, `SGNT`, `PICT`, `snd `, legacy string lists, dialogs, alerts, and default save templates. `DeRez Resources/English.lproj/MainResources.rsrc` failed locally with `eofErr (-39)`, so complete binary enumeration remains a follow-up task.
 
 ### Save Flow Risks
 
