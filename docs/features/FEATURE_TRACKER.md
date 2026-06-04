@@ -53,3 +53,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-009C | Monster Combat Action Resolution Core | Complete | Done | [F-009C.md](./F-009C.md) | 2026-06-03 | Bounded monster action resolution extracted to portable core and harness-covered. |
 | F-010 | Save and Resource Format Inventory | Complete | Done | [F-010.md](./F-010.md) | 2026-06-04 | Save/resource inventory complete; follow-ups proposed for fixtures, resource enumeration, persistence adapter design, and map/talk/combat fixtures. |
 | F-011 | Modern App Shell Decision Spike | Proposed | Proposed | [F-011.md](./F-011.md) | 2026-05-31 | Compare modern macOS shell options and record an accepted or deferred direction. |
+| F-012 | Save Resource Fixture Extractor | Proposed | Proposed | [F-012.md](./F-012.md) | 2026-06-04 | Create a read-only fixture extraction path for legacy roster/save resource data. |
+| F-013 | Resource Data Extraction Inventory | Proposed | Proposed | [F-013.md](./F-013.md) | 2026-06-04 | Enumerate `MainResources.rsrc` records and map runtime-relevant resource families to consumers. |
+| F-014 | Persistence Adapter Design | Proposed | Proposed | [F-014.md](./F-014.md) | 2026-06-04 | Decide save compatibility policy and first modern persistence adapter boundary. |
+| F-015 | Map/Talk/Combat Fixture Characterization | Proposed | Proposed | [F-015.md](./F-015.md) | 2026-06-04 | Characterize representative map, talk, and combat screen fixture loading. |
