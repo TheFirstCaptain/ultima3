@@ -148,6 +148,38 @@ Do not extract `Combat()` as the next step. Its current coupling would force ada
 - Searched source and project metadata for resource/file APIs, NIBs, strings, sounds, and graphics path helpers.
 - This pass identifies formats and likely consumers; it does not define conversion strategy.
 
+## Save and Resource Format Inventory
+
+F-010 completed the first focused inventory of save and resource formats. The detailed feature record is `docs/features/F-010.md`.
+
+### Save Container
+
+The legacy save container is a writable Resource Manager file named `Ultima III Roster`, opened or created by `OpenRstr` in `Sources/UltimaMisc.c`. The file is located through the classic Preferences folder API and opened with `FSpOpenResFile` in read/write mode. First-run creation uses `FSpCreateResFile` with creator `Ult3` and type `RSTR`, then copies most default resources from the bundled resource data into mutable save resources. Current Sosaria `MONS` is an exception in the new-file path: it is created as a zero-filled 256-byte resource.
+
+The roster file is not only a character roster. It owns active party bytes, roster records, current Sosaria map and monster state, mutable gameplay tables, and a legacy `PREF` resource.
+
+| Mutable resource | Runtime state | Notes |
+| --- | --- | --- |
+| `PRTY` `BASERES` | `Party[1..64]` | Manual save updates `Party[4]`/`Party[5]` from `xpos`/`ypos`; `PutParty` writes only while `Party[3] == 0`. |
+| `ROST` `BASERES` | `Player[1..20][0..63]` | 20 records of 64 bytes each. |
+| `MAPS` `BASERES + 19` | Current Sosaria map | Size byte, map bytes, and whirlpool bytes. |
+| `MONS` `BASERES + 19` | Current Sosaria monsters | 256 bytes. |
+| `MISC` `BASERES + 100..105` | Mutable table copies | Moongates, type initial table, weapon-use table, armour-use table, location table, and experience table. `ResetSosaria` only resets `+100` and `+104` from defaults. |
+| `PREF` `BASERES` | Legacy roster-file preferences | Created as 32 bytes with the first eight bytes set; no direct reads were found in this inventory pass. |
+
+### Bundled Resource Data
+
+`Resources/English.lproj/MainResources.rsrc` remains runtime-critical. The Xcode project includes it in a `PBXRezBuildPhase`; modern build/resource folders do not yet replace all Resource Manager reads.
+
+Observed read-only resource families include `MAPS`, `MONS`, `TLKS`, `MISC`, `PRTY`, `ROST`, `CONS`, `DEMO`, `SGNT`, `snd `, legacy string lists, dialogs, alerts, and default save templates. `DeRez Resources/English.lproj/MainResources.rsrc` failed locally with `eofErr (-39)`, so complete binary enumeration remains a follow-up task.
+
+### Save Flow Risks
+
+- Manual `QuitSave` refuses to save unless the party is outdoors in Sosaria.
+- Auto-save and map-transition flows call `PutRoster`, `PutParty`, `PutSosaria`, `PushSosaria`, and `PullSosaria` at specific times; these timings are part of compatibility.
+- `LoadUltimaMap` performs an in-place migration of a 4100-byte current Sosaria `MAPS` resource to a 4101-byte shape with an inserted size byte.
+- A modern persistence layer should be designed as an adapter over this resource-container behavior before changing save formats.
+
 ## Open Questions
 
 - Which legacy resource types are still required at runtime after plist/PNG/WAV assets were introduced?
