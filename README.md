@@ -4,7 +4,7 @@ This fork is a modernization project for LairWare's Ultima III, the legacy macOS
 
 https://github.com/beastie/ultima3
 
-The goal is to preserve the behavior and historical character of the original Mac game while moving the codebase toward a modern macOS application that can build and run on Apple silicon. The current work is focused on understanding the legacy system, characterizing behavior with tests, extracting portable game logic, and documenting each modernization decision before broad platform rewrites.
+The goal is to preserve the behavior and historical character of the original Mac game while moving the codebase toward a modern macOS application that can build and run on Apple silicon. The current work is focused on keeping legacy behavior characterized, extracting portable game logic, and growing a modern AppKit-owned shell through small adapter-backed milestones.
 
 ## Modernization Approach
 
@@ -16,13 +16,29 @@ The project treats the legacy source and bundled assets as the reference impleme
 4. Preserve platform-specific concerns behind future adapters for input, rendering, audio, resources, persistence, and the app shell.
 5. Record feature status, defects, validation strategy, and durable decisions in markdown so future work can resume safely.
 
-The command-line harness is the current validation path for extracted core behavior:
+The command-line harness validates extracted core behavior:
 
 ```bash
 make -C harness test
 ```
 
-The legacy Xcode target may not build on modern machines without old SDKs and frameworks. That is expected at this stage.
+The modern shell is built with SwiftPM. The legacy Xcode target may not build on modern machines without old SDKs and frameworks. That is expected at this stage.
+
+## Starting the Modern App
+
+Build the modern shell:
+
+```bash
+swift build --product Ultima3ModernShell
+```
+
+Start it from SwiftPM:
+
+```bash
+swift run Ultima3ModernShell
+```
+
+The app launched by this command is the modernization shell, not the original legacy Xcode target.
 
 ## Primary Documents
 
@@ -44,9 +60,15 @@ The legacy Xcode target may not build on modern machines without old SDKs and fr
 
 Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, and representative map/talk/combat fixtures.
 
-The first modern app shell direction is an AppKit-owned macOS shell with SwiftUI limited to preferences, inspectors, setup flows, and other non-game panels. AppKit owns lifecycle, windows, menus, command routing, input intake, the game host view, fullscreen/window behavior, and concrete save-file location.
+The first modern app shell now exists under `ModernShell/` as a SwiftPM executable product named `Ultima3ModernShell`. AppKit owns lifecycle, windows, menus, command routing, input intake, the game host view, fullscreen/window behavior, and future concrete save-file location. SwiftUI is currently limited to a preferences panel boundary.
 
-The next proposed milestones are a minimal AppKit/SwiftUI shell seed, renderer adapter spike, input adapter spike, audio adapter spike, and resource/persistence shell integration.
+The modern shell currently has early adapter smoke paths for rendering, input, and audio:
+
+- `GameHostView` renders a synthetic portable render frame through an AppKit renderer adapter.
+- Keyboard, mouse, and menu commands pass through a portable input queue.
+- A shell-owned AVFoundation audio adapter consumes portable audio events and can play bundled sound assets.
+
+The next planned milestone is F-020, resource and persistence shell integration. Its proposed child features cover shell location ownership, bundle resource reads, native save fixtures, atomic save writes, and legacy roster import. Additional proposed backlog candidates F-021 through F-026 sketch the path toward new-game state, resource-backed rendering, a shell tick, party/roster state, overworld movement, and character creation.
 
 ## App Shell Boundary
 

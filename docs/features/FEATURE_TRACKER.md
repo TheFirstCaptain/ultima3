@@ -58,8 +58,19 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-013 | Resource Data Extraction Inventory | Complete | Done | [F-013.md](./F-013.md) | 2026-06-05 | `MainResources.rsrc` inventory complete; runtime-relevant resource families mapped to consumers and follow-ups. |
 | F-014 | Persistence Adapter Design | Complete | Done | [F-014.md](./F-014.md) | 2026-06-05 | Accepted native modern save document with best-effort legacy roster import; exact legacy export deferred. |
 | F-015 | Map/Talk/Combat Fixture Characterization | Complete | Done | [F-015.md](./F-015.md) | 2026-06-05 | Representative map, talk, dungeon, and combat screen fixtures characterized in the harness. |
-| F-016 | Minimal AppKit/SwiftUI Shell Seed | Proposed | Proposed | [F-016.md](./F-016.md) | 2026-06-05 | Create the first modern AppKit-owned shell target with placeholder game host and SwiftUI panel boundary. |
-| F-017 | Renderer Adapter Spike | Proposed | Proposed | [F-017.md](./F-017.md) | 2026-06-05 | Define the first renderer adapter contract for an AppKit-hosted game view. |
-| F-018 | Input Adapter Spike | Proposed | Proposed | [F-018.md](./F-018.md) | 2026-06-05 | Map AppKit keyboard, mouse, menu, and macro inputs into core-facing command events. |
-| F-019 | Audio Adapter Spike | Proposed | Proposed | [F-019.md](./F-019.md) | 2026-06-05 | Define the modern shell audio boundary replacing QuickTime and Sound Manager assumptions. |
-| F-020 | Resource and Persistence Shell Integration | Proposed | Proposed | [F-020.md](./F-020.md) | 2026-06-05 | Wire shell-owned bundle/save locations into resource and persistence adapters. |
+| F-016 | Minimal AppKit/SwiftUI Shell Seed | Complete | Done | [F-016.md](./F-016.md) | 2026-06-05 | SwiftPM modern shell scaffold added with AppKit-owned host, SwiftUI preferences boundary, and C core linkage. |
+| F-017 | Renderer Adapter Spike | Complete | Done | [F-017.md](./F-017.md) | 2026-06-05 | Portable render frame contract added with AppKit synthetic tile-grid renderer smoke path. |
+| F-018 | Input Adapter Spike | Complete | Done | [F-018.md](./F-018.md) | 2026-06-05 | Portable input event queue added and wired through shell keyboard, mouse, and menu smoke commands. |
+| F-019 | Audio Adapter Spike | Complete | Done | [F-019.md](./F-019.md) | 2026-06-05 | Portable audio event queue added with AVFoundation shell adapter and Test Sound smoke command. |
+| F-020 | Resource and Persistence Shell Integration | Planned | Planned | [F-020.md](./F-020.md) | 2026-06-05 | Umbrella plan drafted; child implementation candidates proposed for shell locations, resource adapter, save fixtures, atomic write smoke, and legacy import. |
+| F-020A | Shell Location Provider Smoke | Proposed | Proposed | [F-020A.md](./F-020A.md) | 2026-06-05 | Candidate first slice for shell-owned resource root and save-path visibility. |
+| F-020B | Bundle Resource Adapter Smoke | Proposed | Proposed | [F-020B.md](./F-020B.md) | 2026-06-05 | Candidate resource-root adapter smoke using known bundled fixture data. |
+| F-020C | Native Save Fixture Builder | Proposed | Proposed | [F-020C.md](./F-020C.md) | 2026-06-05 | Candidate deterministic native new-game save fixture from characterized default templates. |
+| F-020D | Save Path and Atomic Write Smoke | Proposed | Proposed | [F-020D.md](./F-020D.md) | 2026-06-05 | Candidate shell save-path and adapter-owned atomic write/read smoke. |
+| F-020E | Legacy Roster Import Fixture Spike | Proposed | Proposed | [F-020E.md](./F-020E.md) | 2026-06-05 | Candidate import spike for real or synthesized mutable legacy roster fixture data. |
+| F-021 | New Game Save Domain Smoke | Proposed | Proposed | [F-021.md](./F-021.md) | 2026-06-05 | Candidate post-F-020 slice for creating and loading a deterministic modern new-game state. |
+| F-022 | Resource-Backed Render Smoke | Proposed | Proposed | [F-022.md](./F-022.md) | 2026-06-05 | Candidate post-F-020B slice replacing synthetic render data with bundled resource-backed data. |
+| F-023 | Shell Game Loop Tick | Proposed | Proposed | [F-023.md](./F-023.md) | 2026-06-05 | Candidate coordination slice for input, update, render, and audio smoke behavior. |
+| F-024 | Party/Roster State Adapter | Proposed | Proposed | [F-024.md](./F-024.md) | 2026-06-05 | Candidate state adapter for shell-visible party and roster inspection. |
+| F-025 | Overworld Movement Smoke | Proposed | Proposed | [F-025.md](./F-025.md) | 2026-06-05 | Candidate first playable movement slice using modern input and rendering. |
+| F-026 | Character Creation Flow Spike | Proposed | Proposed | [F-026.md](./F-026.md) | 2026-06-05 | Candidate setup-flow spike after party/roster state is available. |

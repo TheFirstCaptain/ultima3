@@ -12,7 +12,10 @@ TESTS = \
 	$(BUILD_DIR)/combat_monster_action_tests \
 	$(BUILD_DIR)/autocombat_targeting_tests \
 	$(BUILD_DIR)/dungeon_navigation_tests \
-	$(BUILD_DIR)/resource_fixture_tests
+	$(BUILD_DIR)/resource_fixture_tests \
+	$(BUILD_DIR)/render_contract_tests \
+	$(BUILD_DIR)/input_adapter_tests \
+	$(BUILD_DIR)/audio_adapter_tests
 
 .PHONY: test clean
 
@@ -48,6 +51,15 @@ $(BUILD_DIR)/dungeon_navigation_tests: dungeon_navigation_tests.c $(CORE_SRC)/u3
 
 $(BUILD_DIR)/resource_fixture_tests: resource_fixture_tests.c $(CORE_SRC)/u3_resource.c $(CORE_INCLUDE)/u3_resource.h ../Resources/English.lproj/MainResources.rsrc | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) resource_fixture_tests.c $(CORE_SRC)/u3_resource.c -o $@
+
+$(BUILD_DIR)/render_contract_tests: render_contract_tests.c $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) render_contract_tests.c $(CORE_SRC)/u3_render.c -o $@
+
+$(BUILD_DIR)/input_adapter_tests: input_adapter_tests.c $(CORE_SRC)/u3_input.c $(CORE_INCLUDE)/u3_input.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) input_adapter_tests.c $(CORE_SRC)/u3_input.c -o $@
+
+$(BUILD_DIR)/audio_adapter_tests: audio_adapter_tests.c $(CORE_SRC)/u3_audio.c $(CORE_INCLUDE)/u3_audio.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) audio_adapter_tests.c $(CORE_SRC)/u3_audio.c -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)

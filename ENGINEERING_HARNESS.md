@@ -56,6 +56,7 @@ If the legacy build is not available, document the failure or why it was skipped
 6. Run applicable validation and record skipped checks.
 7. Update feature, bug, modernization, architecture, or decision documentation when the work changes status, boundaries, or strategy.
 8. After every coding task, run an independent subagent code review before final handoff. Resolve review findings or explicitly document accepted residual risk. If subagent tooling is unavailable, record that in the handoff. For documentation-only changes that record major decisions, feature contracts, or workflow rules, also run an independent subagent review when tooling is available.
+9. After review findings and fixes are complete, provide step-by-step instructions for the user to test the changed behavior manually. Include exact commands, expected observations, and any known residual risk for UI, rendering, input, audio, or other human-in-the-loop validation paths.
 
 ## Initial Inventory Targets
 
@@ -84,5 +85,6 @@ If the legacy build is not available, document the failure or why it was skipped
 - Preserve user work and avoid destructive git or filesystem commands.
 - State uncertainty explicitly when the code does not prove behavior.
 - After every coding task, run an independent subagent code review before final handoff. Resolve findings or explicitly document accepted residual risk. If subagent tooling is unavailable, say so in the handoff.
+- After code review and fixes are complete, include concrete manual test instructions in the final handoff so human-in-the-loop validation is repeatable.
 - For major decision, feature contract, or workflow documentation changes, also use an independent subagent review when tooling is available.
 - Before feature or milestone work, identify what decisions need to be made first; ask the user only when the decision requires input, and if no decision is needed, say so and proceed.

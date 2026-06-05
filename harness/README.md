@@ -20,5 +20,8 @@ make -C harness test
 - `autocombat_targeting_tests.c` also characterizes the top-level `AutoCombat` macro decision flow as a portable bounded command sequence.
 - `dungeon_navigation_tests.c` characterizes bounded dungeon navigation behavior from `Sources/UltimaDngn.c`: `Forward`, `Retreat`, `Left`, `Right`, `dDescend`, and `dKlimb`.
 - `resource_fixture_tests.c` validates the read-only classic resource parser against `Resources/English.lproj/MainResources.rsrc`, confirms the default save-template records needed for fixture extraction, asserts archive inventory totals used by resource-planning docs, and characterizes representative map, talk, dungeon, and combat-screen fixture layouts.
+- `render_contract_tests.c` characterizes the portable renderer frame contract, including logical dimensions, 11x11 tile-grid command layout, command capacity, and synthetic frame generation.
+- `input_adapter_tests.c` characterizes the portable input event queue shared by keyboard, mouse, menu, and macro-driven command events.
+- `audio_adapter_tests.c` characterizes the portable audio event queue shared by sound, music, stop, and volume events.
 
 These harnesses compile small shared portable implementations from `Core/src/` and keep references back to the legacy source in the core files. This keeps the validation path executable on a modern compiler while avoiding broad platform shims for unrelated legacy file dependencies.

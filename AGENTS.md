@@ -22,7 +22,7 @@ There is no automated test suite or dedicated test directory. Validate changes b
 
 Before implementing or reviewing modern shell, adapter, or `Core/` changes, read `BOUNDARIES.md` and preserve the AppKit/SwiftUI/core/adapter ownership rules documented there.
 
-After completing any coding task, run an independent subagent code review before final handoff. Treat review findings as part of the task: resolve them, or explicitly document why they are accepted residual risk. If subagent tooling is unavailable, state that clearly in the handoff.
+After completing any coding task, run an independent subagent code review before final handoff. Treat review findings as part of the task: resolve them, or explicitly document why they are accepted residual risk. If subagent tooling is unavailable, state that clearly in the handoff. After review findings and fixes are complete, include step-by-step instructions for the user to test the changed behavior manually, especially for UI, rendering, input, audio, or other human-in-the-loop validation paths.
 
 ## Commit & Pull Request Guidelines
 
