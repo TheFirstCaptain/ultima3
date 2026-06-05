@@ -179,6 +179,8 @@ The parsed bundled `MISC` 401, 402, and 403 records are 11 bytes each, while leg
 
 F-013 extended the parser with enumeration support and inventoried the full archive: 45 resource types and 303 records. Runtime-critical records include map/monster/talk data, combat screens, default save templates, demo/sign data, the legacy intro sound, legacy PICT/UI resources, menus/dialogs/alerts/controls, and remaining string lists. The detailed type inventory and consumer mapping are recorded in `docs/features/F-013.md`.
 
+F-015 added harness characterization for representative `LoadUltimaMap` and `GetScreen` fixture boundaries: `MAPS`/`MONS`/`TLKS` 400, `MAPS`/`MONS`/`TLKS` 421, dungeon `MAPS`/`TLKS` 412, full 200-byte `CONS` 400, and 121-byte special `CONS` 410. Dungeon fixture coverage records that legacy `LoadUltimaMap` skips bundled `MONS` for dungeon IDs but still loads `TLKS` for IDs below 419. The special `CONS` records are documented as tile-grid-only at this boundary because they are too short for the full monster and character offsets read by `GetScreen`.
+
 ### Save Flow Risks
 
 - Manual `QuitSave` refuses to save unless the party is outdoors in Sosaria.
