@@ -55,5 +55,5 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-011 | Modern App Shell Decision Spike | Proposed | Proposed | [F-011.md](./F-011.md) | 2026-05-31 | Compare modern macOS shell options and record an accepted or deferred direction. |
 | F-012 | Save Resource Fixture Extractor | Complete | Done | [F-012.md](./F-012.md) | 2026-06-05 | Read-only classic resource parser and harness validation added for default save-template records. |
 | F-013 | Resource Data Extraction Inventory | Complete | Done | [F-013.md](./F-013.md) | 2026-06-05 | `MainResources.rsrc` inventory complete; runtime-relevant resource families mapped to consumers and follow-ups. |
-| F-014 | Persistence Adapter Design | Proposed | Proposed | [F-014.md](./F-014.md) | 2026-06-04 | Decide save compatibility policy and first modern persistence adapter boundary. |
+| F-014 | Persistence Adapter Design | Complete | Done | [F-014.md](./F-014.md) | 2026-06-05 | Accepted native modern save document with best-effort legacy roster import; exact legacy export deferred. |
 | F-015 | Map/Talk/Combat Fixture Characterization | Complete | Done | [F-015.md](./F-015.md) | 2026-06-05 | Representative map, talk, dungeon, and combat screen fixtures characterized in the harness. |

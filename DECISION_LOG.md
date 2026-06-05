@@ -149,3 +149,17 @@ Status: Accepted
 - This intentionally differs from raw `AddMacro` call order because legacy `AddMacro` pushes each new key to the front of the macro buffer.
 - Direct consumers should execute `u3_autocombat_macro.commands` from index `0` through `length - 1`.
 - Adapters that enqueue through legacy `AddMacro` must preserve `Macro[0]` as the next command to execute, for example by enqueueing returned commands in reverse order or by writing the legacy macro buffer directly.
+
+## 2026-06-05: Persistence Adapter Uses Modern Native Save With Legacy Import
+
+Status: Accepted
+
+- The first modern persistence adapter should use a canonical modern save document for native reads and writes, not writable classic Resource Manager files.
+- The adapter boundary should preserve the legacy save domains as explicit records: active party bytes, roster bytes, current Sosaria map bytes, current Sosaria monster bytes, mutable `MISC` table bytes, and compatibility metadata.
+- Legacy `Ultima III Roster` files should be supported first as best-effort import fixtures through the classic resource parser, after real or synthesized mutable roster fixtures exist.
+- Exact legacy export is deferred until mutable roster fixture coverage proves record sizes, resource-map behavior, and save timing well enough to avoid corrupt or misleading exports.
+- A new-format-only path is rejected for the first adapter because it would discard feasible compatibility with historical saves and weaken behavior comparison.
+- The app shell should provide the concrete save-file location or URL. The persistence adapter should not bake in AppKit, sandbox, Preferences-folder, or application-support path APIs.
+- Manual saves must preserve the legacy outdoor-Sosaria restriction: save commands write durable state only when the party is in Sosaria (`Party[3] == 0`) after synchronizing party position bytes.
+- Auto-save and transition writes must preserve legacy timing around `PutRoster`, `PutParty`, `PutSosaria`, `PushSosaria`, and `PullSosaria`; temporary pushed Sosaria state remains an in-session snapshot unless a legacy path explicitly flushes it.
+- Persistence writes should be atomic at the adapter boundary: serialize a complete save document and replace the previous durable document only after the new one is valid.

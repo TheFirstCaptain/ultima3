@@ -21,6 +21,12 @@ Use this document to plan the modernization path from the legacy Mac application
 - Resource and persistence adapter
 - Modern macOS app shell
 
+## Persistence Direction
+
+F-014 accepts a first persistence boundary: native modern saves should use a canonical modern save document, while legacy `Ultima III Roster` files should be supported first as best-effort imports after mutable roster fixtures exist. Exact legacy export is deferred.
+
+The persistence adapter should own byte-preserving records for active party, roster, current Sosaria map, current Sosaria monsters, and mutable `MISC` tables. The app shell should provide the concrete storage location; the adapter should not directly depend on AppKit, Carbon, Preferences-folder, sandbox, or application-support APIs.
+
 ## Sequencing Notes
 
 Prefer subsystems with clear inputs and outputs before tightly coupled UI/rendering work.

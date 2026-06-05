@@ -181,6 +181,8 @@ F-013 extended the parser with enumeration support and inventoried the full arch
 
 F-015 added harness characterization for representative `LoadUltimaMap` and `GetScreen` fixture boundaries: `MAPS`/`MONS`/`TLKS` 400, `MAPS`/`MONS`/`TLKS` 421, dungeon `MAPS`/`TLKS` 412, full 200-byte `CONS` 400, and 121-byte special `CONS` 410. Dungeon fixture coverage records that legacy `LoadUltimaMap` skips bundled `MONS` for dungeon IDs but still loads `TLKS` for IDs below 419. The special `CONS` records are documented as tile-grid-only at this boundary because they are too short for the full monster and character offsets read by `GetScreen`.
 
+F-014 accepted the first persistence adapter direction: use a native modern save document for durable modern writes, preserve legacy save domains as explicit byte records, and support legacy `Ultima III Roster` files first as best-effort imports after mutable roster fixtures exist. Exact legacy export remains deferred.
+
 ### Save Flow Risks
 
 - Manual `QuitSave` refuses to save unless the party is outdoors in Sosaria.
