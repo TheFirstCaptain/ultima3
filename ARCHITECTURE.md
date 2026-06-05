@@ -45,7 +45,9 @@ main.m
 
 ## Target Architecture
 
-The modernization target is a modern macOS app shell around an isolated, testable game core. Platform-specific behavior should move behind adapters so the game rules and state transitions can be characterized and ported independently from rendering, input, audio, and persistence.
+The modernization target is a modern macOS app shell around an isolated, testable game core. Platform-specific behavior must move behind adapters so the game rules and state transitions can be characterized and ported independently from rendering, input, audio, and persistence.
+
+F-011 accepts the first shell direction as an AppKit-owned macOS shell with SwiftUI used selectively for preferences, inspectors, setup flows, and future non-game panels. AppKit owns application lifecycle, primary windowing, menus, command routing, event routing, the game host view, and concrete save-file location ownership.
 
 ```text
 Modern macOS app shell
@@ -64,11 +66,17 @@ Modern macOS app shell
 
 ## Target Boundary Rules
 
-- The portable game core should not call macOS UI, audio, filesystem, resource, or rendering APIs directly.
-- Platform adapters should translate modern app events and services into core-facing interfaces.
+- AppKit must own the modern shell lifecycle, primary windows, menus, command routing, keyboard and mouse event intake, fullscreen/window behavior, game host view, and concrete save-file location provider.
+- SwiftUI must be limited to preferences, inspectors, setup flows, and future non-game panels unless a later decision explicitly changes ownership.
+- SwiftUI must not own the shell lifecycle, command model, primary game surface, deterministic game loop, or first-hop game input routing in the first shell milestone.
+- The portable game core must not call macOS UI, audio, filesystem, resource, rendering, preference, or application lifecycle APIs directly.
+- `Core/` public headers must not expose AppKit, SwiftUI, SDL, Metal, AVFoundation, Foundation filesystem, sandbox, or other platform framework types.
+- Platform adapters must translate modern app events and services into core-facing interfaces using portable C data, result structs, events, command buffers, or explicit state transitions.
+- Renderer, input, audio, resource, and persistence implementation choices must remain behind adapters. The F-011 shell decision does not choose the final renderer, final audio backend, final asset conversion path, or persistence format beyond the F-014 direction.
+- The app shell may provide concrete bundle and save-file URLs or paths, but resource parsing and persistence serialization must remain adapter-owned.
 - Legacy code remains the reference implementation until behavior is characterized or intentionally changed.
-- State mutations should become explicit and testable over time.
-- Asset conversion should be documented and reproducible when historical formats are replaced.
+- State mutations must become explicit and testable before they move into stable core-facing APIs.
+- Asset conversion must be documented and reproducible when historical formats are replaced.
 
 ## Portable Core Layout
 
@@ -103,7 +111,6 @@ The core is plain C. Public headers and functions use a lowercase `u3_` prefix, 
 
 ## Open Questions
 
-- Should the modern shell use AppKit, SwiftUI, SDL, or another approach?
 - Should the portable game core remain in C, move to C++, or be ported to Swift?
 - Which renderer should own tiles, animation, scaling, and color management?
 - Should legacy save files remain compatible?

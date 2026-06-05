@@ -52,9 +52,14 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-009B | Player Combat Attack Resolution Core | Complete | Done | [F-009B.md](./F-009B.md) | 2026-06-03 | Post-direction `CombatAttack` extracted to portable core and harness-covered. |
 | F-009C | Monster Combat Action Resolution Core | Complete | Done | [F-009C.md](./F-009C.md) | 2026-06-03 | Bounded monster action resolution extracted to portable core and harness-covered. |
 | F-010 | Save and Resource Format Inventory | Complete | Done | [F-010.md](./F-010.md) | 2026-06-04 | Save/resource inventory complete; follow-ups proposed for fixtures, resource enumeration, persistence adapter design, and map/talk/combat fixtures. |
-| F-011 | Modern App Shell Decision Spike | Proposed | Proposed | [F-011.md](./F-011.md) | 2026-06-05 | Compare modern macOS shell options and record an accepted or deferred direction; F-011A matrix input added. |
+| F-011 | Modern App Shell Decision Spike | Complete | Done | [F-011.md](./F-011.md) | 2026-06-05 | Accepted AppKit-owned shell with SwiftUI secondary panels; follow-up shell and adapter milestones proposed. |
 | F-011A | Modern App Shell Options Matrix | Complete | Done | [F-011A.md](./F-011A.md) | 2026-06-05 | Tiered shell-options matrix created for F-011 decision input. |
 | F-012 | Save Resource Fixture Extractor | Complete | Done | [F-012.md](./F-012.md) | 2026-06-05 | Read-only classic resource parser and harness validation added for default save-template records. |
 | F-013 | Resource Data Extraction Inventory | Complete | Done | [F-013.md](./F-013.md) | 2026-06-05 | `MainResources.rsrc` inventory complete; runtime-relevant resource families mapped to consumers and follow-ups. |
 | F-014 | Persistence Adapter Design | Complete | Done | [F-014.md](./F-014.md) | 2026-06-05 | Accepted native modern save document with best-effort legacy roster import; exact legacy export deferred. |
 | F-015 | Map/Talk/Combat Fixture Characterization | Complete | Done | [F-015.md](./F-015.md) | 2026-06-05 | Representative map, talk, dungeon, and combat screen fixtures characterized in the harness. |
+| F-016 | Minimal AppKit/SwiftUI Shell Seed | Proposed | Proposed | [F-016.md](./F-016.md) | 2026-06-05 | Create the first modern AppKit-owned shell target with placeholder game host and SwiftUI panel boundary. |
+| F-017 | Renderer Adapter Spike | Proposed | Proposed | [F-017.md](./F-017.md) | 2026-06-05 | Define the first renderer adapter contract for an AppKit-hosted game view. |
+| F-018 | Input Adapter Spike | Proposed | Proposed | [F-018.md](./F-018.md) | 2026-06-05 | Map AppKit keyboard, mouse, menu, and macro inputs into core-facing command events. |
+| F-019 | Audio Adapter Spike | Proposed | Proposed | [F-019.md](./F-019.md) | 2026-06-05 | Define the modern shell audio boundary replacing QuickTime and Sound Manager assumptions. |
+| F-020 | Resource and Persistence Shell Integration | Proposed | Proposed | [F-020.md](./F-020.md) | 2026-06-05 | Wire shell-owned bundle/save locations into resource and persistence adapters. |

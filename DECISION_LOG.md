@@ -163,3 +163,16 @@ Status: Accepted
 - Manual saves must preserve the legacy outdoor-Sosaria restriction: save commands write durable state only when the party is in Sosaria (`Party[3] == 0`) after synchronizing party position bytes.
 - Auto-save and transition writes must preserve legacy timing around `PutRoster`, `PutParty`, `PutSosaria`, `PushSosaria`, and `PullSosaria`; temporary pushed Sosaria state remains an in-session snapshot unless a legacy path explicitly flushes it.
 - Persistence writes should be atomic at the adapter boundary: serialize a complete save document and replace the previous durable document only after the new one is valid.
+
+## 2026-06-05: First Modern App Shell Uses AppKit With SwiftUI Panels
+
+Status: Accepted
+
+- The first modern macOS shell must use an AppKit-owned application lifecycle, primary window, menu/command routing, keyboard and mouse event routing, fullscreen/window behavior, game host view, and concrete save-file location provider.
+- SwiftUI must be used only for preferences, inspectors, setup flows, and future non-game panels unless a later decision explicitly changes ownership.
+- SwiftUI must not own the shell lifecycle, command model, primary game surface, deterministic game loop, or first-hop game input routing in the first shell milestone.
+- `Core/` public headers must not expose AppKit, SwiftUI, SDL, Metal, AVFoundation, Foundation filesystem, sandbox, or other platform framework types.
+- Renderer, input, audio, resource, and persistence behavior must remain behind adapters and communicate with the portable core through portable C data, result structs, events, command buffers, or explicit state transitions. The shell decision does not choose the final renderer, final audio implementation, final asset conversion path, or persistence format beyond the F-014 direction.
+- The shell may provide concrete bundle and save-file URLs or paths, but resource parsing and persistence serialization must remain adapter-owned.
+- SDL3 remains a possible renderer/input portability fallback, especially inside an AppKit-owned shell, but a pure SDL shell is rejected for the first milestone because it weakens native macOS menus, preferences, save-file presentation, accessibility, and app conventions.
+- Follow-up work should start with a minimal AppKit shell seed, then separate renderer, input, audio, and resource/persistence adapter milestones.

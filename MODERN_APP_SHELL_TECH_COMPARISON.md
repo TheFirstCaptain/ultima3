@@ -1,6 +1,8 @@
 # Modern App Shell Tech Comparison
 
-Purpose: provide an offline decision aid for F-011 before recording the modern app shell direction. This document compares candidate shell technologies against the needs of this specific Ultima III modernization effort. It does not choose the final direction.
+Purpose: provide an offline decision aid for F-011 before recording the modern app shell direction. This document compares candidate shell technologies against the needs of this specific Ultima III modernization effort.
+
+F-011 outcome: accepted 2026-06-05. The first modern shell direction is `AppKit plus SwiftUI hybrid`: AppKit owns lifecycle, windowing, menus, commands, event routing, game host view, and concrete save-file location; SwiftUI is limited to preferences and secondary panels in the first shell milestone.
 
 ## Application Needs
 
@@ -190,7 +192,7 @@ If native macOS behavior is weighted highest, the leading candidates are `AppKit
 
 If cross-platform rendering/input portability is weighted highest, the leading candidates are `SDL3 shell` and `SDL3 inside AppKit hybrid`.
 
-If the project wants the lowest-risk first shell for the current repository shape, `AppKit plus SwiftUI hybrid` appears strongest because it keeps AppKit in charge of shell behavior while leaving SwiftUI available for secondary UI. This is a preliminary read only; F-011 still owns the final accepted or deferred decision.
+F-011 accepted `AppKit plus SwiftUI hybrid` as the first shell direction because it keeps AppKit in charge of shell behavior while leaving SwiftUI available for secondary UI.
 
 ## Source Trail
 
