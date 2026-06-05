@@ -30,6 +30,8 @@ typedef struct u3_resource_record {
 } u3_resource_record;
 
 int u3_resource_open(const uint8_t *bytes, size_t length, u3_resource_file *resource_file);
+int u3_resource_get_type(const u3_resource_file *resource_file, uint32_t type_index, uint32_t *type, uint32_t *record_count);
+int u3_resource_get_record(const u3_resource_file *resource_file, uint32_t type_index, uint32_t record_index, u3_resource_record *record);
 int u3_resource_find(const u3_resource_file *resource_file, uint32_t type, int16_t id, u3_resource_record *record);
 
 #endif

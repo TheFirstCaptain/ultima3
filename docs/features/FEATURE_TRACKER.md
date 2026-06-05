@@ -54,6 +54,6 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-010 | Save and Resource Format Inventory | Complete | Done | [F-010.md](./F-010.md) | 2026-06-04 | Save/resource inventory complete; follow-ups proposed for fixtures, resource enumeration, persistence adapter design, and map/talk/combat fixtures. |
 | F-011 | Modern App Shell Decision Spike | Proposed | Proposed | [F-011.md](./F-011.md) | 2026-05-31 | Compare modern macOS shell options and record an accepted or deferred direction. |
 | F-012 | Save Resource Fixture Extractor | Complete | Done | [F-012.md](./F-012.md) | 2026-06-05 | Read-only classic resource parser and harness validation added for default save-template records. |
-| F-013 | Resource Data Extraction Inventory | Proposed | Proposed | [F-013.md](./F-013.md) | 2026-06-04 | Enumerate `MainResources.rsrc` records and map runtime-relevant resource families to consumers. |
+| F-013 | Resource Data Extraction Inventory | Complete | Done | [F-013.md](./F-013.md) | 2026-06-05 | `MainResources.rsrc` inventory complete; runtime-relevant resource families mapped to consumers and follow-ups. |
 | F-014 | Persistence Adapter Design | Proposed | Proposed | [F-014.md](./F-014.md) | 2026-06-04 | Decide save compatibility policy and first modern persistence adapter boundary. |
 | F-015 | Map/Talk/Combat Fixture Characterization | Proposed | Proposed | [F-015.md](./F-015.md) | 2026-06-04 | Characterize representative map, talk, and combat screen fixture loading. |

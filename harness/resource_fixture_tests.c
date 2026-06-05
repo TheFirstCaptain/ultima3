@@ -98,6 +98,60 @@ static void assert_named_resource(const u3_resource_file *resource_file,
     ASSERT_BYTES_EQ((const uint8_t *)expected_name, record.name, record.name_length);
 }
 
+static uint32_t count_records_for_type(const u3_resource_file *resource_file, uint32_t expected_type)
+{
+    uint32_t type_index;
+
+    for (type_index = 0; type_index < resource_file->type_count; type_index++) {
+        uint32_t type;
+        uint32_t record_count;
+
+        ASSERT_TRUE(u3_resource_get_type(resource_file, type_index, &type, &record_count));
+        if (type == expected_type)
+            return record_count;
+    }
+
+    return 0;
+}
+
+static void test_enumerates_resource_inventory(void)
+{
+    size_t length;
+    uint8_t *bytes = read_file("../Resources/English.lproj/MainResources.rsrc", &length);
+    u3_resource_file resource_file;
+    uint32_t type_index;
+    uint32_t total_records = 0;
+
+    ASSERT_TRUE(u3_resource_open(bytes, length, &resource_file));
+    ASSERT_EQ_INT(45, (int)resource_file.type_count);
+
+    for (type_index = 0; type_index < resource_file.type_count; type_index++) {
+        uint32_t type;
+        uint32_t record_count;
+        uint32_t record_index;
+
+        ASSERT_TRUE(u3_resource_get_type(&resource_file, type_index, &type, &record_count));
+        total_records += record_count;
+        for (record_index = 0; record_index < record_count; record_index++) {
+            u3_resource_record record;
+
+            ASSERT_TRUE(u3_resource_get_record(&resource_file, type_index, record_index, &record));
+            ASSERT_EQ_INT((int)type, (int)record.type);
+        }
+    }
+
+    ASSERT_EQ_INT(303, (int)total_records);
+    ASSERT_EQ_INT(21, (int)count_records_for_type(&resource_file, U3_RESOURCE_TYPE('M', 'A', 'P', 'S')));
+    ASSERT_EQ_INT(14, (int)count_records_for_type(&resource_file, U3_RESOURCE_TYPE('M', 'O', 'N', 'S')));
+    ASSERT_EQ_INT(20, (int)count_records_for_type(&resource_file, U3_RESOURCE_TYPE('T', 'L', 'K', 'S')));
+    ASSERT_EQ_INT(13, (int)count_records_for_type(&resource_file, U3_RESOURCE_TYPE('C', 'O', 'N', 'S')));
+    ASSERT_EQ_INT(6, (int)count_records_for_type(&resource_file, U3_RESOURCE_TYPE('M', 'I', 'S', 'C')));
+    ASSERT_EQ_INT(6, (int)count_records_for_type(&resource_file, U3_RESOURCE_TYPE('S', 'T', 'R', '#')));
+    ASSERT_EQ_INT(5, (int)count_records_for_type(&resource_file, U3_RESOURCE_TYPE('P', 'I', 'C', 'T')));
+
+    free(bytes);
+}
+
 static void test_open_main_resources(void)
 {
     size_t length;
@@ -208,6 +262,7 @@ static void test_rejects_wrapped_type_count(void)
 int main(void)
 {
     test_open_main_resources();
+    test_enumerates_resource_inventory();
     test_extracts_default_save_templates();
     test_runtime_save_records_are_not_in_bundled_templates();
     test_rejects_truncated_resources();

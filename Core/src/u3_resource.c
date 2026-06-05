@@ -38,6 +38,58 @@ static uint32_t u3_resource_read_u32(const uint8_t *bytes, uint32_t offset)
     return ((uint32_t)bytes[offset] << 24) | ((uint32_t)bytes[offset + 1] << 16) | ((uint32_t)bytes[offset + 2] << 8) | bytes[offset + 3];
 }
 
+static int u3_resource_read_record(const u3_resource_file *resource_file,
+                                   uint32_t ref_offset,
+                                   uint32_t type,
+                                   u3_resource_record *record)
+{
+    const uint8_t *bytes = resource_file->bytes;
+    int16_t name_offset;
+    uint32_t data_relative_offset;
+    uint32_t data_length_offset;
+    uint32_t record_data_length;
+    const uint8_t *name = 0;
+    uint8_t name_length = 0;
+
+    name_offset = u3_resource_read_i16(bytes, ref_offset + 2);
+    data_relative_offset = u3_resource_read_u24(bytes, ref_offset + 5);
+    if (!u3_resource_subrange_valid(0, resource_file->data_length, data_relative_offset, 4))
+        return 0;
+    data_length_offset = resource_file->data_offset + data_relative_offset;
+
+    if (!u3_resource_range_valid(resource_file->length, data_length_offset, 4))
+        return 0;
+    record_data_length = u3_resource_read_u32(bytes, data_length_offset);
+    if (!u3_resource_range_valid(resource_file->length, data_length_offset + 4, record_data_length))
+        return 0;
+    if (!u3_resource_subrange_valid(0, resource_file->data_length, data_relative_offset + 4, record_data_length))
+        return 0;
+
+    if (name_offset >= 0) {
+        uint32_t absolute_name_offset = resource_file->name_list_offset + (uint16_t)name_offset;
+
+        if (!u3_resource_range_valid(resource_file->length, absolute_name_offset, 1))
+            return 0;
+        if (!u3_resource_subrange_valid(resource_file->map_offset, resource_file->map_length, absolute_name_offset, 1))
+            return 0;
+        name_length = bytes[absolute_name_offset];
+        if (!u3_resource_range_valid(resource_file->length, absolute_name_offset + 1, name_length))
+            return 0;
+        if (!u3_resource_subrange_valid(resource_file->map_offset, resource_file->map_length, absolute_name_offset + 1, name_length))
+            return 0;
+        name = bytes + absolute_name_offset + 1;
+    }
+
+    record->type = type;
+    record->id = u3_resource_read_i16(bytes, ref_offset);
+    record->data = bytes + data_length_offset + 4;
+    record->length = record_data_length;
+    record->name = name;
+    record->name_length = name_length;
+    record->attributes = bytes[ref_offset + 4];
+    return 1;
+}
+
 int u3_resource_open(const uint8_t *bytes, size_t length, u3_resource_file *resource_file)
 {
     uint32_t data_offset;
@@ -93,81 +145,76 @@ int u3_resource_open(const uint8_t *bytes, size_t length, u3_resource_file *reso
     return 1;
 }
 
-int u3_resource_find(const u3_resource_file *resource_file, uint32_t type, int16_t id, u3_resource_record *record)
+int u3_resource_get_type(const u3_resource_file *resource_file, uint32_t type_index, uint32_t *type, uint32_t *record_count)
 {
     const uint8_t *bytes;
+    uint32_t type_offset;
+
+    if (resource_file == 0 || resource_file->bytes == 0 || type == 0 || record_count == 0)
+        return 0;
+    if (type_index >= resource_file->type_count)
+        return 0;
+
+    bytes = resource_file->bytes;
+    type_offset = resource_file->type_list_offset + 2 + (type_index * 8);
+    *type = u3_resource_read_u32(bytes, type_offset);
+    *record_count = (uint32_t)u3_resource_read_u16(bytes, type_offset + 4) + 1;
+    return 1;
+}
+
+int u3_resource_get_record(const u3_resource_file *resource_file, uint32_t type_index, uint32_t record_index, u3_resource_record *record)
+{
+    const uint8_t *bytes;
+    uint32_t type_offset;
+    uint32_t type;
+    uint32_t record_count;
+    uint32_t ref_list_offset;
+    uint32_t ref_offset;
+
+    if (resource_file == 0 || resource_file->bytes == 0 || record == 0)
+        return 0;
+    if (type_index >= resource_file->type_count)
+        return 0;
+
+    bytes = resource_file->bytes;
+    type_offset = resource_file->type_list_offset + 2 + (type_index * 8);
+    type = u3_resource_read_u32(bytes, type_offset);
+    record_count = (uint32_t)u3_resource_read_u16(bytes, type_offset + 4) + 1;
+    if (record_index >= record_count)
+        return 0;
+
+    ref_list_offset = resource_file->type_list_offset + u3_resource_read_u16(bytes, type_offset + 6);
+    if (!u3_resource_range_valid(resource_file->length, ref_list_offset, record_count * 12))
+        return 0;
+    if (!u3_resource_subrange_valid(resource_file->map_offset, resource_file->map_length, ref_list_offset, record_count * 12))
+        return 0;
+
+    ref_offset = ref_list_offset + (record_index * 12);
+    return u3_resource_read_record(resource_file, ref_offset, type, record);
+}
+
+int u3_resource_find(const u3_resource_file *resource_file, uint32_t type, int16_t id, u3_resource_record *record)
+{
     uint32_t type_index;
 
     if (resource_file == 0 || record == 0 || resource_file->bytes == 0)
         return 0;
 
-    bytes = resource_file->bytes;
     for (type_index = 0; type_index < resource_file->type_count; type_index++) {
-        uint32_t type_offset = resource_file->type_list_offset + 2 + ((uint32_t)type_index * 8);
-        uint32_t entry_type = u3_resource_read_u32(bytes, type_offset);
+        uint32_t entry_type;
         uint32_t record_count;
-        uint32_t ref_list_offset;
         uint32_t record_index;
 
+        if (!u3_resource_get_type(resource_file, type_index, &entry_type, &record_count))
+            return 0;
         if (entry_type != type)
             continue;
 
-        record_count = (uint32_t)u3_resource_read_u16(bytes, type_offset + 4) + 1;
-        ref_list_offset = resource_file->type_list_offset + u3_resource_read_u16(bytes, type_offset + 6);
-        if (!u3_resource_range_valid(resource_file->length, ref_list_offset, (uint32_t)record_count * 12))
-            return 0;
-        if (!u3_resource_subrange_valid(resource_file->map_offset, resource_file->map_length, ref_list_offset, record_count * 12))
-            return 0;
-
         for (record_index = 0; record_index < record_count; record_index++) {
-            uint32_t ref_offset = ref_list_offset + ((uint32_t)record_index * 12);
-            int16_t record_id = u3_resource_read_i16(bytes, ref_offset);
-            int16_t name_offset;
-            uint32_t data_relative_offset;
-            uint32_t data_length_offset;
-            uint32_t record_data_length;
-            const uint8_t *name = 0;
-            uint8_t name_length = 0;
-
-            if (record_id != id)
+            if (!u3_resource_get_record(resource_file, type_index, record_index, record))
+                return 0;
+            if (record->id != id)
                 continue;
-
-            name_offset = u3_resource_read_i16(bytes, ref_offset + 2);
-            data_relative_offset = u3_resource_read_u24(bytes, ref_offset + 5);
-            if (!u3_resource_subrange_valid(0, resource_file->data_length, data_relative_offset, 4))
-                return 0;
-            data_length_offset = resource_file->data_offset + data_relative_offset;
-
-            if (!u3_resource_range_valid(resource_file->length, data_length_offset, 4))
-                return 0;
-            record_data_length = u3_resource_read_u32(bytes, data_length_offset);
-            if (!u3_resource_range_valid(resource_file->length, data_length_offset + 4, record_data_length))
-                return 0;
-            if (!u3_resource_subrange_valid(0, resource_file->data_length, data_relative_offset + 4, record_data_length))
-                return 0;
-
-            if (name_offset >= 0) {
-                uint32_t absolute_name_offset = resource_file->name_list_offset + (uint16_t)name_offset;
-
-                if (!u3_resource_range_valid(resource_file->length, absolute_name_offset, 1))
-                    return 0;
-                if (!u3_resource_subrange_valid(resource_file->map_offset, resource_file->map_length, absolute_name_offset, 1))
-                    return 0;
-                name_length = bytes[absolute_name_offset];
-                if (!u3_resource_range_valid(resource_file->length, absolute_name_offset + 1, name_length))
-                    return 0;
-                if (!u3_resource_subrange_valid(resource_file->map_offset, resource_file->map_length, absolute_name_offset + 1, name_length))
-                    return 0;
-                name = bytes + absolute_name_offset + 1;
-            }
-
-            record->type = type;
-            record->id = id;
-            record->data = bytes + data_length_offset + 4;
-            record->length = record_data_length;
-            record->name = name;
-            record->name_length = name_length;
-            record->attributes = bytes[ref_offset + 4];
             return 1;
         }
     }

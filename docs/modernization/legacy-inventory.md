@@ -171,11 +171,13 @@ The roster file is not only a character roster. It owns active party bytes, rost
 
 `Resources/English.lproj/MainResources.rsrc` remains runtime-critical. The Xcode project includes it in a `PBXRezBuildPhase`; modern build/resource folders do not yet replace all Resource Manager reads.
 
-Observed read-only resource families include `MAPS`, `MONS`, `TLKS`, `MISC`, `PRTY`, `ROST`, `CONS`, `DEMO`, `SGNT`, `PICT`, `snd `, legacy string lists, dialogs, alerts, and default save templates. `DeRez Resources/English.lproj/MainResources.rsrc` failed locally with `eofErr (-39)`, so complete binary enumeration remains a follow-up task.
+Observed read-only resource families include `MAPS`, `MONS`, `TLKS`, `MISC`, `PRTY`, `ROST`, `CONS`, `DEMO`, `SGNT`, `PICT`, `snd `, legacy string lists, dialogs, alerts, and default save templates. `DeRez Resources/English.lproj/MainResources.rsrc` failed locally with `eofErr (-39)`, but F-013 later completed direct binary enumeration with the project parser.
 
 F-012 added a small read-only parser for classic data-fork resource files and validated it against `MainResources.rsrc`. The parser confirms the default save-template records needed for first-run roster creation are present as `PRTY` 500, `ROST` 500, `MAPS` 420, `MONS` 420, and `MISC` 400 through 405. It also confirms mutable runtime records such as `PRTY` 400, `ROST` 400, `MAPS` 419, `MONS` 419, and `MISC` 500 through 505 are not in the bundled archive; those belong to the user roster resource file created by `OpenRstr`.
 
 The parsed bundled `MISC` 401, 402, and 403 records are 11 bytes each, while legacy `GetMiscStuff` and `PutMiscStuff` copy 12 bytes for those tables. `B-002` tracks this as a save/resource compatibility issue for future adapter work.
+
+F-013 extended the parser with enumeration support and inventoried the full archive: 45 resource types and 303 records. Runtime-critical records include map/monster/talk data, combat screens, default save templates, demo/sign data, the legacy intro sound, legacy PICT/UI resources, menus/dialogs/alerts/controls, and remaining string lists. The detailed type inventory and consumer mapping are recorded in `docs/features/F-013.md`.
 
 ### Save Flow Risks
 
