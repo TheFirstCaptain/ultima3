@@ -28,7 +28,9 @@ The legacy Xcode target may not build on modern machines without old SDKs and fr
 
 | Document | Purpose |
 | --- | --- |
+| [Architecture](ARCHITECTURE.md) | Current and target architecture, including strict shell/core/adapter boundary rules. |
 | [Decision Log](DECISION_LOG.md) | Durable architecture, compatibility, validation, and workflow decisions. |
+| [Modern App Shell Tech Comparison](MODERN_APP_SHELL_TECH_COMPARISON.md) | App shell technology comparison and accepted AppKit/SwiftUI direction. |
 | [Modernization Overview](docs/modernization/README.md) | Entry point for modernization planning documents. |
 | [Legacy Inventory](docs/modernization/legacy-inventory.md) | Source responsibilities, platform dependencies, state coupling, asset formats, and save/resource inventory. |
 | [Porting Strategy](docs/modernization/porting-strategy.md) | Sequencing notes and target boundaries for the modern port. |
@@ -39,9 +41,19 @@ The legacy Xcode target may not build on modern machines without old SDKs and fr
 
 ## Current Direction
 
-Completed modernization work has established the harness, seeded portable core modules, and extracted/characterized map math, Pascal string helpers, combat predicates, autocombat behavior, dungeon navigation, and several combat action-resolution paths.
+Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, and representative map/talk/combat fixtures.
 
-Recent planning work has focused on save and resource formats. The project has identified Resource Manager-backed roster/save data and `MainResources.rsrc` as major modernization blockers. Proposed next milestones include fixture extraction, resource archive enumeration, persistence adapter design, and map/talk/combat fixture characterization.
+The first modern app shell direction is an AppKit-owned macOS shell with SwiftUI limited to preferences, inspectors, setup flows, and other non-game panels. AppKit owns lifecycle, windows, menus, command routing, input intake, the game host view, fullscreen/window behavior, and concrete save-file location.
+
+The next proposed milestones are a minimal AppKit/SwiftUI shell seed, renderer adapter spike, input adapter spike, audio adapter spike, and resource/persistence shell integration.
+
+## App Shell Boundary
+
+- AppKit owns shell lifecycle, primary windows, menus, command routing, keyboard and mouse event intake, fullscreen/window behavior, the game host view, and concrete save-file location.
+- SwiftUI is limited to preferences, inspectors, setup flows, and future non-game panels unless a later decision explicitly changes ownership.
+- `Core/` public headers must not expose AppKit, SwiftUI, SDL, Metal, AVFoundation, Foundation filesystem, sandbox, or other platform framework types.
+- Renderer, input, audio, resource, and persistence implementations remain behind adapters and communicate with the portable core through portable C data, result structs, events, command buffers, or explicit state transitions.
+- The shell may provide concrete bundle and save-file URLs or paths, but resource parsing and persistence serialization remain adapter-owned.
 
 ## Original Upstream README
 
