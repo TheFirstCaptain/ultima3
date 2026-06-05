@@ -66,6 +66,8 @@ Modern macOS app shell
 
 ## Target Boundary Rules
 
+See `BOUNDARIES.md` for the short pre-implementation and pre-review checklist.
+
 - AppKit must own the modern shell lifecycle, primary windows, menus, command routing, keyboard and mouse event intake, fullscreen/window behavior, game host view, and concrete save-file location provider.
 - SwiftUI must be limited to preferences, inspectors, setup flows, and future non-game panels unless a later decision explicitly changes ownership.
 - SwiftUI must not own the shell lifecycle, command model, primary game surface, deterministic game loop, or first-hop game input routing in the first shell milestone.

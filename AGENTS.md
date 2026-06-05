@@ -20,6 +20,8 @@ Match the existing style. Use C/Objective-C files with `.c`, `.m`, and `.h` exte
 
 There is no automated test suite or dedicated test directory. Validate changes by building the `Ultima3` target where possible and manually exercising affected gameplay, UI dialogs, resources, or sound paths. For future tests, keep them isolated from bundled historical assets and name test files after the module under test, for example `UltimaGraphicsTests`.
 
+Before implementing or reviewing modern shell, adapter, or `Core/` changes, read `BOUNDARIES.md` and preserve the AppKit/SwiftUI/core/adapter ownership rules documented there.
+
 After completing any coding task, run an independent subagent code review before final handoff. Treat review findings as part of the task: resolve them, or explicitly document why they are accepted residual risk. If subagent tooling is unavailable, state that clearly in the handoff.
 
 ## Commit & Pull Request Guidelines

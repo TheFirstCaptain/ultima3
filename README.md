@@ -29,6 +29,7 @@ The legacy Xcode target may not build on modern machines without old SDKs and fr
 | Document | Purpose |
 | --- | --- |
 | [Architecture](ARCHITECTURE.md) | Current and target architecture, including strict shell/core/adapter boundary rules. |
+| [Implementation Boundary Checklist](BOUNDARIES.md) | Quick pre-implementation and pre-review checklist for shell, adapter, and core boundaries. |
 | [Decision Log](DECISION_LOG.md) | Durable architecture, compatibility, validation, and workflow decisions. |
 | [Modern App Shell Tech Comparison](MODERN_APP_SHELL_TECH_COMPARISON.md) | App shell technology comparison and accepted AppKit/SwiftUI direction. |
 | [Modernization Overview](docs/modernization/README.md) | Entry point for modernization planning documents. |
