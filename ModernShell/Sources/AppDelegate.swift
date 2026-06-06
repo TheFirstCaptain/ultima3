@@ -28,6 +28,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shellState.submitAudioSound(U3_AUDIO_SOUND_ERROR1)
     }
 
+    @objc private func refreshLocations(_ sender: Any?) {
+        shellState.refreshLocationStatus()
+    }
+
+    @objc private func writeSaveSmoke(_ sender: Any?) {
+        shellState.writeSaveSmoke()
+    }
+
     @objc private func showPreferences(_ sender: Any?) {
         if preferencesWindowController == nil {
             let hostingController = NSHostingController(rootView: ModernShellPreferencesView())
@@ -94,6 +102,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "s",
             target: self
         ))
+        gameMenu.addItem(makeMenuItem(
+            withTitle: "Refresh Locations",
+            action: #selector(refreshLocations(_:)),
+            keyEquivalent: "l",
+            target: self
+        ))
+        gameMenu.addItem(makeMenuItem(
+            withTitle: "Write Save Smoke",
+            action: #selector(writeSaveSmoke(_:)),
+            keyEquivalent: "w",
+            target: self
+        ))
         gameMenu.addItem(NSMenuItem.separator())
         gameMenu.addItem(makeMenuItem(
             withTitle: "Test Sound",
@@ -121,10 +141,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 final class ShellSmokeState: ObservableObject {
     @Published private(set) var lastCommand = "Ready"
+    @Published private(set) var resourceStatus: String
+    @Published private(set) var saveStatus: String
 
     private let inputAdapter = ShellInputAdapter()
     private let audioAdapter = ShellAudioAdapter()
+    private let locationProvider = ShellLocationProvider()
+    private let resourceAdapter = ShellResourceAdapter()
+    private let saveAdapter = ShellSaveAdapter()
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
+
+    init() {
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath)
+        )
+        saveStatus = locations.saveStatus
+    }
 
     func submitKeyboard(_ key: UInt8) {
         lastCommand = inputAdapter.submitKeyboard(key)
@@ -140,5 +174,37 @@ final class ShellSmokeState: ObservableObject {
 
     func submitAudioSound(_ sound: Int32) {
         lastCommand = audioAdapter.submitSound(sound)
+    }
+
+    func refreshLocationStatus() {
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath)
+        )
+        saveStatus = locations.saveStatus
+        lastCommand = "Locations refreshed"
+    }
+
+    func writeSaveSmoke() {
+        let locations = locationProvider.snapshot()
+        guard let document = resourceAdapter.buildNativeNewGameSmokeDocument(resourceRootPath: locations.resourceRootPath) else {
+            saveStatus = "Save Failed build smoke document"
+            lastCommand = "Save smoke failed"
+            return
+        }
+
+        let writeStatus = saveAdapter.writeSmokeDocument(document, saveDocumentPath: locations.saveDocumentPath)
+        let readStatus = saveAdapter.readSmokeDocument(saveDocumentPath: locations.saveDocumentPath)
+        saveStatus = "\(writeStatus) | \(readStatus) | \(locations.saveDocumentPath)"
+        lastCommand = "Save smoke"
+    }
+
+    private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String) -> String {
+        guard let resourceRootPath = locations.resourceRootPath else {
+            return validation
+        }
+
+        return "\(validation) | root \(resourceRootPath)"
     }
 }

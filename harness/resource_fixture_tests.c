@@ -79,41 +79,81 @@ static void assert_bytes_eq(const uint8_t *expected, const uint8_t *actual, size
     }
 }
 
-static uint8_t *read_file(const char *path, size_t *length)
+static uint8_t *try_read_file(const char *path, size_t *length)
 {
     FILE *file;
     long file_length;
     uint8_t *bytes;
 
     file = fopen(path, "rb");
-    if (file == 0) {
-        perror(path);
-        exit(1);
-    }
+    if (file == 0)
+        return 0;
     if (fseek(file, 0, SEEK_END) != 0) {
-        perror("fseek");
-        exit(1);
+        fclose(file);
+        return 0;
     }
     file_length = ftell(file);
     if (file_length < 0) {
-        perror("ftell");
-        exit(1);
+        fclose(file);
+        return 0;
     }
     rewind(file);
 
     bytes = (uint8_t *)malloc((size_t)file_length);
     if (bytes == 0) {
-        fprintf(stderr, "failed to allocate %ld bytes\n", file_length);
-        exit(1);
+        fclose(file);
+        return 0;
     }
     if (fread(bytes, 1, (size_t)file_length, file) != (size_t)file_length) {
-        perror("fread");
-        exit(1);
+        free(bytes);
+        fclose(file);
+        return 0;
     }
     fclose(file);
 
     *length = (size_t)file_length;
     return bytes;
+}
+
+static uint8_t *read_file(const char *path, size_t *length)
+{
+    uint8_t *bytes = try_read_file(path, length);
+
+    if (bytes == 0) {
+        perror(path);
+        exit(1);
+    }
+
+    return bytes;
+}
+
+static int load_main_resources_from_root(const char *resource_root, uint8_t **bytes, size_t *length, u3_resource_file *resource_file)
+{
+    char path[4096];
+    int path_length;
+
+    if (resource_root == 0 || bytes == 0 || length == 0 || resource_file == 0)
+        return 0;
+
+    *bytes = 0;
+    *length = 0;
+
+    path_length = snprintf(path, sizeof(path), "%s/English.lproj/MainResources.rsrc", resource_root);
+    if (path_length < 0 || (size_t)path_length >= sizeof(path))
+        return 0;
+
+    *bytes = try_read_file(path, length);
+    if (*bytes == 0)
+        return 0;
+
+    if (!u3_resource_open(*bytes, *length, resource_file)) {
+        free(*bytes);
+        *bytes = 0;
+        *length = 0;
+        return 0;
+    }
+
+    return 1;
 }
 
 static void assert_named_resource(const u3_resource_file *resource_file,
@@ -209,6 +249,34 @@ static void test_open_main_resources(void)
     ASSERT_EQ_INT(45, resource_file.type_count);
 
     free(bytes);
+}
+
+static void test_validates_main_resources_from_supplied_resource_root(void)
+{
+    size_t length;
+    uint8_t *bytes;
+    u3_resource_file resource_file;
+    u3_resource_record record;
+
+    ASSERT_TRUE(load_main_resources_from_root("../Resources", &bytes, &length, &resource_file));
+    ASSERT_EQ_INT(45, resource_file.type_count);
+    ASSERT_TRUE(u3_resource_find(&resource_file, U3_RESOURCE_TYPE('P', 'R', 'T', 'Y'), 500, &record));
+    ASSERT_EQ_INT(64, (int)record.length);
+    ASSERT_TRUE(u3_resource_find(&resource_file, U3_RESOURCE_TYPE('M', 'A', 'P', 'S'), 420, &record));
+    ASSERT_EQ_INT(4101, (int)record.length);
+
+    free(bytes);
+}
+
+static void test_missing_supplied_resource_root_fails_without_partial_state(void)
+{
+    size_t length = 123;
+    uint8_t *bytes = (uint8_t *)1;
+    u3_resource_file resource_file;
+
+    ASSERT_FALSE(load_main_resources_from_root("../MissingResources", &bytes, &length, &resource_file));
+    ASSERT_EQ_INT(0, (int)length);
+    ASSERT_TRUE(bytes == 0);
 }
 
 static void test_extracts_default_save_templates(void)
@@ -470,6 +538,8 @@ static void test_rejects_wrapped_type_count(void)
 int main(void)
 {
     test_open_main_resources();
+    test_validates_main_resources_from_supplied_resource_root();
+    test_missing_supplied_resource_root_fails_without_partial_state();
     test_enumerates_resource_inventory();
     test_extracts_default_save_templates();
     test_characterizes_town_map_monster_and_talk_fixture();

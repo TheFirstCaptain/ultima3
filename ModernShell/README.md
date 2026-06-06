@@ -10,10 +10,18 @@ Keyboard, mouse, and menu actions pass through `ShellInputAdapter`, which transl
 
 `ShellAudioAdapter` is the first modern audio backend spike. It consumes portable `u3_audio_queue` events and uses AVFoundation inside the shell to play existing sound assets for smoke testing. Missing or unsupported assets are reported in shell status text instead of changing the portable core contract.
 
+`ShellLocationProvider` owns the first concrete resource-root and save-document path candidates for the AppKit shell. `ShellResourceAdapter` uses the shell-provided resource root to read `Resources/English.lproj/MainResources.rsrc`, validate known fixture records through the portable `u3_resource` parser, and build the native new-game smoke document. `ShellSaveAdapter` stages, validates, atomically replaces, and reads back the save smoke document. The game host status overlay reports command, resource, and save-path smoke state; Game > Refresh Locations reruns the location/resource smoke, and Game > Write Save Smoke runs the save write/read smoke.
+
 Build the shell with:
 
 ```bash
 swift build --product Ultima3ModernShell
+```
+
+Run shell adapter tests with:
+
+```bash
+swift test
 ```
 
 Run the shell executable with:

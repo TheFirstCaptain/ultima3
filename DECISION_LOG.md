@@ -176,3 +176,13 @@ Status: Accepted
 - The shell may provide concrete bundle and save-file URLs or paths, but resource parsing and persistence serialization must remain adapter-owned.
 - SDL3 remains a possible renderer/input portability fallback, especially inside an AppKit-owned shell, but a pure SDL shell is rejected for the first milestone because it weakens native macOS menus, preferences, save-file presentation, accessibility, and app conventions.
 - Follow-up work should start with a minimal AppKit shell seed, then separate renderer, input, audio, and resource/persistence adapter milestones.
+
+## 2026-06-06: Native New-Game Save Fixture Uses Chunked Binary Document
+
+Status: Accepted
+
+- The first native save fixture uses a simple binary container with a fixed header, record directory, and concatenated byte payloads.
+- The document preserves legacy save domains as explicit byte records instead of normalizing party, roster, map, creature, or mutable table data into higher-level models.
+- The first deterministic new-game fixture contains metadata, active party bytes, roster bytes, current Sosaria map bytes, zero-filled current Sosaria creature bytes, and mutable `MISC` table records.
+- JSON plus encoded byte blobs is deferred because it adds text-format and encoding concerns before the adapter has a real gameplay persistence consumer.
+- Atomic write/read behavior remains a follow-up F-020D concern; F-020C only defines and generates the deterministic in-memory fixture.

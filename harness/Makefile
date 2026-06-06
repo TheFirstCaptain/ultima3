@@ -13,6 +13,7 @@ TESTS = \
 	$(BUILD_DIR)/autocombat_targeting_tests \
 	$(BUILD_DIR)/dungeon_navigation_tests \
 	$(BUILD_DIR)/resource_fixture_tests \
+	$(BUILD_DIR)/save_fixture_tests \
 	$(BUILD_DIR)/render_contract_tests \
 	$(BUILD_DIR)/input_adapter_tests \
 	$(BUILD_DIR)/audio_adapter_tests
@@ -51,6 +52,9 @@ $(BUILD_DIR)/dungeon_navigation_tests: dungeon_navigation_tests.c $(CORE_SRC)/u3
 
 $(BUILD_DIR)/resource_fixture_tests: resource_fixture_tests.c $(CORE_SRC)/u3_resource.c $(CORE_INCLUDE)/u3_resource.h ../Resources/English.lproj/MainResources.rsrc | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) resource_fixture_tests.c $(CORE_SRC)/u3_resource.c -o $@
+
+$(BUILD_DIR)/save_fixture_tests: save_fixture_tests.c $(CORE_SRC)/u3_resource.c $(CORE_INCLUDE)/u3_resource.h $(CORE_SRC)/u3_save.c $(CORE_INCLUDE)/u3_save.h ../Resources/English.lproj/MainResources.rsrc | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) save_fixture_tests.c $(CORE_SRC)/u3_resource.c $(CORE_SRC)/u3_save.c -o $@
 
 $(BUILD_DIR)/render_contract_tests: render_contract_tests.c $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) render_contract_tests.c $(CORE_SRC)/u3_render.c -o $@

@@ -62,7 +62,7 @@ final class GameHostView: NSView {
             .paragraphStyle: paragraph
         ]
         let statusAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .regular),
+            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor(calibratedRed: 0.66, green: 0.85, blue: 0.78, alpha: 1),
             .paragraphStyle: paragraph
         ]
@@ -71,9 +71,20 @@ final class GameHostView: NSView {
             in: NSRect(x: 0, y: bounds.midY + 12, width: bounds.width, height: 40),
             withAttributes: titleAttributes
         )
-        "Last command: \(shellState.lastCommand) | Core probe: \(shellState.coreHeadingProbe)".draw(
-            in: NSRect(x: 12, y: max(bounds.height - 84, 0), width: max(bounds.width - 24, 0), height: 28),
-            withAttributes: statusAttributes
+        drawStatusLine("Last command: \(shellState.lastCommand) | Core probe: \(shellState.coreHeadingProbe)", index: 0, attributes: statusAttributes)
+        drawStatusLine(shellState.resourceStatus, index: 1, attributes: statusAttributes)
+        drawStatusLine(shellState.saveStatus, index: 2, attributes: statusAttributes)
+    }
+
+    private func drawStatusLine(_ text: String, index: Int, attributes: [NSAttributedString.Key: Any]) {
+        text.draw(
+            in: NSRect(
+                x: 12,
+                y: max(bounds.height - 102 + (CGFloat(index) * 22), 0),
+                width: max(bounds.width - 24, 0),
+                height: 18
+            ),
+            withAttributes: attributes
         )
     }
 }

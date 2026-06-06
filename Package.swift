@@ -28,6 +28,11 @@ let package = Package(
             name: "Ultima3ModernShell",
             dependencies: ["Ultima3Core"],
             path: "ModernShell/Sources"
+        ),
+        .testTarget(
+            name: "Ultima3ModernShellTests",
+            dependencies: ["Ultima3ModernShell"],
+            path: "ModernShell/Tests"
         )
     ]
 )

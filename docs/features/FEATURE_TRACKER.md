@@ -62,12 +62,12 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-017 | Renderer Adapter Spike | Complete | Done | [F-017.md](./F-017.md) | 2026-06-05 | Portable render frame contract added with AppKit synthetic tile-grid renderer smoke path. |
 | F-018 | Input Adapter Spike | Complete | Done | [F-018.md](./F-018.md) | 2026-06-05 | Portable input event queue added and wired through shell keyboard, mouse, and menu smoke commands. |
 | F-019 | Audio Adapter Spike | Complete | Done | [F-019.md](./F-019.md) | 2026-06-05 | Portable audio event queue added with AVFoundation shell adapter and Test Sound smoke command. |
-| F-020 | Resource and Persistence Shell Integration | Planned | Planned | [F-020.md](./F-020.md) | 2026-06-05 | Umbrella plan drafted; child implementation candidates proposed for shell locations, resource adapter, save fixtures, atomic write smoke, and legacy import. |
-| F-020A | Shell Location Provider Smoke | Proposed | Proposed | [F-020A.md](./F-020A.md) | 2026-06-05 | Candidate first slice for shell-owned resource root and save-path visibility. |
-| F-020B | Bundle Resource Adapter Smoke | Proposed | Proposed | [F-020B.md](./F-020B.md) | 2026-06-05 | Candidate resource-root adapter smoke using known bundled fixture data. |
-| F-020C | Native Save Fixture Builder | Proposed | Proposed | [F-020C.md](./F-020C.md) | 2026-06-05 | Candidate deterministic native new-game save fixture from characterized default templates. |
-| F-020D | Save Path and Atomic Write Smoke | Proposed | Proposed | [F-020D.md](./F-020D.md) | 2026-06-05 | Candidate shell save-path and adapter-owned atomic write/read smoke. |
-| F-020E | Legacy Roster Import Fixture Spike | Proposed | Proposed | [F-020E.md](./F-020E.md) | 2026-06-05 | Candidate import spike for real or synthesized mutable legacy roster fixture data. |
+| F-020 | Resource and Persistence Shell Integration | Complete | Done | [F-020.md](./F-020.md) | 2026-06-06 | Shell location, bundle resource, native save fixture, atomic write smoke, and legacy import fixture slices complete. |
+| F-020A | Shell Location Provider Smoke | Complete | Done | [F-020A.md](./F-020A.md) | 2026-06-06 | AppKit shell now reports resource-root and save-document candidates in the game host status overlay. |
+| F-020B | Bundle Resource Adapter Smoke | Complete | Done | [F-020B.md](./F-020B.md) | 2026-06-06 | Shell resource adapter validates `MainResources.rsrc`; harness covers root-path resource validation. |
+| F-020C | Native Save Fixture Builder | Complete | Done | [F-020C.md](./F-020C.md) | 2026-06-06 | Deterministic chunked native new-game save fixture builder added and harness-covered. |
+| F-020D | Save Path and Atomic Write Smoke | Complete | Done | [F-020D.md](./F-020D.md) | 2026-06-06 | Shell save smoke command and temp-path atomic write/read harness coverage added. |
+| F-020E | Legacy Roster Import Fixture Spike | Complete | Done | [F-020E.md](./F-020E.md) | 2026-06-06 | Synthesized mutable legacy roster resource fixture import added and harness-covered. |
 | F-021 | New Game Save Domain Smoke | Proposed | Proposed | [F-021.md](./F-021.md) | 2026-06-05 | Candidate post-F-020 slice for creating and loading a deterministic modern new-game state. |
 | F-022 | Resource-Backed Render Smoke | Proposed | Proposed | [F-022.md](./F-022.md) | 2026-06-05 | Candidate post-F-020B slice replacing synthetic render data with bundled resource-backed data. |
 | F-023 | Shell Game Loop Tick | Proposed | Proposed | [F-023.md](./F-023.md) | 2026-06-05 | Candidate coordination slice for input, update, render, and audio smoke behavior. |
