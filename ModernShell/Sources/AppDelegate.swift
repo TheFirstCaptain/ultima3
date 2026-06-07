@@ -36,6 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shellState.writeSaveSmoke()
     }
 
+    @objc private func loadNewGameSmoke(_ sender: Any?) {
+        shellState.loadNewGameSmoke()
+    }
+
     @objc private func showPreferences(_ sender: Any?) {
         if preferencesWindowController == nil {
             let hostingController = NSHostingController(rootView: ModernShellPreferencesView())
@@ -112,6 +116,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             withTitle: "Write Save Smoke",
             action: #selector(writeSaveSmoke(_:)),
             keyEquivalent: "w",
+            target: self
+        ))
+        gameMenu.addItem(makeMenuItem(
+            withTitle: "Load New Game Smoke",
+            action: #selector(loadNewGameSmoke(_:)),
+            keyEquivalent: "d",
             target: self
         ))
         gameMenu.addItem(NSMenuItem.separator())
@@ -198,6 +208,12 @@ final class ShellSmokeState: ObservableObject {
         let readStatus = saveAdapter.readSmokeDocument(saveDocumentPath: locations.saveDocumentPath)
         saveStatus = "\(writeStatus) | \(readStatus) | \(locations.saveDocumentPath)"
         lastCommand = "Save smoke"
+    }
+
+    func loadNewGameSmoke() {
+        let locations = locationProvider.snapshot()
+        saveStatus = resourceAdapter.loadNewGameSmokeState(resourceRootPath: locations.resourceRootPath)
+        lastCommand = "New game smoke"
     }
 
     private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String) -> String {

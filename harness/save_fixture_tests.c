@@ -225,6 +225,16 @@ static void write_u32(uint8_t *bytes, size_t offset, uint32_t value)
     bytes[offset + 3] = (uint8_t)(value & 0xFF);
 }
 
+static uint32_t read_u32(const uint8_t *bytes, size_t offset)
+{
+    return ((uint32_t)bytes[offset] << 24) | ((uint32_t)bytes[offset + 1] << 16) | ((uint32_t)bytes[offset + 2] << 8) | bytes[offset + 3];
+}
+
+static size_t save_record_header_offset(uint16_t record_index)
+{
+    return 16 + ((size_t)record_index * 16);
+}
+
 static void append_type_group(legacy_type_group *groups, size_t *group_count, uint32_t type, uint16_t first_record, uint16_t record_count)
 {
     groups[*group_count].type = type;
@@ -347,6 +357,38 @@ static void assert_zero_filled(const uint8_t *bytes, size_t length)
         ASSERT_EQ_INT(0, bytes[index]);
 }
 
+static uint8_t *build_fixture_with_shortened_record(const uint8_t *fixture, size_t fixture_length, uint16_t shortened_record_index, size_t *shortened_length)
+{
+    size_t record_offset = save_record_header_offset(shortened_record_index);
+    uint32_t payload_offset = read_u32(fixture, record_offset + 8);
+    uint32_t payload_length = read_u32(fixture, record_offset + 12);
+    uint16_t record_index;
+    uint8_t *shortened;
+
+    ASSERT_TRUE(payload_length > 0);
+    shortened = (uint8_t *)malloc(fixture_length - 1);
+    if (shortened == 0) {
+        fprintf(stderr, "failed to allocate %zu bytes\n", fixture_length - 1);
+        exit(1);
+    }
+
+    memcpy(shortened, fixture, payload_offset + payload_length - 1);
+    memcpy(shortened + payload_offset + payload_length - 1,
+           fixture + payload_offset + payload_length,
+           fixture_length - (payload_offset + payload_length));
+
+    write_u32(shortened, record_offset + 12, payload_length - 1);
+    for (record_index = (uint16_t)(shortened_record_index + 1); record_index < U3_SAVE_NEW_GAME_RECORD_COUNT; record_index++) {
+        size_t following_record_offset = save_record_header_offset(record_index);
+        uint32_t following_payload_offset = read_u32(shortened, following_record_offset + 8);
+
+        write_u32(shortened, following_record_offset + 8, following_payload_offset - 1);
+    }
+
+    *shortened_length = fixture_length - 1;
+    return shortened;
+}
+
 static void test_builds_deterministic_new_game_fixture(void)
 {
     save_fixture_context context;
@@ -414,6 +456,83 @@ static void test_new_game_fixture_contains_expected_records(void)
     }
 
     free(fixture);
+    unload_save_fixture_context(&context);
+}
+
+static void test_loads_new_game_domain_state(void)
+{
+    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
+    save_fixture_context context;
+    size_t fixture_length;
+    uint8_t *fixture;
+    u3_save_document document;
+    u3_save_domain_state state;
+    size_t index;
+
+    load_save_fixture_context(&context);
+    fixture = build_new_game_fixture(&context.templates, &fixture_length);
+
+    ASSERT_TRUE(u3_save_open(fixture, fixture_length, &document));
+    ASSERT_TRUE(u3_save_load_domain_state(&document, &state));
+
+    ASSERT_EQ_INT(U3_SAVE_PARTY_LENGTH, (int)state.party_length);
+    ASSERT_BYTES_EQ(context.templates.party, state.party, U3_SAVE_PARTY_LENGTH);
+    ASSERT_EQ_INT(U3_SAVE_ROSTER_LENGTH, (int)state.roster_length);
+    ASSERT_BYTES_EQ(context.templates.roster, state.roster, U3_SAVE_ROSTER_LENGTH);
+    ASSERT_EQ_INT(U3_SAVE_CURRENT_SOSARIA_MAP_LENGTH, (int)state.current_sosaria_map_length);
+    ASSERT_BYTES_EQ(context.templates.current_sosaria_map, state.current_sosaria_map, U3_SAVE_CURRENT_SOSARIA_MAP_LENGTH);
+    ASSERT_EQ_INT(U3_SAVE_CURRENT_SOSARIA_CREATURE_LENGTH, (int)state.current_sosaria_creatures_length);
+    assert_zero_filled(state.current_sosaria_creatures, state.current_sosaria_creatures_length);
+
+    for (index = 0; index < U3_SAVE_MISC_TABLE_COUNT; index++) {
+        ASSERT_EQ_INT((int)misc_lengths[index], (int)state.misc_length[index]);
+        ASSERT_BYTES_EQ(context.templates.misc[index], state.misc[index], misc_lengths[index]);
+    }
+
+    free(fixture);
+    unload_save_fixture_context(&context);
+}
+
+static void test_domain_state_rejects_missing_required_record(void)
+{
+    save_fixture_context context;
+    size_t fixture_length;
+    uint8_t *fixture;
+    u3_save_document document;
+    u3_save_domain_state state;
+
+    memset(&state, 0xA5, sizeof(state));
+    load_save_fixture_context(&context);
+    fixture = build_new_game_fixture(&context.templates, &fixture_length);
+
+    write_u32(fixture, save_record_header_offset(1), U3_SAVE_RECORD_TYPE('P', 'R', 'T', 'Z'));
+    ASSERT_TRUE(u3_save_open(fixture, fixture_length, &document));
+    ASSERT_FALSE(u3_save_load_domain_state(&document, &state));
+    ASSERT_EQ_INT(0xA5, ((const uint8_t *)&state)[0]);
+
+    free(fixture);
+    unload_save_fixture_context(&context);
+}
+
+static void test_domain_state_rejects_wrong_required_length(void)
+{
+    save_fixture_context context;
+    size_t fixture_length;
+    size_t shortened_length;
+    uint8_t *fixture;
+    uint8_t *shortened_fixture;
+    u3_save_document document;
+    u3_save_domain_state state;
+
+    load_save_fixture_context(&context);
+    fixture = build_new_game_fixture(&context.templates, &fixture_length);
+    shortened_fixture = build_fixture_with_shortened_record(fixture, fixture_length, 1, &shortened_length);
+
+    ASSERT_TRUE(u3_save_open(shortened_fixture, shortened_length, &document));
+    ASSERT_FALSE(u3_save_load_domain_state(&document, &state));
+
+    free(fixture);
+    free(shortened_fixture);
     unload_save_fixture_context(&context);
 }
 
@@ -784,6 +903,9 @@ int main(void)
 {
     test_builds_deterministic_new_game_fixture();
     test_new_game_fixture_contains_expected_records();
+    test_loads_new_game_domain_state();
+    test_domain_state_rejects_missing_required_record();
+    test_domain_state_rejects_wrong_required_length();
     test_rejects_invalid_template_lengths();
     test_rejects_short_output_buffer();
     test_rejects_malformed_save_documents();

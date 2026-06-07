@@ -68,7 +68,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-020C | Native Save Fixture Builder | Complete | Done | [F-020C.md](./F-020C.md) | 2026-06-06 | Deterministic chunked native new-game save fixture builder added and harness-covered. |
 | F-020D | Save Path and Atomic Write Smoke | Complete | Done | [F-020D.md](./F-020D.md) | 2026-06-06 | Shell save smoke command and temp-path atomic write/read harness coverage added. |
 | F-020E | Legacy Roster Import Fixture Spike | Complete | Done | [F-020E.md](./F-020E.md) | 2026-06-06 | Synthesized mutable legacy roster resource fixture import added and harness-covered. |
-| F-021 | New Game Save Domain Smoke | Planned | Planned | [F-021.md](./F-021.md) | 2026-06-06 | Plan drafted for byte-preserving save-domain state loader and shell debug smoke command. |
+| F-021 | New Game Save Domain Smoke | Complete | Done | [F-021.md](./F-021.md) | 2026-06-07 | Byte-preserving save-domain state loader, harness coverage, and shell debug smoke command complete. |
 | F-022 | Resource-Backed Render Smoke | Proposed | Proposed | [F-022.md](./F-022.md) | 2026-06-05 | Candidate post-F-020B slice replacing synthetic render data with bundled resource-backed data. |
 | F-023 | Shell Game Loop Tick | Proposed | Proposed | [F-023.md](./F-023.md) | 2026-06-05 | Candidate coordination slice for input, update, render, and audio smoke behavior. |
 | F-024 | Party/Roster State Adapter | Proposed | Proposed | [F-024.md](./F-024.md) | 2026-06-05 | Candidate state adapter for shell-visible party and roster inspection. |

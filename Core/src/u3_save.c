@@ -494,6 +494,17 @@ int u3_save_get_record(const u3_save_document *document, uint16_t record_index, 
     return 1;
 }
 
+static int u3_save_require_document_record(const u3_save_document *document,
+                                           uint32_t type,
+                                           int16_t id,
+                                           uint32_t expected_length,
+                                           u3_save_record *record)
+{
+    if (!u3_save_find_record(document, type, id, record))
+        return 0;
+    return record->length == expected_length;
+}
+
 int u3_save_find_record(const u3_save_document *document, uint32_t type, int16_t id, u3_save_record *record)
 {
     uint16_t index;
@@ -509,4 +520,47 @@ int u3_save_find_record(const u3_save_document *document, uint32_t type, int16_t
     }
 
     return 0;
+}
+
+int u3_save_load_domain_state(const u3_save_document *document, u3_save_domain_state *state)
+{
+    static const uint32_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
+    u3_save_domain_state loaded_state;
+    u3_save_record record;
+    size_t misc_index;
+
+    if (document == 0 || document->bytes == 0 || state == 0)
+        return 0;
+
+    memset(&loaded_state, 0, sizeof(loaded_state));
+
+    if (!u3_save_require_document_record(document, U3_SAVE_TYPE_PARTY, U3_SAVE_ID_PARTY, U3_SAVE_PARTY_LENGTH, &record))
+        return 0;
+    loaded_state.party = record.data;
+    loaded_state.party_length = record.length;
+
+    if (!u3_save_require_document_record(document, U3_SAVE_TYPE_ROSTER, U3_SAVE_ID_ROSTER, U3_SAVE_ROSTER_LENGTH, &record))
+        return 0;
+    loaded_state.roster = record.data;
+    loaded_state.roster_length = record.length;
+
+    if (!u3_save_require_document_record(document, U3_SAVE_TYPE_MAP, U3_SAVE_ID_CURRENT_SOSARIA, U3_SAVE_CURRENT_SOSARIA_MAP_LENGTH, &record))
+        return 0;
+    loaded_state.current_sosaria_map = record.data;
+    loaded_state.current_sosaria_map_length = record.length;
+
+    if (!u3_save_require_document_record(document, U3_SAVE_TYPE_CREATURES, U3_SAVE_ID_CURRENT_SOSARIA, U3_SAVE_CURRENT_SOSARIA_CREATURE_LENGTH, &record))
+        return 0;
+    loaded_state.current_sosaria_creatures = record.data;
+    loaded_state.current_sosaria_creatures_length = record.length;
+
+    for (misc_index = 0; misc_index < U3_SAVE_MISC_TABLE_COUNT; misc_index++) {
+        if (!u3_save_require_document_record(document, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), misc_lengths[misc_index], &record))
+            return 0;
+        loaded_state.misc[misc_index] = record.data;
+        loaded_state.misc_length[misc_index] = record.length;
+    }
+
+    *state = loaded_state;
+    return 1;
 }

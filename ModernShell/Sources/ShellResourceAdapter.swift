@@ -89,6 +89,39 @@ final class ShellResourceAdapter {
         }
     }
 
+    func loadNewGameSmokeState(resourceRootPath: String?) -> String {
+        guard let documentData = buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath) else {
+            return "New Game Failed build smoke document"
+        }
+
+        return documentData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return "New Game Empty smoke document"
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(baseAddress, documentData.count, &document) != 0 else {
+                return "New Game Invalid smoke document"
+            }
+
+            var state = u3_save_domain_state()
+            guard u3_save_load_domain_state(&document, &state) != 0 else {
+                return "New Game Failed load domain state"
+            }
+
+            let miscLengths = [
+                state.misc_length.0,
+                state.misc_length.1,
+                state.misc_length.2,
+                state.misc_length.3,
+                state.misc_length.4,
+                state.misc_length.5
+            ]
+            let miscStatus = miscLengths.map(String.init).joined(separator: "/")
+            return "New Game OK party \(state.party_length) roster \(state.roster_length) map \(state.current_sosaria_map_length) creatures \(state.current_sosaria_creatures_length) misc \(miscStatus)"
+        }
+    }
+
     private func fourCharacterCode(_ value: String) -> UInt32 {
         var result: UInt32 = 0
 

@@ -58,6 +58,19 @@ typedef struct u3_save_record {
     uint32_t length;
 } u3_save_record;
 
+typedef struct u3_save_domain_state {
+    const uint8_t *party;
+    uint32_t party_length;
+    const uint8_t *roster;
+    uint32_t roster_length;
+    const uint8_t *current_sosaria_map;
+    uint32_t current_sosaria_map_length;
+    const uint8_t *current_sosaria_creatures;
+    uint32_t current_sosaria_creatures_length;
+    const uint8_t *misc[U3_SAVE_MISC_TABLE_COUNT];
+    uint32_t misc_length[U3_SAVE_MISC_TABLE_COUNT];
+} u3_save_domain_state;
+
 size_t u3_save_new_game_fixture_size(void);
 int u3_save_build_new_game_fixture(const u3_save_templates *templates, uint8_t *bytes, size_t capacity, size_t *written);
 size_t u3_save_legacy_roster_import_size(const u3_resource_file *resource_file);
@@ -65,5 +78,6 @@ int u3_save_build_legacy_roster_import(const u3_resource_file *resource_file, ui
 int u3_save_open(const uint8_t *bytes, size_t length, u3_save_document *document);
 int u3_save_get_record(const u3_save_document *document, uint16_t record_index, u3_save_record *record);
 int u3_save_find_record(const u3_save_document *document, uint32_t type, int16_t id, u3_save_record *record);
+int u3_save_load_domain_state(const u3_save_document *document, u3_save_domain_state *state);
 
 #endif
