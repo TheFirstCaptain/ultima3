@@ -4,13 +4,13 @@
 
 AppKit owns lifecycle, menus, command routing, the primary window, and the game host view. SwiftUI is currently limited to a preferences panel boundary. The shell links the plain C `Ultima3Core` Swift package target to prove that modern shell code can call portable core code without exposing AppKit or SwiftUI types through `Core/`.
 
-`GameHostView` renders a synthetic `u3_render_frame` through `AppKitRenderAdapter`. This is an early renderer adapter smoke path: the portable core describes clear, rectangle, and tile commands with plain C data, while AppKit owns the concrete drawing.
+`GameHostView` renders a `u3_render_frame` through `AppKitRenderAdapter`. The default smoke frame is built from `CONS` 400 tile bytes read from `Resources/English.lproj/MainResources.rsrc`; the shell falls back to the synthetic tile frame if bundled resources are unavailable. The portable core describes clear, rectangle, and tile commands with plain C data, while AppKit owns the concrete drawing.
 
 Keyboard, mouse, and menu actions pass through `ShellInputAdapter`, which translates AppKit-owned events into the portable `u3_input_queue` before the shell reports the consumed command. Macro command sequences use the same queue in legacy execution order.
 
 `ShellAudioAdapter` is the first modern audio backend spike. It consumes portable `u3_audio_queue` events and uses AVFoundation inside the shell to play existing sound assets for smoke testing. Missing or unsupported assets are reported in shell status text instead of changing the portable core contract.
 
-`ShellLocationProvider` owns the first concrete resource-root and save-document path candidates for the AppKit shell. `ShellResourceAdapter` uses the shell-provided resource root to read `Resources/English.lproj/MainResources.rsrc`, validate known fixture records through the portable `u3_resource` parser, and build the native new-game smoke document. `ShellSaveAdapter` stages, validates, atomically replaces, and reads back the save smoke document. The game host status overlay reports command, resource, and save-path smoke state; Game > Refresh Locations reruns the location/resource smoke, and Game > Write Save Smoke runs the save write/read smoke.
+`ShellLocationProvider` owns the first concrete resource-root and save-document path candidates for the AppKit shell. `ShellResourceAdapter` uses the shell-provided resource root to read `Resources/English.lproj/MainResources.rsrc`, validate known fixture records through the portable `u3_resource` parser, build the resource-backed render smoke frame, and build/load the native new-game smoke document. `ShellSaveAdapter` stages, validates, atomically replaces, and reads back the save smoke document. The game host status overlay reports command, resource/render, and save-path smoke state; Game > Refresh Locations reruns the location/resource/render smoke, Game > Write Save Smoke runs the save write/read smoke, and Game > Load New Game Smoke loads the portable save-domain state.
 
 Build the shell with:
 

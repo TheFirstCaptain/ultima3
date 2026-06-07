@@ -124,6 +124,27 @@ static void test_makes_synthetic_tile_frame(void)
     ASSERT_EQ_INT(1, frame.commands[2].y);
 }
 
+static void test_makes_tile_grid_frame_from_supplied_tiles(void)
+{
+    uint8_t tiles[U3_RENDER_TILE_COUNT];
+    u3_render_frame frame;
+    uint16_t index;
+
+    for (index = 0; index < U3_RENDER_TILE_COUNT; index++)
+        tiles[index] = (uint8_t)(0x40 + index);
+
+    frame = u3_render_make_tile_grid_frame(tiles, U3_RENDER_TILE_COUNT);
+
+    ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2, frame.command_count);
+    ASSERT_FALSE(frame.overflowed);
+    ASSERT_EQ_INT(U3_RENDER_COMMAND_TILE, frame.commands[2].kind);
+    ASSERT_EQ_INT(0x40, frame.commands[2].value);
+    ASSERT_EQ_INT(1, frame.commands[2].x);
+    ASSERT_EQ_INT(1, frame.commands[2].y);
+    ASSERT_EQ_INT(0x40 + 120, frame.commands[122].value);
+    ASSERT_EQ_INT(11, frame.commands[122].y);
+}
+
 int main(void)
 {
     test_initializes_frame_with_logical_dimensions();
@@ -131,6 +152,7 @@ int main(void)
     test_reports_truncated_tile_input();
     test_reports_command_capacity_overflow();
     test_makes_synthetic_tile_frame();
+    test_makes_tile_grid_frame_from_supplied_tiles();
 
     printf("renderer contract characterization passed\n");
     return 0;

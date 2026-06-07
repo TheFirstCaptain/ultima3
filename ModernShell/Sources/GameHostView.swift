@@ -5,8 +5,8 @@ import Ultima3Core
 final class GameHostView: NSView {
     private let shellState: ShellSmokeState
     private let renderer = AppKitRenderAdapter()
-    private var renderFrame = u3_render_make_synthetic_tile_frame()
     private var cancellable: AnyCancellable?
+    private var renderCancellable: AnyCancellable?
 
     init(shellState: ShellSmokeState) {
         self.shellState = shellState
@@ -14,6 +14,9 @@ final class GameHostView: NSView {
         wantsLayer = true
         layer?.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
         cancellable = shellState.$lastCommand.sink { [weak self] _ in
+            self?.needsDisplay = true
+        }
+        renderCancellable = shellState.$renderFrame.sink { [weak self] _ in
             self?.needsDisplay = true
         }
     }
@@ -47,7 +50,7 @@ final class GameHostView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        renderer.draw(frame: renderFrame, in: bounds)
+        renderer.draw(frame: shellState.renderFrame, in: bounds)
         drawStatusText()
     }
 

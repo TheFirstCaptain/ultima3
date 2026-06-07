@@ -120,25 +120,36 @@ uint8_t u3_render_frame_add_tile_grid(u3_render_frame *frame,
     return tile_count <= U3_RENDER_TILE_COUNT;
 }
 
-u3_render_frame u3_render_make_synthetic_tile_frame(void)
+static void u3_render_frame_add_smoke_background(u3_render_frame *frame)
 {
-    u3_render_frame frame;
-    uint8_t tiles[U3_RENDER_TILE_COUNT];
-    uint16_t index;
-
-    u3_render_frame_init(&frame);
-    u3_render_frame_add_clear(&frame, u3_render_color_make(8, 10, 12, 255));
-    u3_render_frame_add_rect(&frame,
+    u3_render_frame_add_clear(frame, u3_render_color_make(8, 10, 12, 255));
+    u3_render_frame_add_rect(frame,
                              0,
                              0,
                              U3_RENDER_LOGICAL_WIDTH,
                              U3_RENDER_LOGICAL_HEIGHT,
                              u3_render_color_make(0, 0, 0, 0),
                              u3_render_color_make(42, 184, 154, 255));
+}
+
+u3_render_frame u3_render_make_tile_grid_frame(const uint8_t *tiles, uint16_t tile_count)
+{
+    u3_render_frame frame;
+
+    u3_render_frame_init(&frame);
+    u3_render_frame_add_smoke_background(&frame);
+    if (tiles != NULL)
+        u3_render_frame_add_tile_grid(&frame, tiles, tile_count, 1, 1);
+    return frame;
+}
+
+u3_render_frame u3_render_make_synthetic_tile_frame(void)
+{
+    uint8_t tiles[U3_RENDER_TILE_COUNT];
+    uint16_t index;
 
     for (index = 0; index < U3_RENDER_TILE_COUNT; index++)
         tiles[index] = (uint8_t)((index * 5 + (index / U3_RENDER_TILE_GRID_WIDTH) * 9) & 0x7f);
 
-    u3_render_frame_add_tile_grid(&frame, tiles, U3_RENDER_TILE_COUNT, 1, 1);
-    return frame;
+    return u3_render_make_tile_grid_frame(tiles, U3_RENDER_TILE_COUNT);
 }

@@ -59,6 +59,7 @@ uint8_t u3_render_frame_add_tile_grid(u3_render_frame *frame,
                                       uint16_t tile_count,
                                       int16_t origin_x,
                                       int16_t origin_y);
+u3_render_frame u3_render_make_tile_grid_frame(const uint8_t *tiles, uint16_t tile_count);
 u3_render_frame u3_render_make_synthetic_tile_frame(void);
 
 #endif

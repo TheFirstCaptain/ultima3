@@ -58,18 +58,18 @@ The app launched by this command is the modernization shell, not the original le
 
 ## Current Direction
 
-Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, representative map/talk/combat fixtures, shell resource/persistence integration, and a byte-preserving new-game save-domain smoke state.
+Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, representative map/talk/combat fixtures, shell resource/persistence integration, a byte-preserving new-game save-domain smoke state, and automated coverage for a resource-backed render smoke frame.
 
 The first modern app shell now exists under `ModernShell/` as a SwiftPM executable product named `Ultima3ModernShell`. AppKit owns lifecycle, windows, menus, command routing, input intake, the game host view, fullscreen/window behavior, and future concrete save-file location. SwiftUI is currently limited to a preferences panel boundary.
 
 The modern shell currently has early adapter smoke paths for rendering, input, audio, resources, persistence, and new-game save-domain loading:
 
-- `GameHostView` renders a synthetic portable render frame through an AppKit renderer adapter.
+- `GameHostView` renders a resource-backed portable frame from `CONS` 400 tile bytes through an AppKit renderer adapter, with a synthetic fallback if resources are unavailable.
 - Keyboard, mouse, and menu commands pass through a portable input queue.
 - A shell-owned AVFoundation audio adapter consumes portable audio events and can play bundled sound assets.
 - Shell resource and save adapters validate bundled `MainResources.rsrc`, build and write native smoke save documents, and load the portable new-game save-domain state.
 
-The next proposed backlog candidates F-022 through F-026 sketch the path toward resource-backed rendering, a shell tick, party/roster state, overworld movement, and character creation.
+The next proposed backlog candidates F-023 through F-026 sketch the path toward a shell tick, party/roster state, overworld movement, and character creation.
 
 ## App Shell Boundary
 

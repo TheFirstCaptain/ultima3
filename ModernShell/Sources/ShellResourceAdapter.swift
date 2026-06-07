@@ -1,6 +1,11 @@
 import Foundation
 import Ultima3Core
 
+struct ShellRenderSmokeResult {
+    let frame: u3_render_frame
+    let status: String
+}
+
 final class ShellResourceAdapter {
     func validateMainResources(resourceRootPath: String?) -> String {
         guard let resourceRootPath else {
@@ -119,6 +124,38 @@ final class ShellResourceAdapter {
             ]
             let miscStatus = miscLengths.map(String.init).joined(separator: "/")
             return "New Game OK party \(state.party_length) roster \(state.roster_length) map \(state.current_sosaria_map_length) creatures \(state.current_sosaria_creatures_length) misc \(miscStatus)"
+        }
+    }
+
+    func buildResourceBackedRenderSmokeFrame(resourceRootPath: String?) -> ShellRenderSmokeResult {
+        let fallbackFrame = u3_render_make_synthetic_tile_frame()
+        guard let resourceRootPath else {
+            return ShellRenderSmokeResult(frame: fallbackFrame, status: "Render Missing resource root")
+        }
+
+        let resourceURL = mainResourcesURL(resourceRootPath: resourceRootPath)
+        guard FileManager.default.fileExists(atPath: resourceURL.path),
+              let resourceData = try? Data(contentsOf: resourceURL) else {
+            return ShellRenderSmokeResult(frame: fallbackFrame, status: "Render Missing MainResources.rsrc")
+        }
+
+        return resourceData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return ShellRenderSmokeResult(frame: fallbackFrame, status: "Render Empty MainResources.rsrc")
+            }
+
+            var resourceFile = u3_resource_file()
+            guard u3_resource_open(baseAddress, resourceData.count, &resourceFile) != 0 else {
+                return ShellRenderSmokeResult(frame: fallbackFrame, status: "Render Invalid MainResources.rsrc")
+            }
+
+            guard let combatScreen = findResource(resourceFile: &resourceFile, type: fourCharacterCode("CONS"), id: 400),
+                  combatScreen.length >= U3_RENDER_TILE_COUNT else {
+                return ShellRenderSmokeResult(frame: fallbackFrame, status: "Render Missing CONS 400")
+            }
+
+            let frame = u3_render_make_tile_grid_frame(combatScreen.data, UInt16(U3_RENDER_TILE_COUNT))
+            return ShellRenderSmokeResult(frame: frame, status: "Render OK CONS 400 tiles \(U3_RENDER_TILE_COUNT)")
         }
     }
 

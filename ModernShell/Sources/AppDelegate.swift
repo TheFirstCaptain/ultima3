@@ -153,6 +153,7 @@ final class ShellSmokeState: ObservableObject {
     @Published private(set) var lastCommand = "Ready"
     @Published private(set) var resourceStatus: String
     @Published private(set) var saveStatus: String
+    @Published private(set) var renderFrame = u3_render_make_synthetic_tile_frame()
 
     private let inputAdapter = ShellInputAdapter()
     private let audioAdapter = ShellAudioAdapter()
@@ -163,9 +164,12 @@ final class ShellSmokeState: ObservableObject {
 
     init() {
         let locations = locationProvider.snapshot()
+        let renderSmoke = resourceAdapter.buildResourceBackedRenderSmokeFrame(resourceRootPath: locations.resourceRootPath)
+        renderFrame = renderSmoke.frame
         resourceStatus = Self.describeResourceStatus(
             locations: locations,
-            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath)
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: renderSmoke.status
         )
         saveStatus = locations.saveStatus
     }
@@ -188,9 +192,12 @@ final class ShellSmokeState: ObservableObject {
 
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
+        let renderSmoke = resourceAdapter.buildResourceBackedRenderSmokeFrame(resourceRootPath: locations.resourceRootPath)
+        renderFrame = renderSmoke.frame
         resourceStatus = Self.describeResourceStatus(
             locations: locations,
-            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath)
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: renderSmoke.status
         )
         saveStatus = locations.saveStatus
         lastCommand = "Locations refreshed"
@@ -216,11 +223,11 @@ final class ShellSmokeState: ObservableObject {
         lastCommand = "New game smoke"
     }
 
-    private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String) -> String {
+    private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String, renderStatus: String) -> String {
         guard let resourceRootPath = locations.resourceRootPath else {
-            return validation
+            return "\(validation) | \(renderStatus)"
         }
 
-        return "\(validation) | root \(resourceRootPath)"
+        return "\(validation) | \(renderStatus) | root \(resourceRootPath)"
     }
 }
