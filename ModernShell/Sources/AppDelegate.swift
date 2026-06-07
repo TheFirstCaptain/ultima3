@@ -58,6 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shellState.loadNewGameSmoke()
     }
 
+    @objc private func inspectPartyRoster(_ sender: Any?) {
+        shellState.inspectPartyRoster()
+    }
+
     @objc private func showPreferences(_ sender: Any?) {
         if preferencesWindowController == nil {
             let hostingController = NSHostingController(rootView: ModernShellPreferencesView())
@@ -140,6 +144,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             withTitle: "Load New Game Smoke",
             action: #selector(loadNewGameSmoke(_:)),
             keyEquivalent: "d",
+            target: self
+        ))
+        gameMenu.addItem(makeMenuItem(
+            withTitle: "Inspect Party/Roster",
+            action: #selector(inspectPartyRoster(_:)),
+            keyEquivalent: "i",
             target: self
         ))
         gameMenu.addItem(NSMenuItem.separator())
@@ -304,6 +314,12 @@ final class ShellSmokeState: ObservableObject {
         let locations = locationProvider.snapshot()
         saveStatus = resourceAdapter.loadNewGameSmokeState(resourceRootPath: locations.resourceRootPath)
         lastCommand = "New game smoke"
+    }
+
+    func inspectPartyRoster() {
+        let locations = locationProvider.snapshot()
+        saveStatus = resourceAdapter.inspectPartyRoster(resourceRootPath: locations.resourceRootPath)
+        lastCommand = "Party roster"
     }
 
     private func describeKey(_ command: UInt16) -> String {

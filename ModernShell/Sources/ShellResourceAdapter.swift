@@ -127,6 +127,55 @@ final class ShellResourceAdapter {
         }
     }
 
+    func inspectPartyRoster(resourceRootPath: String?) -> String {
+        guard let documentData = buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath) else {
+            return "Party Failed build smoke document"
+        }
+
+        return documentData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return "Party Empty smoke document"
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(baseAddress, documentData.count, &document) != 0 else {
+                return "Party Invalid smoke document"
+            }
+
+            var state = u3_save_domain_state()
+            guard u3_save_load_domain_state(&document, &state) != 0 else {
+                return "Party Failed load domain state"
+            }
+
+            var summary = u3_party_summary()
+            guard u3_party_load_summary(&state, &summary) != 0 else {
+                return "Party Failed decode roster"
+            }
+
+            return formatPartyRosterSummary(&summary)
+        }
+    }
+
+    func formatPartyRosterSummary(_ summary: inout u3_party_summary) -> String {
+        let activeIDs = [
+            summary.active_roster_ids.0,
+            summary.active_roster_ids.1,
+            summary.active_roster_ids.2,
+            summary.active_roster_ids.3
+        ]
+        let activeStatus = activeIDs.map(String.init).joined(separator: "/")
+        let leaderStatus: String
+        if summary.party_size > 0,
+           let leader = rosterEntry(rosterID: activeIDs[0], summary: &summary) {
+            let leaderName = stringFromPartyName(leader.name)
+            leaderStatus = "lead \(leaderName) \(characterCode(leader.status)) \(characterCode(leader.race))/\(characterCode(leader.character_class))/\(characterCode(leader.sex)) HP \(leader.hit_points)/\(leader.max_hit_points) L\(leader.level) food \(leader.food) gold \(leader.gold)"
+        } else {
+            leaderStatus = "lead none"
+        }
+
+        return "Party OK size \(summary.party_size) active \(activeStatus) occupied \(summary.occupied_roster_count) \(leaderStatus)"
+    }
+
     func buildResourceBackedRenderSmokeFrame(resourceRootPath: String?) -> ShellRenderSmokeResult {
         let fallbackFrame = u3_render_make_synthetic_tile_frame()
         guard let resourceRootPath else {
@@ -167,6 +216,36 @@ final class ShellResourceAdapter {
         }
 
         return result
+    }
+
+    private func stringFromPartyName(_ name: (Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8)) -> String {
+        var name = name
+        return withUnsafePointer(to: &name) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: 14) { characters in
+                String(cString: characters)
+            }
+        }
+    }
+
+    private func characterCode(_ value: UInt8) -> String {
+        guard value >= 32 && value <= 126,
+              let scalar = UnicodeScalar(Int(value)) else {
+            return "#\(value)"
+        }
+
+        return String(Character(scalar))
+    }
+
+    private func rosterEntry(rosterID: UInt8, summary: inout u3_party_summary) -> u3_party_roster_entry? {
+        guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+            return nil
+        }
+
+        return withUnsafePointer(to: &summary.roster) { pointer in
+            pointer.withMemoryRebound(to: u3_party_roster_entry.self, capacity: Int(U3_PARTY_ROSTER_SLOT_COUNT)) { roster in
+                roster[Int(rosterID) - 1]
+            }
+        }
     }
 
     private func mainResourcesURL(resourceRootPath: String) -> URL {
