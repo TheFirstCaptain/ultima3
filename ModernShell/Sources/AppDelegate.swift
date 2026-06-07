@@ -5,15 +5,22 @@ import Ultima3Core
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var preferencesWindowController: NSWindowController?
+    private var tickTimer: Timer?
     private let shellState = ShellSmokeState()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
         openMainWindow()
+        startTickTimer()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        tickTimer?.invalidate()
+        tickTimer = nil
     }
 
     @objc private func newGame(_ sender: Any?) {
@@ -26,6 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func testSound(_ sender: Any?) {
         shellState.submitAudioSound(U3_AUDIO_SOUND_ERROR1)
+    }
+
+    @objc private func toggleTick(_ sender: Any?) {
+        if tickTimer == nil {
+            startTickTimer()
+            shellState.setTickActive(true)
+        } else {
+            tickTimer?.invalidate()
+            tickTimer = nil
+            shellState.setTickActive(false)
+        }
     }
 
     @objc private func refreshLocations(_ sender: Any?) {
@@ -126,6 +144,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         gameMenu.addItem(NSMenuItem.separator())
         gameMenu.addItem(makeMenuItem(
+            withTitle: "Toggle Tick",
+            action: #selector(toggleTick(_:)),
+            keyEquivalent: "k",
+            target: self
+        ))
+        gameMenu.addItem(makeMenuItem(
             withTitle: "Test Sound",
             action: #selector(testSound(_:)),
             keyEquivalent: "t",
@@ -147,6 +171,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.target = target
         return item
     }
+
+    private func startTickTimer() {
+        tickTimer?.invalidate()
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            self?.shellState.runTick()
+        }
+        tickTimer?.tolerance = 0.05
+    }
 }
 
 final class ShellSmokeState: ObservableObject {
@@ -154,15 +186,18 @@ final class ShellSmokeState: ObservableObject {
     @Published private(set) var resourceStatus: String
     @Published private(set) var saveStatus: String
     @Published private(set) var renderFrame = u3_render_make_synthetic_tile_frame()
+    @Published private(set) var tickStatus = "Tick 0 phase 0 input 0 audio 0 running"
 
     private let inputAdapter = ShellInputAdapter()
     private let audioAdapter = ShellAudioAdapter()
     private let locationProvider = ShellLocationProvider()
     private let resourceAdapter = ShellResourceAdapter()
     private let saveAdapter = ShellSaveAdapter()
+    private var tickState = u3_tick_state()
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
 
     init() {
+        u3_tick_state_init(&tickState)
         let locations = locationProvider.snapshot()
         let renderSmoke = resourceAdapter.buildResourceBackedRenderSmokeFrame(resourceRootPath: locations.resourceRootPath)
         renderFrame = renderSmoke.frame
@@ -175,19 +210,67 @@ final class ShellSmokeState: ObservableObject {
     }
 
     func submitKeyboard(_ key: UInt8) {
-        lastCommand = inputAdapter.submitKeyboard(key)
+        guard inputAdapter.enqueueKeyboard(key) else {
+            lastCommand = "Input queue overflow"
+            return
+        }
+        lastCommand = "Queued keyboard \(describeKey(UInt16(key)))"
     }
 
     func submitMouseDown(x: Int16, y: Int16) {
-        lastCommand = inputAdapter.submitMouseDown(x: x, y: y)
+        guard inputAdapter.enqueueMouseDown(x: x, y: y) else {
+            lastCommand = "Input queue overflow"
+            return
+        }
+        lastCommand = "Queued mouse \(x),\(y)"
     }
 
     func submitMenuCommand(_ command: Int32) {
-        lastCommand = inputAdapter.submitMenuCommand(command)
+        guard inputAdapter.enqueueMenuCommand(command) else {
+            lastCommand = "Input queue overflow"
+            return
+        }
+        lastCommand = "Queued menu \(command)"
     }
 
     func submitAudioSound(_ sound: Int32) {
-        lastCommand = audioAdapter.submitSound(sound)
+        guard audioAdapter.enqueueSound(sound) else {
+            lastCommand = "Audio queue overflow"
+            return
+        }
+        lastCommand = "Queued audio \(sound)"
+    }
+
+    func runTick() {
+        let inputDescription = inputAdapter.consumeNextDescription()
+        let audioDescription = audioAdapter.consumeNextDescription()
+        let consumedInput = inputDescription != "Input queue empty"
+        let dispatchedAudio = audioDescription != "Audio queue empty"
+        var tickInput = u3_tick_input(
+            consumed_input: consumedInput ? 1 : 0,
+            dispatched_audio: dispatchedAudio ? 1 : 0
+        )
+        var tickResult = u3_tick_result()
+
+        guard u3_tick_advance(&tickState, &tickInput, &tickResult) != 0 else {
+            tickStatus = "Tick failed"
+            return
+        }
+
+        tickStatus = "Tick \(tickResult.tick_count) phase \(tickResult.phase) input \(tickState.consumed_input_count) audio \(tickState.dispatched_audio_count) running"
+        if consumedInput && dispatchedAudio {
+            lastCommand = "\(inputDescription) | \(audioDescription)"
+        } else if consumedInput {
+            lastCommand = inputDescription
+        } else if dispatchedAudio {
+            lastCommand = audioDescription
+        }
+    }
+
+    func setTickActive(_ active: Bool) {
+        let state = active ? "running" : "paused"
+        tickStatus = "Tick \(tickState.tick_count) phase \(tickState.phase) input \(tickState.consumed_input_count) audio \(tickState.dispatched_audio_count) \(state)"
+        lastCommand = active ? "Tick resumed" : "Tick paused"
     }
 
     func refreshLocationStatus() {
@@ -221,6 +304,15 @@ final class ShellSmokeState: ObservableObject {
         let locations = locationProvider.snapshot()
         saveStatus = resourceAdapter.loadNewGameSmokeState(resourceRootPath: locations.resourceRootPath)
         lastCommand = "New game smoke"
+    }
+
+    private func describeKey(_ command: UInt16) -> String {
+        guard command >= 32 && command <= 126,
+              let scalar = UnicodeScalar(Int(command)) else {
+            return "#\(command)"
+        }
+
+        return String(Character(scalar))
     }
 
     private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String, renderStatus: String) -> String {

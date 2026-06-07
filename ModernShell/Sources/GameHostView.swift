@@ -7,6 +7,7 @@ final class GameHostView: NSView {
     private let renderer = AppKitRenderAdapter()
     private var cancellable: AnyCancellable?
     private var renderCancellable: AnyCancellable?
+    private var tickCancellable: AnyCancellable?
 
     init(shellState: ShellSmokeState) {
         self.shellState = shellState
@@ -17,6 +18,9 @@ final class GameHostView: NSView {
             self?.needsDisplay = true
         }
         renderCancellable = shellState.$renderFrame.sink { [weak self] _ in
+            self?.needsDisplay = true
+        }
+        tickCancellable = shellState.$tickStatus.sink { [weak self] _ in
             self?.needsDisplay = true
         }
     }
@@ -74,7 +78,7 @@ final class GameHostView: NSView {
             in: NSRect(x: 0, y: bounds.midY + 12, width: bounds.width, height: 40),
             withAttributes: titleAttributes
         )
-        drawStatusLine("Last command: \(shellState.lastCommand) | Core probe: \(shellState.coreHeadingProbe)", index: 0, attributes: statusAttributes)
+        drawStatusLine("Last command: \(shellState.lastCommand) | \(shellState.tickStatus) | Core probe: \(shellState.coreHeadingProbe)", index: 0, attributes: statusAttributes)
         drawStatusLine(shellState.resourceStatus, index: 1, attributes: statusAttributes)
         drawStatusLine(shellState.saveStatus, index: 2, attributes: statusAttributes)
     }

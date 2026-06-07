@@ -16,7 +16,8 @@ TESTS = \
 	$(BUILD_DIR)/save_fixture_tests \
 	$(BUILD_DIR)/render_contract_tests \
 	$(BUILD_DIR)/input_adapter_tests \
-	$(BUILD_DIR)/audio_adapter_tests
+	$(BUILD_DIR)/audio_adapter_tests \
+	$(BUILD_DIR)/tick_smoke_tests
 
 .PHONY: test clean
 
@@ -64,6 +65,9 @@ $(BUILD_DIR)/input_adapter_tests: input_adapter_tests.c $(CORE_SRC)/u3_input.c $
 
 $(BUILD_DIR)/audio_adapter_tests: audio_adapter_tests.c $(CORE_SRC)/u3_audio.c $(CORE_INCLUDE)/u3_audio.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) audio_adapter_tests.c $(CORE_SRC)/u3_audio.c -o $@
+
+$(BUILD_DIR)/tick_smoke_tests: tick_smoke_tests.c $(CORE_SRC)/u3_tick.c $(CORE_INCLUDE)/u3_tick.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) tick_smoke_tests.c $(CORE_SRC)/u3_tick.c -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)

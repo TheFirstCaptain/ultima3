@@ -8,24 +8,45 @@ final class ShellInputAdapter {
     }
 
     func submitKeyboard(_ key: UInt8) -> String {
-        guard u3_input_queue_push_keyboard(&queue, key) != 0 else {
+        guard enqueueKeyboard(key) else {
             return "Input queue overflow"
         }
         return consumeNextDescription()
     }
 
     func submitMouseDown(x: Int16, y: Int16) -> String {
-        guard u3_input_queue_push_mouse_down(&queue, x, y, UInt8(U3_INPUT_MOUSE_BUTTON_PRIMARY)) != 0 else {
+        guard enqueueMouseDown(x: x, y: y) else {
             return "Input queue overflow"
         }
         return consumeNextDescription()
     }
 
     func submitMenuCommand(_ command: Int32) -> String {
-        guard u3_input_queue_push_menu_command(&queue, UInt16(command)) != 0 else {
+        guard enqueueMenuCommand(command) else {
             return "Input queue overflow"
         }
         return consumeNextDescription()
+    }
+
+    func enqueueKeyboard(_ key: UInt8) -> Bool {
+        guard u3_input_queue_push_keyboard(&queue, key) != 0 else {
+            return false
+        }
+        return true
+    }
+
+    func enqueueMouseDown(x: Int16, y: Int16) -> Bool {
+        guard u3_input_queue_push_mouse_down(&queue, x, y, UInt8(U3_INPUT_MOUSE_BUTTON_PRIMARY)) != 0 else {
+            return false
+        }
+        return true
+    }
+
+    func enqueueMenuCommand(_ command: Int32) -> Bool {
+        guard u3_input_queue_push_menu_command(&queue, UInt16(command)) != 0 else {
+            return false
+        }
+        return true
     }
 
     func submitMacro(_ commands: String) -> String {
@@ -51,7 +72,7 @@ final class ShellInputAdapter {
         return consumeNextDescription()
     }
 
-    private func consumeNextDescription() -> String {
+    func consumeNextDescription() -> String {
         var event = u3_input_event()
 
         guard u3_input_queue_pop(&queue, &event) != 0 else {

@@ -24,5 +24,6 @@ make -C harness test
 - `render_contract_tests.c` characterizes the portable renderer frame contract, including logical dimensions, 11x11 tile-grid command layout, command capacity, and synthetic frame generation.
 - `input_adapter_tests.c` characterizes the portable input event queue shared by keyboard, mouse, menu, and macro-driven command events.
 - `audio_adapter_tests.c` characterizes the portable audio event queue shared by sound, music, stop, and volume events.
+- `tick_smoke_tests.c` characterizes the portable smoke tick state used by the modern shell heartbeat.
 
 These harnesses compile small shared portable implementations from `Core/src/` and keep references back to the legacy source in the core files. This keeps the validation path executable on a modern compiler while avoiding broad platform shims for unrelated legacy file dependencies.

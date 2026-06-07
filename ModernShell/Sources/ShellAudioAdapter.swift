@@ -13,27 +13,48 @@ final class ShellAudioAdapter {
     }
 
     func submitSound(_ sound: Int32) -> String {
-        guard u3_audio_queue_push_sound(&queue, UInt16(sound), 1) != 0 else {
+        guard enqueueSound(sound) else {
             return "Audio queue overflow"
         }
         return consumeNextDescription()
     }
 
     func submitMusic(_ music: Int32) -> String {
-        guard u3_audio_queue_push_music(&queue, UInt16(music)) != 0 else {
+        guard enqueueMusic(music) else {
             return "Audio queue overflow"
         }
         return consumeNextDescription()
     }
 
     func stopMusic() -> String {
-        guard u3_audio_queue_push_stop_music(&queue) != 0 else {
+        guard enqueueStopMusic() else {
             return "Audio queue overflow"
         }
         return consumeNextDescription()
     }
 
-    private func consumeNextDescription() -> String {
+    func enqueueSound(_ sound: Int32) -> Bool {
+        guard u3_audio_queue_push_sound(&queue, UInt16(sound), 1) != 0 else {
+            return false
+        }
+        return true
+    }
+
+    func enqueueMusic(_ music: Int32) -> Bool {
+        guard u3_audio_queue_push_music(&queue, UInt16(music)) != 0 else {
+            return false
+        }
+        return true
+    }
+
+    func enqueueStopMusic() -> Bool {
+        guard u3_audio_queue_push_stop_music(&queue) != 0 else {
+            return false
+        }
+        return true
+    }
+
+    func consumeNextDescription() -> String {
         var event = u3_audio_event()
 
         guard u3_audio_queue_pop(&queue, &event) != 0 else {
