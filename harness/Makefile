@@ -18,7 +18,8 @@ TESTS = \
 	$(BUILD_DIR)/input_adapter_tests \
 	$(BUILD_DIR)/audio_adapter_tests \
 	$(BUILD_DIR)/tick_smoke_tests \
-	$(BUILD_DIR)/party_roster_tests
+	$(BUILD_DIR)/party_roster_tests \
+	$(BUILD_DIR)/overworld_movement_tests
 
 .PHONY: test clean
 
@@ -72,6 +73,9 @@ $(BUILD_DIR)/tick_smoke_tests: tick_smoke_tests.c $(CORE_SRC)/u3_tick.c $(CORE_I
 
 $(BUILD_DIR)/party_roster_tests: party_roster_tests.c $(CORE_SRC)/u3_party.c $(CORE_INCLUDE)/u3_party.h $(CORE_SRC)/u3_resource.c $(CORE_INCLUDE)/u3_resource.h $(CORE_SRC)/u3_save.c $(CORE_INCLUDE)/u3_save.h ../Resources/English.lproj/MainResources.rsrc | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) party_roster_tests.c $(CORE_SRC)/u3_party.c $(CORE_SRC)/u3_resource.c $(CORE_SRC)/u3_save.c -o $@
+
+$(BUILD_DIR)/overworld_movement_tests: overworld_movement_tests.c $(CORE_SRC)/u3_overworld.c $(CORE_INCLUDE)/u3_overworld.h $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) overworld_movement_tests.c $(CORE_SRC)/u3_overworld.c $(CORE_SRC)/u3_render.c -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)

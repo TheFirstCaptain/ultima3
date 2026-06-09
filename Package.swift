@@ -31,7 +31,7 @@ let package = Package(
         ),
         .testTarget(
             name: "Ultima3ModernShellTests",
-            dependencies: ["Ultima3ModernShell"],
+            dependencies: ["Ultima3ModernShell", "Ultima3Core"],
             path: "ModernShell/Tests"
         )
     ]

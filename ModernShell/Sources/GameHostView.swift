@@ -38,6 +38,11 @@ final class GameHostView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if let movementCommand = movementCommand(for: event) {
+            shellState.submitOverworldCommand(movementCommand)
+            return
+        }
+
         guard let character = event.charactersIgnoringModifiers?.utf8.first else {
             return
         }
@@ -46,6 +51,21 @@ final class GameHostView: NSView {
             ? character - 32
             : character
         shellState.submitKeyboard(uppercased)
+    }
+
+    private func movementCommand(for event: NSEvent) -> UInt16? {
+        switch event.keyCode {
+        case 126, 91:
+            return UInt16(U3_OVERWORLD_COMMAND_NORTH)
+        case 125, 84:
+            return UInt16(U3_OVERWORLD_COMMAND_SOUTH)
+        case 123, 86:
+            return UInt16(U3_OVERWORLD_COMMAND_WEST)
+        case 124, 88:
+            return UInt16(U3_OVERWORLD_COMMAND_EAST)
+        default:
+            return nil
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

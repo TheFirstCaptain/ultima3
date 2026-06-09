@@ -6,6 +6,12 @@ struct ShellRenderSmokeResult {
     let status: String
 }
 
+struct ShellOverworldSmokeResult {
+    let map: Data?
+    let frame: u3_render_frame
+    let status: String
+}
+
 final class ShellResourceAdapter {
     func validateMainResources(resourceRootPath: String?) -> String {
         guard let resourceRootPath else {
@@ -206,6 +212,58 @@ final class ShellResourceAdapter {
             let frame = u3_render_make_tile_grid_frame(combatScreen.data, UInt16(U3_RENDER_TILE_COUNT))
             return ShellRenderSmokeResult(frame: frame, status: "Render OK CONS 400 tiles \(U3_RENDER_TILE_COUNT)")
         }
+    }
+
+    func buildOverworldSmoke(resourceRootPath: String?, state: inout u3_overworld_state) -> ShellOverworldSmokeResult {
+        let fallbackFrame = u3_render_make_synthetic_tile_frame()
+        guard let documentData = buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath) else {
+            return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Missing new game map")
+        }
+
+        return documentData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Empty new game map")
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(baseAddress, documentData.count, &document) != 0 else {
+                return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Invalid new game map")
+            }
+
+            var domainState = u3_save_domain_state()
+            guard u3_save_load_domain_state(&document, &domainState) != 0,
+                  let map = domainState.current_sosaria_map,
+                  domainState.current_sosaria_map_length > 0 else {
+                return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Failed load map")
+            }
+
+            let mapData = Data(bytes: map, count: Int(domainState.current_sosaria_map_length))
+            guard Self.hasValidOverworldMapShape(mapData) else {
+                return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Invalid MAPS 419 shape")
+            }
+
+            let frame = mapData.withUnsafeBytes { mapBuffer in
+                guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    return fallbackFrame
+                }
+
+                return u3_overworld_make_smoke_frame(mapBaseAddress, UInt32(mapData.count), &state)
+            }
+            return ShellOverworldSmokeResult(
+                map: mapData,
+                frame: frame,
+                status: "Overworld OK MAPS 419 pos \(state.x),\(state.y)"
+            )
+        }
+    }
+
+    private static func hasValidOverworldMapShape(_ mapData: Data) -> Bool {
+        guard let mapSize = mapData.first,
+              mapSize > 0 else {
+            return false
+        }
+
+        return mapData.count >= 1 + (Int(mapSize) * Int(mapSize))
     }
 
     private func fourCharacterCode(_ value: String) -> UInt32 {

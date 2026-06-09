@@ -1,0 +1,150 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "u3_overworld.h"
+
+#define ASSERT_EQ_INT(expected, actual) assert_eq_int((expected), (actual), __FILE__, __LINE__)
+#define ASSERT_TRUE(actual) assert_true((actual), __FILE__, __LINE__)
+#define ASSERT_FALSE(actual) assert_false((actual), __FILE__, __LINE__)
+
+static void assert_eq_int(int expected, int actual, const char *file, int line)
+{
+    if (expected != actual) {
+        fprintf(stderr, "%s:%d: expected %d, got %d\n", file, line, expected, actual);
+        exit(1);
+    }
+}
+
+static void assert_true(int actual, const char *file, int line)
+{
+    if (!actual) {
+        fprintf(stderr, "%s:%d: expected true\n", file, line);
+        exit(1);
+    }
+}
+
+static void assert_false(int actual, const char *file, int line)
+{
+    if (actual) {
+        fprintf(stderr, "%s:%d: expected false\n", file, line);
+        exit(1);
+    }
+}
+
+static void test_initializes_bounded_position(void)
+{
+    u3_overworld_state state;
+
+    ASSERT_TRUE(u3_overworld_state_init(&state, 5, 6, 11, 11));
+    ASSERT_EQ_INT(5, state.x);
+    ASSERT_EQ_INT(6, state.y);
+    ASSERT_EQ_INT(11, state.width);
+    ASSERT_EQ_INT(11, state.height);
+
+    ASSERT_TRUE(u3_overworld_state_init(&state, 20, 21, 11, 11));
+    ASSERT_EQ_INT(10, state.x);
+    ASSERT_EQ_INT(10, state.y);
+}
+
+static void test_moves_cardinally_with_bounds(void)
+{
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    ASSERT_TRUE(u3_overworld_state_init(&state, 5, 5, 11, 11));
+
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_NORTH, &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_TRUE(result.moved);
+    ASSERT_EQ_INT(5, state.x);
+    ASSERT_EQ_INT(4, state.y);
+
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_EAST, &result));
+    ASSERT_TRUE(result.moved);
+    ASSERT_EQ_INT(6, state.x);
+    ASSERT_EQ_INT(4, state.y);
+
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_SOUTH, &result));
+    ASSERT_TRUE(result.moved);
+    ASSERT_EQ_INT(6, state.x);
+    ASSERT_EQ_INT(5, state.y);
+
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_WEST, &result));
+    ASSERT_TRUE(result.moved);
+    ASSERT_EQ_INT(5, state.x);
+    ASSERT_EQ_INT(5, state.y);
+}
+
+static void test_reports_blocked_edges_and_unknown_commands(void)
+{
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    ASSERT_TRUE(u3_overworld_state_init(&state, 0, 0, 11, 11));
+
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_NORTH, &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_FALSE(result.moved);
+    ASSERT_EQ_INT(0, result.x);
+    ASSERT_EQ_INT(0, result.y);
+
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_WEST, &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_FALSE(result.moved);
+    ASSERT_EQ_INT(0, state.x);
+    ASSERT_EQ_INT(0, state.y);
+
+    ASSERT_TRUE(u3_overworld_move(&state, 999, &result));
+    ASSERT_FALSE(result.handled);
+    ASSERT_FALSE(result.moved);
+}
+
+static void test_builds_smoke_frame_from_known_map_and_party_position(void)
+{
+    uint8_t map_record[1 + (11 * 11)];
+    u3_overworld_state state;
+    u3_render_frame frame;
+    uint16_t index;
+    uint16_t party_command_index;
+
+    map_record[0] = 11;
+    for (index = 0; index < 11 * 11; index++)
+        map_record[1 + index] = (uint8_t)(0x20 + index);
+
+    ASSERT_TRUE(u3_overworld_state_init(&state, 3, 4, 11, 11));
+    frame = u3_overworld_make_smoke_frame(map_record, sizeof(map_record), &state);
+
+    ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2, frame.command_count);
+    ASSERT_EQ_INT(0x20, frame.commands[2].value);
+    party_command_index = (uint16_t)(2 + (4 * U3_RENDER_TILE_GRID_WIDTH) + 3);
+    ASSERT_EQ_INT(U3_OVERWORLD_PARTY_TILE, frame.commands[party_command_index].value);
+    ASSERT_EQ_INT(4, frame.commands[party_command_index].x);
+    ASSERT_EQ_INT(5, frame.commands[party_command_index].y);
+}
+
+static void test_invalid_map_falls_back_to_synthetic_frame(void)
+{
+    uint8_t map_record[2] = {11, 0};
+    u3_overworld_state state;
+    u3_render_frame frame;
+
+    ASSERT_TRUE(u3_overworld_state_init(&state, 3, 4, 11, 11));
+    frame = u3_overworld_make_smoke_frame(map_record, sizeof(map_record), &state);
+
+    ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2, frame.command_count);
+    ASSERT_EQ_INT(1, frame.commands[2].x);
+    ASSERT_EQ_INT(1, frame.commands[2].y);
+}
+
+int main(void)
+{
+    test_initializes_bounded_position();
+    test_moves_cardinally_with_bounds();
+    test_reports_blocked_edges_and_unknown_commands();
+    test_builds_smoke_frame_from_known_map_and_party_position();
+    test_invalid_map_falls_back_to_synthetic_frame();
+
+    printf("overworld movement smoke passed\n");
+    return 0;
+}

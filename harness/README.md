@@ -25,5 +25,7 @@ make -C harness test
 - `input_adapter_tests.c` characterizes the portable input event queue shared by keyboard, mouse, menu, and macro-driven command events.
 - `audio_adapter_tests.c` characterizes the portable audio event queue shared by sound, music, stop, and volume events.
 - `tick_smoke_tests.c` characterizes the portable smoke tick state used by the modern shell heartbeat.
+- `party_roster_tests.c` validates portable party/roster summary decoding from the native save-domain state.
+- `overworld_movement_tests.c` validates the first bounded overworld smoke movement rule and the resource-map render frame party marker.
 
 These harnesses compile small shared portable implementations from `Core/src/` and keep references back to the legacy source in the core files. This keeps the validation path executable on a modern compiler while avoiding broad platform shims for unrelated legacy file dependencies.

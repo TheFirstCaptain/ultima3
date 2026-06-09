@@ -204,17 +204,27 @@ final class ShellSmokeState: ObservableObject {
     private let resourceAdapter = ShellResourceAdapter()
     private let saveAdapter = ShellSaveAdapter()
     private var tickState = u3_tick_state()
+    private var overworldState = u3_overworld_state()
+    private var overworldMapData: Data?
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
 
     init() {
         u3_tick_state_init(&tickState)
+        u3_overworld_state_init(
+            &overworldState,
+            5,
+            5,
+            UInt8(U3_OVERWORLD_SMOKE_VIEW_WIDTH),
+            UInt8(U3_OVERWORLD_SMOKE_VIEW_HEIGHT)
+        )
         let locations = locationProvider.snapshot()
-        let renderSmoke = resourceAdapter.buildResourceBackedRenderSmokeFrame(resourceRootPath: locations.resourceRootPath)
-        renderFrame = renderSmoke.frame
+        let overworldSmoke = resourceAdapter.buildOverworldSmoke(resourceRootPath: locations.resourceRootPath, state: &overworldState)
+        overworldMapData = overworldSmoke.map
+        renderFrame = overworldSmoke.frame
         resourceStatus = Self.describeResourceStatus(
             locations: locations,
             validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
-            renderStatus: renderSmoke.status
+            renderStatus: overworldSmoke.status
         )
         saveStatus = locations.saveStatus
     }
@@ -225,6 +235,14 @@ final class ShellSmokeState: ObservableObject {
             return
         }
         lastCommand = "Queued keyboard \(describeKey(UInt16(key)))"
+    }
+
+    func submitOverworldCommand(_ command: UInt16) {
+        guard inputAdapter.enqueueKeyboardCommand(command) else {
+            lastCommand = "Input queue overflow"
+            return
+        }
+        lastCommand = "Queued move \(inputAdapter.describeKey(command))"
     }
 
     func submitMouseDown(x: Int16, y: Int16) {
@@ -252,7 +270,8 @@ final class ShellSmokeState: ObservableObject {
     }
 
     func runTick() {
-        let inputDescription = inputAdapter.consumeNextDescription()
+        let inputEvent = inputAdapter.consumeNextEvent()
+        let inputDescription = inputEvent.map { consumeInputEvent($0) } ?? "Input queue empty"
         let audioDescription = audioAdapter.consumeNextDescription()
         let consumedInput = inputDescription != "Input queue empty"
         let dispatchedAudio = audioDescription != "Audio queue empty"
@@ -285,12 +304,13 @@ final class ShellSmokeState: ObservableObject {
 
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
-        let renderSmoke = resourceAdapter.buildResourceBackedRenderSmokeFrame(resourceRootPath: locations.resourceRootPath)
-        renderFrame = renderSmoke.frame
+        let overworldSmoke = resourceAdapter.buildOverworldSmoke(resourceRootPath: locations.resourceRootPath, state: &overworldState)
+        overworldMapData = overworldSmoke.map
+        renderFrame = overworldSmoke.frame
         resourceStatus = Self.describeResourceStatus(
             locations: locations,
             validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
-            renderStatus: renderSmoke.status
+            renderStatus: overworldSmoke.status
         )
         saveStatus = locations.saveStatus
         lastCommand = "Locations refreshed"
@@ -313,7 +333,50 @@ final class ShellSmokeState: ObservableObject {
     func loadNewGameSmoke() {
         let locations = locationProvider.snapshot()
         saveStatus = resourceAdapter.loadNewGameSmokeState(resourceRootPath: locations.resourceRootPath)
+        let overworldSmoke = resourceAdapter.buildOverworldSmoke(resourceRootPath: locations.resourceRootPath, state: &overworldState)
+        overworldMapData = overworldSmoke.map
+        renderFrame = overworldSmoke.frame
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: overworldSmoke.status
+        )
         lastCommand = "New game smoke"
+    }
+
+    private func consumeInputEvent(_ event: u3_input_event) -> String {
+        if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
+            var moveResult = u3_overworld_move_result()
+            if u3_overworld_move(&overworldState, event.command, &moveResult) != 0,
+               moveResult.handled != 0 {
+                renderOverworldFrame()
+                let moveState = moveResult.moved != 0 ? "Move" : "Blocked"
+                return "\(moveState) \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y)"
+            }
+        }
+
+        return inputAdapter.describe(event)
+    }
+
+    private func renderOverworldFrame() {
+        guard let overworldMapData else {
+            renderFrame = u3_render_make_synthetic_tile_frame()
+            return
+        }
+
+        renderFrame = overworldMapData.withUnsafeBytes { mapBuffer in
+            guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return u3_render_make_synthetic_tile_frame()
+            }
+
+            return u3_overworld_make_smoke_frame(mapBaseAddress, UInt32(overworldMapData.count), &overworldState)
+        }
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: "Overworld OK MAPS 419 pos \(overworldState.x),\(overworldState.y)"
+        )
     }
 
     func inspectPartyRoster() {

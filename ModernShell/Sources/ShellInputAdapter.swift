@@ -35,6 +35,20 @@ final class ShellInputAdapter {
         return true
     }
 
+    func enqueueKeyboardCommand(_ command: UInt16) -> Bool {
+        let event = u3_input_event(
+            kind: UInt8(U3_INPUT_EVENT_KEYBOARD),
+            command: command,
+            x: 0,
+            y: 0,
+            button: 0
+        )
+        guard u3_input_queue_push(&queue, event) != 0 else {
+            return false
+        }
+        return true
+    }
+
     func enqueueMouseDown(x: Int16, y: Int16) -> Bool {
         guard u3_input_queue_push_mouse_down(&queue, x, y, UInt8(U3_INPUT_MOUSE_BUTTON_PRIMARY)) != 0 else {
             return false
@@ -73,12 +87,24 @@ final class ShellInputAdapter {
     }
 
     func consumeNextDescription() -> String {
-        var event = u3_input_event()
-
-        guard u3_input_queue_pop(&queue, &event) != 0 else {
+        guard let event = consumeNextEvent() else {
             return "Input queue empty"
         }
 
+        return describe(event)
+    }
+
+    func consumeNextEvent() -> u3_input_event? {
+        var event = u3_input_event()
+
+        guard u3_input_queue_pop(&queue, &event) != 0 else {
+            return nil
+        }
+
+        return event
+    }
+
+    func describe(_ event: u3_input_event) -> String {
         switch Int32(event.kind) {
         case U3_INPUT_EVENT_KEYBOARD:
             return "Keyboard \(describeKey(event.command))"
@@ -93,7 +119,7 @@ final class ShellInputAdapter {
         }
     }
 
-    private func describeMenuCommand(_ command: UInt16) -> String {
+    func describeMenuCommand(_ command: UInt16) -> String {
         switch Int32(command) {
         case U3_INPUT_MENU_NEW_GAME:
             return "New Game"
@@ -104,7 +130,20 @@ final class ShellInputAdapter {
         }
     }
 
-    private func describeKey(_ command: UInt16) -> String {
+    func describeKey(_ command: UInt16) -> String {
+        switch Int32(command) {
+        case U3_OVERWORLD_COMMAND_NORTH:
+            return "North"
+        case U3_OVERWORLD_COMMAND_SOUTH:
+            return "South"
+        case U3_OVERWORLD_COMMAND_WEST:
+            return "West"
+        case U3_OVERWORLD_COMMAND_EAST:
+            return "East"
+        default:
+            break
+        }
+
         guard command >= 32 && command <= 126,
               let scalar = UnicodeScalar(Int(command)) else {
             return "#\(command)"

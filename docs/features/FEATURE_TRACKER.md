@@ -72,5 +72,5 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-022 | Resource-Backed Render Smoke | Complete | Done | [F-022.md](./F-022.md) | 2026-06-07 | Resource-backed render frame from `CONS` 400 complete with automated and manual shell validation. |
 | F-023 | Shell Game Loop Tick | Complete | Done | [F-023.md](./F-023.md) | 2026-06-07 | Fixed shell tick complete with queued input/audio dispatch, automated coverage, review, and manual validation. |
 | F-024 | Party/Roster State Adapter | Complete | Done | [F-024.md](./F-024.md) | 2026-06-07 | Portable decoded roster summary and Game menu status readout complete with automated, review, and manual validation. |
-| F-025 | Overworld Movement Smoke | Proposed | Proposed | [F-025.md](./F-025.md) | 2026-06-05 | Candidate first playable movement slice using modern input and rendering. |
+| F-025 | Overworld Movement Smoke | Complete | Done | [F-025.md](./F-025.md) | 2026-06-09 | Bounded modern-shell overworld movement smoke with resource-backed redraw and harness coverage complete. |
 | F-026 | Character Creation Flow Spike | Proposed | Proposed | [F-026.md](./F-026.md) | 2026-06-05 | Candidate setup-flow spike after party/roster state is available. |
