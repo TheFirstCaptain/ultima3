@@ -2,9 +2,11 @@ import AppKit
 import SwiftUI
 import Ultima3Core
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private var preferencesWindowController: NSWindowController?
+    private var characterCreationWindowController: NSWindowController?
+    private var suppressCharacterCreationCloseStatus = false
     private var tickTimer: Timer?
     private let shellState = ShellSmokeState()
 
@@ -60,6 +62,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func inspectPartyRoster(_ sender: Any?) {
         shellState.inspectPartyRoster()
+    }
+
+    @objc private func showCharacterCreation(_ sender: Any?) {
+        let hostingController = NSHostingController(rootView: CharacterCreationView(
+            onAccept: { [weak self] summary in
+                self?.shellState.acceptCharacterCandidate(summary)
+                self?.closeCharacterCreationPanel()
+            },
+            onCancel: { [weak self] in
+                self?.shellState.cancelCharacterCandidate()
+                self?.closeCharacterCreationPanel()
+            }
+        ))
+
+        if characterCreationWindowController == nil {
+            let panel = NSWindow(contentViewController: hostingController)
+            panel.title = "Create Character"
+            panel.styleMask = [.titled, .closable]
+            panel.setContentSize(NSSize(width: 540, height: 430))
+            panel.delegate = self
+            characterCreationWindowController = NSWindowController(window: panel)
+        } else {
+            characterCreationWindowController?.contentViewController = hostingController
+        }
+
+        characterCreationWindowController?.showWindow(sender)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === characterCreationWindowController?.window else {
+            return
+        }
+
+        if !suppressCharacterCreationCloseStatus {
+            shellState.cancelCharacterCandidate()
+        }
+        suppressCharacterCreationCloseStatus = false
+        characterCreationWindowController = nil
+    }
+
+    private func closeCharacterCreationPanel() {
+        guard let controller = characterCreationWindowController else {
+            return
+        }
+
+        suppressCharacterCreationCloseStatus = true
+        controller.close()
+        suppressCharacterCreationCloseStatus = false
+        characterCreationWindowController = nil
     }
 
     @objc private func showPreferences(_ sender: Any?) {
@@ -150,6 +203,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             withTitle: "Inspect Party/Roster",
             action: #selector(inspectPartyRoster(_:)),
             keyEquivalent: "i",
+            target: self
+        ))
+        gameMenu.addItem(makeMenuItem(
+            withTitle: "Create Character...",
+            action: #selector(showCharacterCreation(_:)),
+            keyEquivalent: "c",
             target: self
         ))
         gameMenu.addItem(NSMenuItem.separator())
@@ -383,6 +442,15 @@ final class ShellSmokeState: ObservableObject {
         let locations = locationProvider.snapshot()
         saveStatus = resourceAdapter.inspectPartyRoster(resourceRootPath: locations.resourceRootPath)
         lastCommand = "Party roster"
+    }
+
+    func acceptCharacterCandidate(_ summary: String) {
+        saveStatus = summary
+        lastCommand = "Character candidate accepted"
+    }
+
+    func cancelCharacterCandidate() {
+        lastCommand = "Character creation cancelled"
     }
 
     private func describeKey(_ command: UInt16) -> String {

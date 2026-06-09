@@ -19,7 +19,8 @@ TESTS = \
 	$(BUILD_DIR)/audio_adapter_tests \
 	$(BUILD_DIR)/tick_smoke_tests \
 	$(BUILD_DIR)/party_roster_tests \
-	$(BUILD_DIR)/overworld_movement_tests
+	$(BUILD_DIR)/overworld_movement_tests \
+	$(BUILD_DIR)/character_creation_tests
 
 .PHONY: test clean
 
@@ -76,6 +77,9 @@ $(BUILD_DIR)/party_roster_tests: party_roster_tests.c $(CORE_SRC)/u3_party.c $(C
 
 $(BUILD_DIR)/overworld_movement_tests: overworld_movement_tests.c $(CORE_SRC)/u3_overworld.c $(CORE_INCLUDE)/u3_overworld.h $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) overworld_movement_tests.c $(CORE_SRC)/u3_overworld.c $(CORE_SRC)/u3_render.c -o $@
+
+$(BUILD_DIR)/character_creation_tests: character_creation_tests.c $(CORE_SRC)/u3_character.c $(CORE_INCLUDE)/u3_character.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) character_creation_tests.c $(CORE_SRC)/u3_character.c -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)
