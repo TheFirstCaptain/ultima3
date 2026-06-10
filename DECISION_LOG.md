@@ -186,3 +186,12 @@ Status: Accepted
 - The first deterministic new-game fixture contains metadata, active party bytes, roster bytes, current Sosaria map bytes, zero-filled current Sosaria creature bytes, and mutable `MISC` table records.
 - JSON plus encoded byte blobs is deferred because it adds text-format and encoding concerns before the adapter has a real gameplay persistence consumer.
 - Atomic write/read behavior remains a follow-up F-020D concern; F-020C only defines and generates the deterministic in-memory fixture.
+
+## 2026-06-10: Native Save Preserves Observed MISC Table Lengths
+
+Status: Accepted
+
+- Native save-domain documents preserve mutable `MISC` records 500 through 505 with byte lengths `16, 11, 11, 11, 64, 16`.
+- This intentionally follows the actual bundled resource lengths inherited by `OpenRstr` when it creates mutable `MISC` records from resources 400 through 405.
+- The legacy `GetMiscStuff` and `PutMiscStuff` loops copy 12 bytes for the type-initial, weapon-use, and armour-use tables, but the modern native save adapter does not synthesize or accept an extra compatibility byte for `MISC` 501, 502, or 503.
+- If a future real mutable legacy `Ultima III Roster` fixture proves those resources expand to 12 bytes on disk, compatibility should be added as an explicit legacy import policy rather than changing native save-domain lengths silently.

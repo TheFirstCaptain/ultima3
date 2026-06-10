@@ -389,6 +389,38 @@ static uint8_t *build_fixture_with_shortened_record(const uint8_t *fixture, size
     return shortened;
 }
 
+static uint8_t *build_fixture_with_expanded_record(const uint8_t *fixture, size_t fixture_length, uint16_t expanded_record_index, uint8_t extra_byte, size_t *expanded_length)
+{
+    size_t record_offset = save_record_header_offset(expanded_record_index);
+    uint32_t payload_offset = read_u32(fixture, record_offset + 8);
+    uint32_t payload_length = read_u32(fixture, record_offset + 12);
+    uint16_t record_index;
+    uint8_t *expanded;
+
+    expanded = (uint8_t *)malloc(fixture_length + 1);
+    if (expanded == 0) {
+        fprintf(stderr, "failed to allocate %zu bytes\n", fixture_length + 1);
+        exit(1);
+    }
+
+    memcpy(expanded, fixture, payload_offset + payload_length);
+    expanded[payload_offset + payload_length] = extra_byte;
+    memcpy(expanded + payload_offset + payload_length + 1,
+           fixture + payload_offset + payload_length,
+           fixture_length - (payload_offset + payload_length));
+
+    write_u32(expanded, record_offset + 12, payload_length + 1);
+    for (record_index = (uint16_t)(expanded_record_index + 1); record_index < U3_SAVE_NEW_GAME_RECORD_COUNT; record_index++) {
+        size_t following_record_offset = save_record_header_offset(record_index);
+        uint32_t following_payload_offset = read_u32(expanded, following_record_offset + 8);
+
+        write_u32(expanded, following_record_offset + 8, following_payload_offset + 1);
+    }
+
+    *expanded_length = fixture_length + 1;
+    return expanded;
+}
+
 static void test_builds_deterministic_new_game_fixture(void)
 {
     save_fixture_context context;
@@ -411,7 +443,14 @@ static void test_builds_deterministic_new_game_fixture(void)
 
 static void test_new_game_fixture_contains_expected_records(void)
 {
-    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
+    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {
+        U3_SAVE_MISC_MOONGATE_LENGTH,
+        U3_SAVE_MISC_TYPE_INITIAL_LENGTH,
+        U3_SAVE_MISC_WEAPON_USE_LENGTH,
+        U3_SAVE_MISC_ARMOUR_USE_LENGTH,
+        U3_SAVE_MISC_LOCATION_LENGTH,
+        U3_SAVE_MISC_EXPERIENCE_LENGTH
+    };
     save_fixture_context context;
     size_t fixture_length;
     uint8_t *fixture;
@@ -461,7 +500,14 @@ static void test_new_game_fixture_contains_expected_records(void)
 
 static void test_loads_new_game_domain_state(void)
 {
-    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
+    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {
+        U3_SAVE_MISC_MOONGATE_LENGTH,
+        U3_SAVE_MISC_TYPE_INITIAL_LENGTH,
+        U3_SAVE_MISC_WEAPON_USE_LENGTH,
+        U3_SAVE_MISC_ARMOUR_USE_LENGTH,
+        U3_SAVE_MISC_LOCATION_LENGTH,
+        U3_SAVE_MISC_EXPERIENCE_LENGTH
+    };
     save_fixture_context context;
     size_t fixture_length;
     uint8_t *fixture;
@@ -533,6 +579,28 @@ static void test_domain_state_rejects_wrong_required_length(void)
 
     free(fixture);
     free(shortened_fixture);
+    unload_save_fixture_context(&context);
+}
+
+static void test_domain_state_rejects_expanded_misc_compatibility_byte(void)
+{
+    save_fixture_context context;
+    size_t fixture_length;
+    size_t expanded_length;
+    uint8_t *fixture;
+    uint8_t *expanded_fixture;
+    u3_save_document document;
+    u3_save_domain_state state;
+
+    load_save_fixture_context(&context);
+    fixture = build_new_game_fixture(&context.templates, &fixture_length);
+    expanded_fixture = build_fixture_with_expanded_record(fixture, fixture_length, 6, 0, &expanded_length);
+
+    ASSERT_TRUE(u3_save_open(expanded_fixture, expanded_length, &document));
+    ASSERT_FALSE(u3_save_load_domain_state(&document, &state));
+
+    free(fixture);
+    free(expanded_fixture);
     unload_save_fixture_context(&context);
 }
 
@@ -906,6 +974,7 @@ int main(void)
     test_loads_new_game_domain_state();
     test_domain_state_rejects_missing_required_record();
     test_domain_state_rejects_wrong_required_length();
+    test_domain_state_rejects_expanded_misc_compatibility_byte();
     test_rejects_invalid_template_lengths();
     test_rejects_short_output_buffer();
     test_rejects_malformed_save_documents();

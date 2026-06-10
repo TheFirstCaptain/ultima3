@@ -19,6 +19,15 @@ typedef struct u3_save_record_source {
     bool zero_fill;
 } u3_save_record_source;
 
+static const uint32_t u3_save_misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {
+    U3_SAVE_MISC_MOONGATE_LENGTH,
+    U3_SAVE_MISC_TYPE_INITIAL_LENGTH,
+    U3_SAVE_MISC_WEAPON_USE_LENGTH,
+    U3_SAVE_MISC_ARMOUR_USE_LENGTH,
+    U3_SAVE_MISC_LOCATION_LENGTH,
+    U3_SAVE_MISC_EXPERIENCE_LENGTH
+};
+
 static bool u3_save_range_valid(size_t length, uint32_t offset, uint32_t range_length)
 {
     return offset <= length && range_length <= length - offset;
@@ -81,7 +90,6 @@ static bool u3_save_resource_record_is_required(uint32_t type, int16_t id)
 
 static bool u3_save_templates_valid(const u3_save_templates *templates)
 {
-    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
     size_t index;
 
     if (templates == 0)
@@ -94,7 +102,7 @@ static bool u3_save_templates_valid(const u3_save_templates *templates)
         return false;
 
     for (index = 0; index < U3_SAVE_MISC_TABLE_COUNT; index++) {
-        if (!u3_save_template_valid(templates->misc[index], templates->misc_length[index], misc_lengths[index]))
+        if (!u3_save_template_valid(templates->misc[index], templates->misc_length[index], u3_save_misc_lengths[index]))
             return false;
     }
 
@@ -121,7 +129,12 @@ size_t u3_save_new_game_fixture_size(void)
            U3_SAVE_ROSTER_LENGTH +
            U3_SAVE_CURRENT_SOSARIA_MAP_LENGTH +
            U3_SAVE_CURRENT_SOSARIA_CREATURE_LENGTH +
-           16 + 11 + 11 + 11 + 64 + 16;
+           U3_SAVE_MISC_MOONGATE_LENGTH +
+           U3_SAVE_MISC_TYPE_INITIAL_LENGTH +
+           U3_SAVE_MISC_WEAPON_USE_LENGTH +
+           U3_SAVE_MISC_ARMOUR_USE_LENGTH +
+           U3_SAVE_MISC_LOCATION_LENGTH +
+           U3_SAVE_MISC_EXPERIENCE_LENGTH;
 }
 
 int u3_save_build_new_game_fixture(const u3_save_templates *templates, uint8_t *bytes, size_t capacity, size_t *written)
@@ -146,12 +159,12 @@ int u3_save_build_new_game_fixture(const u3_save_templates *templates, uint8_t *
     records[2] = (u3_save_record_source){U3_SAVE_TYPE_ROSTER, U3_SAVE_ID_ROSTER, templates->roster, U3_SAVE_ROSTER_LENGTH, false};
     records[3] = (u3_save_record_source){U3_SAVE_TYPE_MAP, U3_SAVE_ID_CURRENT_SOSARIA, templates->current_sosaria_map, U3_SAVE_CURRENT_SOSARIA_MAP_LENGTH, false};
     records[4] = (u3_save_record_source){U3_SAVE_TYPE_CREATURES, U3_SAVE_ID_CURRENT_SOSARIA, 0, U3_SAVE_CURRENT_SOSARIA_CREATURE_LENGTH, true};
-    records[5] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE, templates->misc[0], 16, false};
-    records[6] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 1, templates->misc[1], 11, false};
-    records[7] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 2, templates->misc[2], 11, false};
-    records[8] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 3, templates->misc[3], 11, false};
-    records[9] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 4, templates->misc[4], 64, false};
-    records[10] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 5, templates->misc[5], 16, false};
+    records[5] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE, templates->misc[0], u3_save_misc_lengths[0], false};
+    records[6] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 1, templates->misc[1], u3_save_misc_lengths[1], false};
+    records[7] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 2, templates->misc[2], u3_save_misc_lengths[2], false};
+    records[8] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 3, templates->misc[3], u3_save_misc_lengths[3], false};
+    records[9] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 4, templates->misc[4], u3_save_misc_lengths[4], false};
+    records[10] = (u3_save_record_source){U3_SAVE_TYPE_MISC, U3_SAVE_ID_MISC_BASE + 5, templates->misc[5], u3_save_misc_lengths[5], false};
 
     memset(bytes, 0, u3_save_new_game_fixture_size());
     bytes[0] = (uint8_t)U3_SAVE_MAGIC_0;
@@ -232,7 +245,6 @@ static int u3_save_count_unknown_resources(const u3_resource_file *resource_file
 
 static int u3_save_legacy_required_resources_valid(const u3_resource_file *resource_file)
 {
-    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
     u3_resource_record record;
     size_t misc_index;
 
@@ -246,7 +258,7 @@ static int u3_save_legacy_required_resources_valid(const u3_resource_file *resou
         return 0;
 
     for (misc_index = 0; misc_index < U3_SAVE_MISC_TABLE_COUNT; misc_index++) {
-        if (!u3_save_require_resource(resource_file, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), (uint32_t)misc_lengths[misc_index], &record))
+        if (!u3_save_require_resource(resource_file, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), u3_save_misc_lengths[misc_index], &record))
             return 0;
     }
 
@@ -288,13 +300,17 @@ size_t u3_save_legacy_roster_import_size(const u3_resource_file *resource_file)
            U3_SAVE_ROSTER_LENGTH +
            U3_SAVE_CURRENT_SOSARIA_MAP_LENGTH +
            U3_SAVE_CURRENT_SOSARIA_CREATURE_LENGTH +
-           16 + 11 + 11 + 11 + 64 + 16 +
+           U3_SAVE_MISC_MOONGATE_LENGTH +
+           U3_SAVE_MISC_TYPE_INITIAL_LENGTH +
+           U3_SAVE_MISC_WEAPON_USE_LENGTH +
+           U3_SAVE_MISC_ARMOUR_USE_LENGTH +
+           U3_SAVE_MISC_LOCATION_LENGTH +
+           U3_SAVE_MISC_EXPERIENCE_LENGTH +
            unknown_length;
 }
 
 int u3_save_build_legacy_roster_import(const u3_resource_file *resource_file, uint8_t *bytes, size_t capacity, size_t *written)
 {
-    static const size_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
     uint8_t metadata[U3_SAVE_METADATA_LENGTH];
     u3_resource_record resource_record;
     u3_save_record_source records[U3_SAVE_LEGACY_IMPORT_MAX_RECORDS];
@@ -347,7 +363,7 @@ int u3_save_build_legacy_roster_import(const u3_resource_file *resource_file, ui
         return 0;
 
     for (misc_index = 0; misc_index < U3_SAVE_MISC_TABLE_COUNT; misc_index++) {
-        if (!u3_save_require_resource(resource_file, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), (uint32_t)misc_lengths[misc_index], &resource_record))
+        if (!u3_save_require_resource(resource_file, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), u3_save_misc_lengths[misc_index], &resource_record))
             return 0;
         if (!u3_save_add_record_source(records, (uint16_t)(sizeof(records) / sizeof(records[0])), &record_count, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), resource_record.data, resource_record.length))
             return 0;
@@ -524,7 +540,6 @@ int u3_save_find_record(const u3_save_document *document, uint32_t type, int16_t
 
 int u3_save_load_domain_state(const u3_save_document *document, u3_save_domain_state *state)
 {
-    static const uint32_t misc_lengths[U3_SAVE_MISC_TABLE_COUNT] = {16, 11, 11, 11, 64, 16};
     u3_save_domain_state loaded_state;
     u3_save_record record;
     size_t misc_index;
@@ -555,7 +570,7 @@ int u3_save_load_domain_state(const u3_save_document *document, u3_save_domain_s
     loaded_state.current_sosaria_creatures_length = record.length;
 
     for (misc_index = 0; misc_index < U3_SAVE_MISC_TABLE_COUNT; misc_index++) {
-        if (!u3_save_require_document_record(document, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), misc_lengths[misc_index], &record))
+        if (!u3_save_require_document_record(document, U3_SAVE_TYPE_MISC, (int16_t)(U3_SAVE_ID_MISC_BASE + misc_index), u3_save_misc_lengths[misc_index], &record))
             return 0;
         loaded_state.misc[misc_index] = record.data;
         loaded_state.misc_length[misc_index] = record.length;

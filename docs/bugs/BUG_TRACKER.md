@@ -32,4 +32,4 @@ Use this tracker for known defects, regressions, build failures, compatibility i
 | ID | Title | Status | Priority | Bug Doc | Last Updated | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | B-001 | Pascal String Search/Replace Uses Non-Portable Char Arithmetic | Resolved | P2 | [B-001.md](./B-001.md) | 2026-06-02 | Fixed with explicit `int` arithmetic and unsigned-char harness validation. |
-| B-002 | MISC Table Resource Lengths Differ From Legacy Copy Loops | Open | P2 | [B-002.md](./B-002.md) | 2026-06-05 | `MISC` 401..403 are 11 bytes in `MainResources.rsrc`, but legacy table copy loops read/write 12 bytes. |
+| B-002 | MISC Table Resource Lengths Differ From Legacy Copy Loops | Resolved | P2 | [B-002.md](./B-002.md) | 2026-06-10 | Native save policy preserves 11-byte `MISC` 501..503 records and rejects synthesized 12-byte records pending real legacy roster evidence. |

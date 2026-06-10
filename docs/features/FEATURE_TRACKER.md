@@ -74,7 +74,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-024 | Party/Roster State Adapter | Complete | Done | [F-024.md](./F-024.md) | 2026-06-07 | Portable decoded roster summary and Game menu status readout complete with automated, review, and manual validation. |
 | F-025 | Overworld Movement Smoke | Complete | Done | [F-025.md](./F-025.md) | 2026-06-09 | Bounded modern-shell overworld movement smoke with resource-backed redraw and harness coverage complete. |
 | F-026 | Character Creation Flow Spike | Complete | Done | [F-026.md](./F-026.md) | 2026-06-09 | Non-persistent SwiftUI setup panel with portable character candidate validation complete. |
-| F-027 | MISC Table Length Policy | Proposed | Proposed | [F-027.md](./F-027.md) | 2026-06-10 | Resolve or narrow B-002 before broader save-domain mutation work depends on mutable `MISC` table lengths. |
+| F-027 | MISC Table Length Policy | Complete | Done | [F-027.md](./F-027.md) | 2026-06-10 | Native save policy preserves 11-byte `MISC` 501..503 records and resolves B-002 with residual legacy-import risk documented. |
 | F-028 | Persistent Character Creation | Proposed | Proposed | [F-028.md](./F-028.md) | 2026-06-10 | Persist F-026 character candidates into native `ROST` data with characterized legacy defaults. |
 | F-029 | Party Assembly From Roster | Proposed | Proposed | [F-029.md](./F-029.md) | 2026-06-10 | Select active party members from occupied roster slots and write native `PRTY` state. |
 | F-030 | Current Native Save Load and Write | Proposed | Proposed | [F-030.md](./F-030.md) | 2026-06-10 | Promote save smoke into a current native save document that setup flows can mutate and atomically write. |
