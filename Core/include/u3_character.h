@@ -1,12 +1,15 @@
 #ifndef U3_CHARACTER_H
 #define U3_CHARACTER_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define U3_CHARACTER_NAME_CAPACITY 12
 #define U3_CHARACTER_ATTRIBUTE_MIN 5
 #define U3_CHARACTER_ATTRIBUTE_MAX 25
 #define U3_CHARACTER_ATTRIBUTE_TOTAL 50
+#define U3_CHARACTER_ROSTER_SLOT_COUNT 20
+#define U3_CHARACTER_ROSTER_RECORD_LENGTH 64
 
 #define U3_CHARACTER_VALIDATION_OK 0
 #define U3_CHARACTER_VALIDATION_MISSING_NAME 1
@@ -17,6 +20,11 @@
 #define U3_CHARACTER_VALIDATION_INVALID_SEX 6
 #define U3_CHARACTER_VALIDATION_ATTRIBUTE_RANGE 7
 #define U3_CHARACTER_VALIDATION_ATTRIBUTE_TOTAL 8
+
+#define U3_CHARACTER_ROSTER_WRITE_OK 0
+#define U3_CHARACTER_ROSTER_WRITE_INVALID_CANDIDATE 1
+#define U3_CHARACTER_ROSTER_WRITE_INVALID_ROSTER 2
+#define U3_CHARACTER_ROSTER_WRITE_FULL 3
 
 typedef struct u3_character_candidate {
     char name[U3_CHARACTER_NAME_CAPACITY + 1];
@@ -37,6 +45,15 @@ typedef struct u3_character_validation {
     uint8_t points_over;
 } u3_character_validation;
 
+typedef struct u3_character_roster_write {
+    uint8_t written;
+    uint8_t reason;
+    uint8_t roster_id;
+    uint16_t record_offset;
+    u3_character_validation validation;
+} u3_character_roster_write;
+
 u3_character_validation u3_character_validate_candidate(const u3_character_candidate *candidate);
+u3_character_roster_write u3_character_add_to_roster(const u3_character_candidate *candidate, uint8_t *roster, size_t roster_length);
 
 #endif

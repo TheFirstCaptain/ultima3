@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CharacterCreationView: View {
     private let adapter = ShellCharacterCreationAdapter()
-    let onAccept: (String) -> Void
+    let onAccept: (ShellCharacterDraft) -> Void
     let onCancel: () -> Void
 
     @State private var name = "Iolo"
@@ -82,7 +82,7 @@ struct CharacterCreationView: View {
                     let validation = currentValidation
                     validationMessage = validation.message
                     if validation.valid {
-                        onAccept(validation.summary)
+                        onAccept(currentDraft)
                     }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -125,7 +125,11 @@ struct CharacterCreationView: View {
     }
 
     private var currentValidation: ShellCharacterValidationResult {
-        adapter.validate(ShellCharacterDraft(
+        adapter.validate(currentDraft)
+    }
+
+    private var currentDraft: ShellCharacterDraft {
+        ShellCharacterDraft(
             name: name,
             race: race,
             characterClass: characterClass,
@@ -134,7 +138,7 @@ struct CharacterCreationView: View {
             dexterity: UInt8(dexterity),
             intelligence: UInt8(intelligence),
             wisdom: UInt8(wisdom)
-        ))
+        )
     }
 
     private var validationRow: some View {

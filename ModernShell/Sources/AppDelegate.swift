@@ -70,8 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func showCharacterCreation(_ sender: Any?) {
         let hostingController = NSHostingController(rootView: CharacterCreationView(
-            onAccept: { [weak self] summary in
-                self?.shellState.acceptCharacterCandidate(summary)
+            onAccept: { [weak self] draft in
+                self?.shellState.acceptCharacterCandidate(draft)
                 self?.closeCharacterCreationPanel()
             },
             onCancel: { [weak self] in
@@ -272,6 +272,7 @@ final class ShellSmokeState: ObservableObject {
     private let locationProvider: ShellLocationProvider
     private let resourceAdapter: ShellResourceAdapter
     private let saveAdapter: ShellSaveAdapter
+    private let characterCreationAdapter = ShellCharacterCreationAdapter()
     private var tickState = u3_tick_state()
     private var overworldState = u3_overworld_state()
     private var overworldMapData: Data?
@@ -503,9 +504,17 @@ final class ShellSmokeState: ObservableObject {
         lastCommand = "Party roster"
     }
 
-    func acceptCharacterCandidate(_ summary: String) {
-        saveStatus = summary
-        lastCommand = "Character candidate accepted"
+    func acceptCharacterCandidate(_ draft: ShellCharacterDraft) {
+        let result = characterCreationAdapter.persist(draft, currentDocument: currentSaveDocument)
+        guard result.saved, let document = result.document else {
+            saveStatus = result.message
+            lastCommand = "Character save failed"
+            return
+        }
+
+        currentSaveDocument = document
+        saveStatus = resourceAdapter.inspectPartyRoster(documentData: document)
+        lastCommand = "Character saved roster \(result.rosterID)"
     }
 
     func cancelCharacterCandidate() {
