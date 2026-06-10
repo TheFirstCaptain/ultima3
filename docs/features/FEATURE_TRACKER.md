@@ -77,6 +77,6 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-027 | MISC Table Length Policy | Complete | Done | [F-027.md](./F-027.md) | 2026-06-10 | Native save policy preserves 11-byte `MISC` 501..503 records and resolves B-002 with residual legacy-import risk documented. |
 | F-028 | Persistent Character Creation | Proposed | Proposed | [F-028.md](./F-028.md) | 2026-06-10 | Persist F-026 character candidates into native `ROST` data with characterized legacy defaults. |
 | F-029 | Party Assembly From Roster | Proposed | Proposed | [F-029.md](./F-029.md) | 2026-06-10 | Select active party members from occupied roster slots and write native `PRTY` state. |
-| F-030 | Current Native Save Load and Write | Proposed | Proposed | [F-030.md](./F-030.md) | 2026-06-10 | Promote save smoke into a current native save document that setup flows can mutate and atomically write. |
+| F-030 | Current Native Save Load and Write | Complete | Done | [F-030.md](./F-030.md) | 2026-06-10 | Shell owns a current native save document, can load new/saved documents, inspect current party state, and atomically write the current document. |
 | F-031 | Save-Backed Overworld Movement | Proposed | Proposed | [F-031.md](./F-031.md) | 2026-06-10 | Replace bounded movement smoke with party-position-backed movement and redraw. |
 | F-032 | First Overworld Gameplay Interaction Slice | Proposed | Proposed | [F-032.md](./F-032.md) | 2026-06-10 | Choose and implement the first narrow terrain or movement interaction after save-backed movement. |

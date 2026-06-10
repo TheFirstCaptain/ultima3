@@ -60,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         shellState.loadNewGameSmoke()
     }
 
+    @objc private func loadSavedSmoke(_ sender: Any?) {
+        shellState.loadSavedSmoke()
+    }
+
     @objc private func inspectPartyRoster(_ sender: Any?) {
         shellState.inspectPartyRoster()
     }
@@ -200,6 +204,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             target: self
         ))
         gameMenu.addItem(makeMenuItem(
+            withTitle: "Load Saved Smoke",
+            action: #selector(loadSavedSmoke(_:)),
+            keyEquivalent: "o",
+            target: self
+        ))
+        gameMenu.addItem(makeMenuItem(
             withTitle: "Inspect Party/Roster",
             action: #selector(inspectPartyRoster(_:)),
             keyEquivalent: "i",
@@ -257,17 +267,29 @@ final class ShellSmokeState: ObservableObject {
     @Published private(set) var renderFrame = u3_render_make_synthetic_tile_frame()
     @Published private(set) var tickStatus = "Tick 0 phase 0 input 0 audio 0 running"
 
-    private let inputAdapter = ShellInputAdapter()
-    private let audioAdapter = ShellAudioAdapter()
-    private let locationProvider = ShellLocationProvider()
-    private let resourceAdapter = ShellResourceAdapter()
-    private let saveAdapter = ShellSaveAdapter()
+    private let inputAdapter: ShellInputAdapter
+    private let audioAdapter: ShellAudioAdapter
+    private let locationProvider: ShellLocationProvider
+    private let resourceAdapter: ShellResourceAdapter
+    private let saveAdapter: ShellSaveAdapter
     private var tickState = u3_tick_state()
     private var overworldState = u3_overworld_state()
     private var overworldMapData: Data?
+    private var currentSaveDocument: Data?
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
 
-    init() {
+    init(
+        inputAdapter: ShellInputAdapter = ShellInputAdapter(),
+        audioAdapter: ShellAudioAdapter = ShellAudioAdapter(),
+        locationProvider: ShellLocationProvider = ShellLocationProvider(),
+        resourceAdapter: ShellResourceAdapter = ShellResourceAdapter(),
+        saveAdapter: ShellSaveAdapter = ShellSaveAdapter()
+    ) {
+        self.inputAdapter = inputAdapter
+        self.audioAdapter = audioAdapter
+        self.locationProvider = locationProvider
+        self.resourceAdapter = resourceAdapter
+        self.saveAdapter = saveAdapter
         u3_tick_state_init(&tickState)
         u3_overworld_state_init(
             &overworldState,
@@ -377,30 +399,50 @@ final class ShellSmokeState: ObservableObject {
 
     func writeSaveSmoke() {
         let locations = locationProvider.snapshot()
-        guard let document = resourceAdapter.buildNativeNewGameSmokeDocument(resourceRootPath: locations.resourceRootPath) else {
-            saveStatus = "Save Failed build smoke document"
-            lastCommand = "Save smoke failed"
+        guard let document = currentSaveDocument else {
+            saveStatus = "Save Missing current document"
+            lastCommand = "Save current missing"
+            return
+        }
+        guard resourceAdapter.currentSosariaSaveAllowed(documentData: document) else {
+            saveStatus = "Save Rejected not in Sosaria"
+            lastCommand = "Save current rejected"
             return
         }
 
         let writeStatus = saveAdapter.writeSmokeDocument(document, saveDocumentPath: locations.saveDocumentPath)
         let readStatus = saveAdapter.readSmokeDocument(saveDocumentPath: locations.saveDocumentPath)
         saveStatus = "\(writeStatus) | \(readStatus) | \(locations.saveDocumentPath)"
-        lastCommand = "Save smoke"
+        lastCommand = "Save current"
     }
 
     func loadNewGameSmoke() {
         let locations = locationProvider.snapshot()
-        saveStatus = resourceAdapter.loadNewGameSmokeState(resourceRootPath: locations.resourceRootPath)
-        let overworldSmoke = resourceAdapter.buildOverworldSmoke(resourceRootPath: locations.resourceRootPath, state: &overworldState)
-        overworldMapData = overworldSmoke.map
-        renderFrame = overworldSmoke.frame
-        resourceStatus = Self.describeResourceStatus(
-            locations: locations,
-            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
-            renderStatus: overworldSmoke.status
-        )
-        lastCommand = "New game smoke"
+        guard let document = resourceAdapter.buildNativeNewGameSmokeDocument(resourceRootPath: locations.resourceRootPath) else {
+            saveStatus = "New Game Failed build smoke document"
+            lastCommand = "New game failed"
+            return
+        }
+
+        applyCurrentSaveDocument(document, locations: locations, statusPrefix: "Current Save")
+        lastCommand = "Current save loaded"
+    }
+
+    func loadSavedSmoke() {
+        let locations = locationProvider.snapshot()
+        guard let document = saveAdapter.readDocument(saveDocumentPath: locations.saveDocumentPath) else {
+            saveStatus = "Save Missing current document"
+            lastCommand = "Saved load failed"
+            return
+        }
+        guard resourceAdapter.isValidSaveDomain(document) else {
+            saveStatus = resourceAdapter.describeSaveDomain(document, prefix: "Saved Game")
+            lastCommand = "Saved load failed"
+            return
+        }
+
+        applyCurrentSaveDocument(document, locations: locations, statusPrefix: "Saved Game")
+        lastCommand = "Saved game loaded"
     }
 
     private func consumeInputEvent(_ event: u3_input_event) -> String {
@@ -438,9 +480,26 @@ final class ShellSmokeState: ObservableObject {
         )
     }
 
+    private func applyCurrentSaveDocument(_ document: Data, locations: ShellLocationSnapshot, statusPrefix: String) {
+        currentSaveDocument = document
+        saveStatus = resourceAdapter.describeSaveDomain(document, prefix: statusPrefix)
+        let overworldSmoke = resourceAdapter.buildOverworldSmoke(documentData: document, state: &overworldState)
+        overworldMapData = overworldSmoke.map
+        renderFrame = overworldSmoke.frame
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: overworldSmoke.status
+        )
+    }
+
     func inspectPartyRoster() {
-        let locations = locationProvider.snapshot()
-        saveStatus = resourceAdapter.inspectPartyRoster(resourceRootPath: locations.resourceRootPath)
+        if let currentSaveDocument {
+            saveStatus = resourceAdapter.inspectPartyRoster(documentData: currentSaveDocument)
+        } else {
+            let locations = locationProvider.snapshot()
+            saveStatus = resourceAdapter.inspectPartyRoster(resourceRootPath: locations.resourceRootPath)
+        }
         lastCommand = "Party roster"
     }
 

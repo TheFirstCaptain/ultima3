@@ -19,9 +19,11 @@ struct ShellLocationSnapshot {
 
 final class ShellLocationProvider {
     private let fileManager: FileManager
+    private let saveDocumentURL: URL?
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, saveDocumentURL: URL? = nil) {
         self.fileManager = fileManager
+        self.saveDocumentURL = saveDocumentURL
     }
 
     func snapshot() -> ShellLocationSnapshot {
@@ -43,6 +45,10 @@ final class ShellLocationProvider {
     }
 
     private func resolveSaveDocumentPath() -> URL {
+        if let saveDocumentURL {
+            return saveDocumentURL
+        }
+
         if let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             return applicationSupport
                 .appendingPathComponent("Ultima3Modernization", isDirectory: true)

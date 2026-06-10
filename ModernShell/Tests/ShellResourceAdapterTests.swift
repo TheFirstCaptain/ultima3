@@ -24,6 +24,17 @@ final class ShellResourceAdapterTests: XCTestCase {
         )
     }
 
+    func testDescribeSaveDomainReportsCurrentDocumentLengths() throws {
+        let adapter = ShellResourceAdapter()
+        let document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+
+        XCTAssertEqual(
+            adapter.describeSaveDomain(document, prefix: "Current Save"),
+            "Current Save OK party 64 roster 1280 map 4101 creatures 256 misc 16/11/11/11/64/16"
+        )
+        XCTAssertTrue(adapter.currentSosariaSaveAllowed(documentData: document))
+    }
+
     func testLoadNewGameSmokeStateReportsMissingInput() {
         let adapter = ShellResourceAdapter()
 
@@ -38,6 +49,16 @@ final class ShellResourceAdapterTests: XCTestCase {
 
         XCTAssertEqual(
             adapter.inspectPartyRoster(resourceRootPath: resourceRootPath),
+            "Party OK size 4 active 1/2/3/4 occupied 4 lead Tatiana G E/T/F HP 100/100 L1 food 150 gold 150"
+        )
+    }
+
+    func testInspectPartyRosterReadsProvidedCurrentDocument() throws {
+        let adapter = ShellResourceAdapter()
+        let document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+
+        XCTAssertEqual(
+            adapter.inspectPartyRoster(documentData: document),
             "Party OK size 4 active 1/2/3/4 occupied 4 lead Tatiana G E/T/F HP 100/100 L1 food 150 gold 150"
         )
     }

@@ -105,21 +105,12 @@ final class ShellResourceAdapter {
             return "New Game Failed build smoke document"
         }
 
-        return documentData.withUnsafeBytes { rawBuffer in
-            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
-                return "New Game Empty smoke document"
-            }
+        return describeSaveDomain(documentData, prefix: "New Game")
+    }
 
-            var document = u3_save_document()
-            guard u3_save_open(baseAddress, documentData.count, &document) != 0 else {
-                return "New Game Invalid smoke document"
-            }
-
-            var state = u3_save_domain_state()
-            guard u3_save_load_domain_state(&document, &state) != 0 else {
-                return "New Game Failed load domain state"
-            }
-
+    func describeSaveDomain(_ documentData: Data, prefix: String) -> String {
+        switch loadSaveDomain(documentData) {
+        case .success(let state):
             let miscLengths = [
                 state.misc_length.0,
                 state.misc_length.1,
@@ -129,8 +120,18 @@ final class ShellResourceAdapter {
                 state.misc_length.5
             ]
             let miscStatus = miscLengths.map(String.init).joined(separator: "/")
-            return "New Game OK party \(state.party_length) roster \(state.roster_length) map \(state.current_sosaria_map_length) creatures \(state.current_sosaria_creatures_length) misc \(miscStatus)"
+            return "\(prefix) OK party \(state.party_length) roster \(state.roster_length) map \(state.current_sosaria_map_length) creatures \(state.current_sosaria_creatures_length) misc \(miscStatus)"
+        case .failure(let status):
+            return "\(prefix) \(status)"
         }
+    }
+
+    func isValidSaveDomain(_ documentData: Data) -> Bool {
+        if case .success = loadSaveDomain(documentData) {
+            return true
+        }
+
+        return false
     }
 
     func inspectPartyRoster(resourceRootPath: String?) -> String {
@@ -138,6 +139,10 @@ final class ShellResourceAdapter {
             return "Party Failed build smoke document"
         }
 
+        return inspectPartyRoster(documentData: documentData)
+    }
+
+    func inspectPartyRoster(documentData: Data) -> String {
         return documentData.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
                 return "Party Empty smoke document"
@@ -159,6 +164,20 @@ final class ShellResourceAdapter {
             }
 
             return formatPartyRosterSummary(&summary)
+        }
+    }
+
+    func currentSosariaSaveAllowed(documentData: Data) -> Bool {
+        switch loadSaveDomain(documentData) {
+        case .success(let state):
+            guard let party = state.party,
+                  state.party_length == U3_SAVE_PARTY_LENGTH else {
+                return false
+            }
+
+            return party[2] == 0
+        case .failure:
+            return false
         }
     }
 
@@ -220,6 +239,12 @@ final class ShellResourceAdapter {
             return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Missing new game map")
         }
 
+        return buildOverworldSmoke(documentData: documentData, state: &state)
+    }
+
+    func buildOverworldSmoke(documentData: Data, state: inout u3_overworld_state) -> ShellOverworldSmokeResult {
+        let fallbackFrame = u3_render_make_synthetic_tile_frame()
+
         return documentData.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
                 return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Empty new game map")
@@ -264,6 +289,31 @@ final class ShellResourceAdapter {
         }
 
         return mapData.count >= 1 + (Int(mapSize) * Int(mapSize))
+    }
+
+    private enum SaveDomainLoadResult {
+        case success(u3_save_domain_state)
+        case failure(String)
+    }
+
+    private func loadSaveDomain(_ documentData: Data) -> SaveDomainLoadResult {
+        documentData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return .failure("Empty smoke document")
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(baseAddress, documentData.count, &document) != 0 else {
+                return .failure("Invalid smoke document")
+            }
+
+            var state = u3_save_domain_state()
+            guard u3_save_load_domain_state(&document, &state) != 0 else {
+                return .failure("Failed load domain state")
+            }
+
+            return .success(state)
+        }
     }
 
     private func fourCharacterCode(_ value: String) -> UInt32 {

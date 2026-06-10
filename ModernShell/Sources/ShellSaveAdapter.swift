@@ -58,6 +58,17 @@ final class ShellSaveAdapter {
         return validateSaveDocument(data) ? "Save Read OK Smoke" : "Save Read Invalid Smoke"
     }
 
+    func readDocument(saveDocumentPath: String) -> Data? {
+        let destinationURL = URL(fileURLWithPath: saveDocumentPath, isDirectory: false)
+
+        guard let data = try? Data(contentsOf: destinationURL),
+              validateSaveDocument(data) else {
+            return nil
+        }
+
+        return data
+    }
+
     private func validateSaveDocument(_ document: Data) -> Bool {
         document.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {

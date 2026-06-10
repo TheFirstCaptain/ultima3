@@ -28,6 +28,26 @@ final class ShellSaveAdapterTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saveURL), document)
     }
 
+    func testReadDocumentReturnsValidDocumentData() throws {
+        let adapter = ShellSaveAdapter()
+        let saveURL = temporaryDirectory.appendingPathComponent("Smoke.u3save", isDirectory: false)
+        let document = makeValidSaveDocument(payload: [21, 22, 23, 24])
+
+        XCTAssertEqual(adapter.writeSmokeDocument(document, saveDocumentPath: saveURL.path), "Save OK Smoke")
+        XCTAssertEqual(adapter.readDocument(saveDocumentPath: saveURL.path), document)
+    }
+
+    func testReadDocumentRejectsInvalidDocumentData() throws {
+        let adapter = ShellSaveAdapter()
+        let saveURL = temporaryDirectory.appendingPathComponent("Invalid.u3save", isDirectory: false)
+        var invalidDocument = makeValidSaveDocument(payload: [25, 26, 27, 28])
+        invalidDocument[0] = UInt8(ascii: "X")
+        try invalidDocument.write(to: saveURL)
+
+        XCTAssertNil(adapter.readDocument(saveDocumentPath: saveURL.path))
+        XCTAssertEqual(adapter.readSmokeDocument(saveDocumentPath: saveURL.path), "Save Read Invalid Smoke")
+    }
+
     func testInvalidReplacementRetainsPreviousValidDocument() throws {
         let adapter = ShellSaveAdapter()
         let saveURL = temporaryDirectory.appendingPathComponent("Smoke.u3save", isDirectory: false)

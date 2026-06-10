@@ -7,6 +7,20 @@ final class ShellTickSmokeTests: XCTestCase {
     private let partyTileValue: UInt16 = 0xff
     private let moveWestCommand: UInt16 = 3
     private let moveEastCommand: UInt16 = 4
+    private var temporaryDirectory: URL!
+    private var saveDocumentURL: URL!
+
+    override func setUpWithError() throws {
+        temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Ultima3ModernShellTests-\(UUID().uuidString)", isDirectory: true)
+        saveDocumentURL = temporaryDirectory.appendingPathComponent("Ultima3ModernSave.u3save", isDirectory: false)
+    }
+
+    override func tearDownWithError() throws {
+        if let temporaryDirectory {
+            try? FileManager.default.removeItem(at: temporaryDirectory)
+        }
+    }
 
     func testTickAdvancesStatusWithoutQueuedEvents() {
         let state = ShellSmokeState()
@@ -90,5 +104,81 @@ final class ShellTickSmokeTests: XCTestCase {
 
         XCTAssertEqual(state.lastCommand, "Tick paused")
         XCTAssertEqual(state.tickStatus, "Tick 1 phase 1 input 0 audio 0 paused")
+    }
+
+    func testWriteSaveSmokeRequiresCurrentDocument() {
+        let state = ShellSmokeState()
+
+        state.writeSaveSmoke()
+
+        XCTAssertEqual(state.lastCommand, "Save current missing")
+        XCTAssertEqual(state.saveStatus, "Save Missing current document")
+    }
+
+    func testLoadNewGameSmokeStoresCurrentDocumentForInspection() {
+        let state = ShellSmokeState()
+
+        state.loadNewGameSmoke()
+
+        XCTAssertEqual(state.lastCommand, "Current save loaded")
+        XCTAssertEqual(state.saveStatus, "Current Save OK party 64 roster 1280 map 4101 creatures 256 misc 16/11/11/11/64/16")
+
+        state.inspectPartyRoster()
+
+        XCTAssertEqual(state.lastCommand, "Party roster")
+        XCTAssertEqual(state.saveStatus, "Party OK size 4 active 1/2/3/4 occupied 4 lead Tatiana G E/T/F HP 100/100 L1 food 150 gold 150")
+    }
+
+    func testLoadSavedSmokeRejectsDomainInvalidDocumentWithoutReplacingCurrentDocument() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadNewGameSmoke()
+
+        let invalidDomainDocument = makeStructurallyValidSaveDocument(payload: [1, 2, 3, 4])
+        try FileManager.default.createDirectory(
+            at: saveDocumentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try invalidDomainDocument.write(to: saveDocumentURL)
+
+        state.loadSavedSmoke()
+
+        XCTAssertEqual(state.lastCommand, "Saved load failed")
+        XCTAssertEqual(state.saveStatus, "Saved Game Failed load domain state")
+
+        state.inspectPartyRoster()
+
+        XCTAssertEqual(state.lastCommand, "Party roster")
+        XCTAssertEqual(state.saveStatus, "Party OK size 4 active 1/2/3/4 occupied 4 lead Tatiana G E/T/F HP 100/100 L1 food 150 gold 150")
+    }
+
+    private func makeStructurallyValidSaveDocument(payload: [UInt8]) -> Data {
+        var data = Data(count: 16 + 16)
+        data[0] = UInt8(ascii: "U")
+        data[1] = UInt8(ascii: "3")
+        data[2] = UInt8(ascii: "S")
+        data[3] = UInt8(ascii: "V")
+        writeUInt16(1, at: 4, into: &data)
+        writeUInt16(1, at: 6, into: &data)
+        writeUInt32(32, at: 8, into: &data)
+        writeUInt32(0x4D455441, at: 16, into: &data)
+        writeUInt16(1, at: 20, into: &data)
+        writeUInt16(0, at: 22, into: &data)
+        writeUInt32(32, at: 24, into: &data)
+        writeUInt32(UInt32(payload.count), at: 28, into: &data)
+        data.append(contentsOf: payload)
+        return data
+    }
+
+    private func writeUInt16(_ value: UInt16, at offset: Int, into data: inout Data) {
+        data[offset] = UInt8(value >> 8)
+        data[offset + 1] = UInt8(value & 0xFF)
+    }
+
+    private func writeUInt32(_ value: UInt32, at offset: Int, into data: inout Data) {
+        data[offset] = UInt8(value >> 24)
+        data[offset + 1] = UInt8((value >> 16) & 0xFF)
+        data[offset + 2] = UInt8((value >> 8) & 0xFF)
+        data[offset + 3] = UInt8(value & 0xFF)
     }
 }
