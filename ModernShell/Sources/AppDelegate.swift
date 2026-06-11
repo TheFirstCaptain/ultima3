@@ -6,13 +6,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private var preferencesWindowController: NSWindowController?
     private var characterCreationWindowController: NSWindowController?
+    private var partyAssemblyWindowController: NSWindowController?
     private var suppressCharacterCreationCloseStatus = false
+    private var suppressPartyAssemblyCloseStatus = false
     private var tickTimer: Timer?
     private let shellState = ShellSmokeState()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
         openMainWindow()
+        shellState.loadSavedSmokeIfAvailable()
         startTickTimer()
     }
 
@@ -95,17 +98,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc private func showPartyAssembly(_ sender: Any?) {
+        let presentation = shellState.partyAssemblyPresentation()
+        let hostingController = NSHostingController(rootView: PartyAssemblyView(
+            presentation: presentation,
+            onAccept: { [weak self] selectedRosterIDs in
+                guard let self else {
+                    return
+                }
+                if presentation.hasActiveParty && !self.confirmReplaceParty() {
+                    return
+                }
+                self.shellState.acceptPartyAssembly(selectedRosterIDs)
+                self.closePartyAssemblyPanel()
+            },
+            onCancel: { [weak self] in
+                self?.shellState.cancelPartyAssembly()
+                self?.closePartyAssemblyPanel()
+            }
+        ))
+
+        if partyAssemblyWindowController == nil {
+            let panel = NSWindow(contentViewController: hostingController)
+            panel.title = "Assemble Party"
+            panel.styleMask = [.titled, .closable]
+            panel.setContentSize(NSSize(width: 560, height: 400))
+            panel.delegate = self
+            partyAssemblyWindowController = NSWindowController(window: panel)
+        } else {
+            partyAssemblyWindowController?.contentViewController = hostingController
+        }
+
+        partyAssemblyWindowController?.showWindow(sender)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow,
-              window === characterCreationWindowController?.window else {
+        guard let window = notification.object as? NSWindow else {
             return
         }
 
-        if !suppressCharacterCreationCloseStatus {
-            shellState.cancelCharacterCandidate()
+        if window === characterCreationWindowController?.window {
+            if !suppressCharacterCreationCloseStatus {
+                shellState.cancelCharacterCandidate()
+            }
+            suppressCharacterCreationCloseStatus = false
+            characterCreationWindowController = nil
+        } else if window === partyAssemblyWindowController?.window {
+            if !suppressPartyAssemblyCloseStatus {
+                shellState.cancelPartyAssembly()
+            }
+            suppressPartyAssemblyCloseStatus = false
+            partyAssemblyWindowController = nil
         }
-        suppressCharacterCreationCloseStatus = false
-        characterCreationWindowController = nil
     }
 
     private func closeCharacterCreationPanel() {
@@ -117,6 +162,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         controller.close()
         suppressCharacterCreationCloseStatus = false
         characterCreationWindowController = nil
+    }
+
+    private func closePartyAssemblyPanel() {
+        guard let controller = partyAssemblyWindowController else {
+            return
+        }
+
+        suppressPartyAssemblyCloseStatus = true
+        controller.close()
+        suppressPartyAssemblyCloseStatus = false
+        partyAssemblyWindowController = nil
+    }
+
+    private func confirmReplaceParty() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Replace Active Party?"
+        alert.informativeText = "The selected roster members will replace the current active party."
+        alert.addButton(withTitle: "Replace")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @objc private func showPreferences(_ sender: Any?) {
@@ -221,6 +286,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: "c",
             target: self
         ))
+        gameMenu.addItem(makeMenuItem(
+            withTitle: "Assemble Party...",
+            action: #selector(showPartyAssembly(_:)),
+            keyEquivalent: "p",
+            target: self
+        ))
         gameMenu.addItem(NSMenuItem.separator())
         gameMenu.addItem(makeMenuItem(
             withTitle: "Toggle Tick",
@@ -273,6 +344,7 @@ final class ShellSmokeState: ObservableObject {
     private let resourceAdapter: ShellResourceAdapter
     private let saveAdapter: ShellSaveAdapter
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
+    private let partyAssemblyAdapter = ShellPartyAssemblyAdapter()
     private var tickState = u3_tick_state()
     private var overworldState = u3_overworld_state()
     private var overworldMapData: Data?
@@ -446,6 +518,17 @@ final class ShellSmokeState: ObservableObject {
         lastCommand = "Saved game loaded"
     }
 
+    func loadSavedSmokeIfAvailable() {
+        let locations = locationProvider.snapshot()
+        guard let document = saveAdapter.readDocument(saveDocumentPath: locations.saveDocumentPath),
+              resourceAdapter.isValidSaveDomain(document) else {
+            return
+        }
+
+        applyCurrentSaveDocument(document, locations: locations, statusPrefix: "Saved Game")
+        lastCommand = "Saved game loaded"
+    }
+
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
             var moveResult = u3_overworld_move_result()
@@ -519,6 +602,27 @@ final class ShellSmokeState: ObservableObject {
 
     func cancelCharacterCandidate() {
         lastCommand = "Character creation cancelled"
+    }
+
+    func partyAssemblyPresentation() -> ShellPartyAssemblyPresentation {
+        partyAssemblyAdapter.presentation(currentDocument: currentSaveDocument)
+    }
+
+    func acceptPartyAssembly(_ selectedRosterIDs: [UInt8]) {
+        let result = partyAssemblyAdapter.assemble(selectedRosterIDs: selectedRosterIDs, currentDocument: currentSaveDocument)
+        guard result.assembled, let document = result.document else {
+            saveStatus = result.message
+            lastCommand = "Party assembly failed"
+            return
+        }
+
+        currentSaveDocument = document
+        saveStatus = resourceAdapter.inspectPartyRoster(documentData: document)
+        lastCommand = result.message
+    }
+
+    func cancelPartyAssembly() {
+        lastCommand = "Party assembly cancelled"
     }
 
     private func describeKey(_ command: UInt16) -> String {

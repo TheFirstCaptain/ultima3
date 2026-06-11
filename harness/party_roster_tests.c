@@ -215,11 +215,132 @@ static void test_rejects_invalid_party_shape(void)
     ASSERT_FALSE(u3_party_load_summary(&state, &summary));
 }
 
+static void mark_roster_occupied(uint8_t *roster, uint8_t roster_id, const char *name)
+{
+    uint8_t *record = roster + ((roster_id - 1) * U3_PARTY_ROSTER_RECORD_LENGTH);
+    size_t index;
+
+    memset(record, 0, U3_PARTY_ROSTER_RECORD_LENGTH);
+    for (index = 0; name[index] != 0 && index < U3_PARTY_NAME_CAPACITY; index++)
+        record[index] = (uint8_t)name[index];
+    record[17] = 'G';
+}
+
+static u3_save_domain_state synthetic_party_state(uint8_t *party, uint8_t *roster)
+{
+    u3_save_domain_state state;
+
+    memset(&state, 0, sizeof(state));
+    state.party = party;
+    state.party_length = U3_SAVE_PARTY_LENGTH;
+    state.roster = roster;
+    state.roster_length = U3_SAVE_ROSTER_LENGTH;
+    return state;
+}
+
+static void test_forms_party_from_occupied_roster_slots(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t updated_party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    uint8_t selected[3] = {3, 1, 2};
+    u3_save_domain_state state;
+    u3_party_form_result result;
+
+    memset(party, 0, sizeof(party));
+    memset(updated_party, 0xCC, sizeof(updated_party));
+    memset(roster, 0, sizeof(roster));
+    party[1] = 0;
+    mark_roster_occupied(roster, 1, "A");
+    mark_roster_occupied(roster, 2, "B");
+    mark_roster_occupied(roster, 3, "C");
+    state = synthetic_party_state(party, roster);
+
+    result = u3_party_form_from_roster(&state, selected, 3, updated_party, sizeof(updated_party));
+
+    ASSERT_TRUE(result.formed);
+    ASSERT_EQ_INT(U3_PARTY_FORM_OK, result.reason);
+    ASSERT_EQ_INT(3, result.party_size);
+    ASSERT_EQ_INT(3, result.active_roster_ids[0]);
+    ASSERT_EQ_INT(1, result.active_roster_ids[1]);
+    ASSERT_EQ_INT(2, result.active_roster_ids[2]);
+    ASSERT_EQ_INT(0x7E, updated_party[0]);
+    ASSERT_EQ_INT(3, updated_party[1]);
+    ASSERT_EQ_INT(0, updated_party[2]);
+    ASSERT_EQ_INT(42, updated_party[3]);
+    ASSERT_EQ_INT(20, updated_party[4]);
+    ASSERT_EQ_INT(255, updated_party[5]);
+    ASSERT_EQ_INT(3, updated_party[6]);
+    ASSERT_EQ_INT(1, updated_party[7]);
+    ASSERT_EQ_INT(2, updated_party[8]);
+    ASSERT_EQ_INT(0, updated_party[9]);
+}
+
+static void test_form_rejects_invalid_selection_counts(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t updated_party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    uint8_t selected[5] = {1, 2, 3, 4, 5};
+    u3_save_domain_state state;
+    u3_party_form_result result;
+
+    memset(party, 0, sizeof(party));
+    memset(updated_party, 0xCC, sizeof(updated_party));
+    memset(roster, 0, sizeof(roster));
+    mark_roster_occupied(roster, 1, "A");
+    state = synthetic_party_state(party, roster);
+
+    result = u3_party_form_from_roster(&state, selected, 0, updated_party, sizeof(updated_party));
+    ASSERT_FALSE(result.formed);
+    ASSERT_EQ_INT(U3_PARTY_FORM_INVALID_SIZE, result.reason);
+    ASSERT_EQ_INT(0xCC, updated_party[0]);
+
+    result = u3_party_form_from_roster(&state, selected, 5, updated_party, sizeof(updated_party));
+    ASSERT_FALSE(result.formed);
+    ASSERT_EQ_INT(U3_PARTY_FORM_INVALID_SIZE, result.reason);
+    ASSERT_EQ_INT(0xCC, updated_party[0]);
+}
+
+static void test_form_rejects_duplicate_invalid_and_unoccupied_roster_ids(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t updated_party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    uint8_t duplicate[2] = {1, 1};
+    uint8_t invalid[1] = {21};
+    uint8_t unoccupied[1] = {2};
+    u3_save_domain_state state;
+    u3_party_form_result result;
+
+    memset(party, 0, sizeof(party));
+    memset(updated_party, 0xCC, sizeof(updated_party));
+    memset(roster, 0, sizeof(roster));
+    mark_roster_occupied(roster, 1, "A");
+    state = synthetic_party_state(party, roster);
+
+    result = u3_party_form_from_roster(&state, duplicate, 2, updated_party, sizeof(updated_party));
+    ASSERT_FALSE(result.formed);
+    ASSERT_EQ_INT(U3_PARTY_FORM_DUPLICATE_ROSTER_ID, result.reason);
+
+    result = u3_party_form_from_roster(&state, invalid, 1, updated_party, sizeof(updated_party));
+    ASSERT_FALSE(result.formed);
+    ASSERT_EQ_INT(U3_PARTY_FORM_INVALID_ROSTER_ID, result.reason);
+
+    result = u3_party_form_from_roster(&state, unoccupied, 1, updated_party, sizeof(updated_party));
+    ASSERT_FALSE(result.formed);
+    ASSERT_EQ_INT(U3_PARTY_FORM_UNOCCUPIED_ROSTER_ID, result.reason);
+    ASSERT_EQ_INT(0xCC, updated_party[0]);
+}
+
 int main(void)
 {
     test_loads_default_party_roster_summary();
     test_loads_empty_roster_shape();
     test_rejects_invalid_party_shape();
+    test_forms_party_from_occupied_roster_slots();
+    test_form_rejects_invalid_selection_counts();
+    test_form_rejects_duplicate_invalid_and_unoccupied_roster_ids();
 
     printf("party roster characterization passed\n");
     return 0;

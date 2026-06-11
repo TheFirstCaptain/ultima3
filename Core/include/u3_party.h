@@ -10,6 +10,15 @@
 #define U3_PARTY_ROSTER_RECORD_LENGTH 64
 #define U3_PARTY_NAME_CAPACITY 13
 
+#define U3_PARTY_FORM_OK 0
+#define U3_PARTY_FORM_INVALID_ARGUMENT 1
+#define U3_PARTY_FORM_INVALID_PARTY 2
+#define U3_PARTY_FORM_INVALID_ROSTER 3
+#define U3_PARTY_FORM_INVALID_SIZE 4
+#define U3_PARTY_FORM_INVALID_ROSTER_ID 5
+#define U3_PARTY_FORM_DUPLICATE_ROSTER_ID 6
+#define U3_PARTY_FORM_UNOCCUPIED_ROSTER_ID 7
+
 typedef struct u3_party_roster_entry {
     uint8_t roster_id;
     uint8_t occupied;
@@ -32,6 +41,14 @@ typedef struct u3_party_summary {
     u3_party_roster_entry roster[U3_PARTY_ROSTER_SLOT_COUNT];
 } u3_party_summary;
 
+typedef struct u3_party_form_result {
+    uint8_t formed;
+    uint8_t reason;
+    uint8_t party_size;
+    uint8_t active_roster_ids[U3_PARTY_ACTIVE_SLOT_COUNT];
+} u3_party_form_result;
+
 int u3_party_load_summary(const u3_save_domain_state *state, u3_party_summary *summary);
+u3_party_form_result u3_party_form_from_roster(const u3_save_domain_state *state, const uint8_t *selected_roster_ids, uint8_t selected_count, uint8_t *party, uint32_t party_length);
 
 #endif

@@ -78,3 +78,62 @@ int u3_party_load_summary(const u3_save_domain_state *state, u3_party_summary *s
     *summary = loaded;
     return 1;
 }
+
+static u3_party_form_result u3_party_make_form_result(uint8_t formed, uint8_t reason)
+{
+    u3_party_form_result result;
+
+    memset(&result, 0, sizeof(result));
+    result.formed = formed;
+    result.reason = reason;
+    return result;
+}
+
+u3_party_form_result u3_party_form_from_roster(const u3_save_domain_state *state, const uint8_t *selected_roster_ids, uint8_t selected_count, uint8_t *party, uint32_t party_length)
+{
+    u3_party_summary summary;
+    u3_party_form_result result;
+    uint8_t seen[U3_PARTY_ROSTER_SLOT_COUNT + 1];
+    uint8_t candidate[U3_SAVE_PARTY_LENGTH];
+    uint32_t index;
+
+    if (state == 0 || selected_roster_ids == 0 || party == 0)
+        return u3_party_make_form_result(0, U3_PARTY_FORM_INVALID_ARGUMENT);
+    if (party_length != U3_SAVE_PARTY_LENGTH)
+        return u3_party_make_form_result(0, U3_PARTY_FORM_INVALID_PARTY);
+    if (selected_count == 0 || selected_count > U3_PARTY_ACTIVE_SLOT_COUNT)
+        return u3_party_make_form_result(0, U3_PARTY_FORM_INVALID_SIZE);
+    if (!u3_party_load_summary(state, &summary))
+        return u3_party_make_form_result(0, U3_PARTY_FORM_INVALID_ROSTER);
+
+    memset(seen, 0, sizeof(seen));
+    for (index = 0; index < selected_count; index++) {
+        uint8_t roster_id = selected_roster_ids[index];
+
+        if (roster_id == 0 || roster_id > U3_PARTY_ROSTER_SLOT_COUNT)
+            return u3_party_make_form_result(0, U3_PARTY_FORM_INVALID_ROSTER_ID);
+        if (seen[roster_id])
+            return u3_party_make_form_result(0, U3_PARTY_FORM_DUPLICATE_ROSTER_ID);
+        if (!summary.roster[roster_id - 1].occupied)
+            return u3_party_make_form_result(0, U3_PARTY_FORM_UNOCCUPIED_ROSTER_ID);
+        seen[roster_id] = 1;
+    }
+
+    memset(candidate, 0, sizeof(candidate));
+    candidate[0] = 0x7E;
+    candidate[1] = selected_count;
+    candidate[2] = 0;
+    candidate[3] = 42;
+    candidate[4] = 20;
+    candidate[5] = 255;
+    for (index = 0; index < selected_count; index++)
+        candidate[6 + index] = selected_roster_ids[index];
+
+    memcpy(party, candidate, sizeof(candidate));
+
+    result = u3_party_make_form_result(1, U3_PARTY_FORM_OK);
+    result.party_size = selected_count;
+    for (index = 0; index < selected_count; index++)
+        result.active_roster_ids[index] = selected_roster_ids[index];
+    return result;
+}

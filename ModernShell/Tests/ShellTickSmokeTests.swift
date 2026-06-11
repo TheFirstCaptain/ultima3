@@ -129,6 +129,49 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(state.saveStatus, "Party OK size 4 active 1/2/3/4 occupied 4 lead Tatiana G E/T/F HP 100/100 L1 food 150 gold 150")
     }
 
+    func testAssembledPartyWritesAndLoadsFromSavedDocument() {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadNewGameSmoke()
+        state.acceptPartyAssembly([2, 1])
+
+        state.writeSaveSmoke()
+        XCTAssertEqual(state.lastCommand, "Save current")
+        XCTAssertTrue(state.saveStatus.contains("Save OK Smoke | Save Read OK Smoke"))
+
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider)
+        reloadedState.loadSavedSmoke()
+        reloadedState.inspectPartyRoster()
+
+        XCTAssertEqual(reloadedState.lastCommand, "Party roster")
+        XCTAssertTrue(reloadedState.saveStatus.contains("Party OK size 2 active 2/1/0/0 occupied 4"))
+    }
+
+    func testStartupStyleLoadAdoptsSavedAssembledPartyWhenAvailable() {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadNewGameSmoke()
+        state.acceptPartyAssembly([2, 1])
+        state.writeSaveSmoke()
+
+        let launchedState = ShellSmokeState(locationProvider: locationProvider)
+        launchedState.loadSavedSmokeIfAvailable()
+        launchedState.inspectPartyRoster()
+
+        XCTAssertEqual(launchedState.lastCommand, "Party roster")
+        XCTAssertTrue(launchedState.saveStatus.contains("Party OK size 2 active 2/1/0/0 occupied 4"))
+    }
+
+    func testStartupStyleLoadNoOpsWhenSavedDocumentIsMissing() {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+
+        state.loadSavedSmokeIfAvailable()
+
+        XCTAssertEqual(state.lastCommand, "Ready")
+        XCTAssertTrue(state.saveStatus.contains("Save path \(saveDocumentURL.path)"))
+    }
+
     func testLoadSavedSmokeRejectsDomainInvalidDocumentWithoutReplacingCurrentDocument() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)
