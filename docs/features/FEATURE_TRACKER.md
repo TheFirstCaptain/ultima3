@@ -80,3 +80,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-030 | Current Native Save Load and Write | Complete | Done | [F-030.md](./F-030.md) | 2026-06-10 | Shell owns a current native save document, can load new/saved documents, inspect current party state, and atomically write the current document. |
 | F-031 | Save-Backed Overworld Movement | Proposed | Proposed | [F-031.md](./F-031.md) | 2026-06-10 | Replace bounded movement smoke with party-position-backed movement and redraw. |
 | F-032 | First Overworld Gameplay Interaction Slice | Proposed | Proposed | [F-032.md](./F-032.md) | 2026-06-10 | Choose and implement the first narrow terrain or movement interaction after save-backed movement. |
+| F-033 | Overworld Turn Economy Slice | Proposed | Proposed | [F-033.md](./F-033.md) | 2026-06-12 | Add the first deterministic per-move save-state consequence, such as food or a movement counter. |
+| F-034 | Overworld Command Feedback and Event Results | Proposed | Proposed | [F-034.md](./F-034.md) | 2026-06-12 | Route portable overworld command results into shell status, redraw, and audio feedback. |
+| F-036 | Save Workflow and Autosave Policy | Proposed | Proposed | [F-036.md](./F-036.md) | 2026-06-12 | Turn smoke save/load commands into a documented gameplay save workflow and safe write policy. |
+| F-035 | First Overworld Location Transition Slice | Proposed | Proposed | [F-035.md](./F-035.md) | 2026-06-12 | Detect and handle one bounded special-location transition after movement and terrain rules. |
