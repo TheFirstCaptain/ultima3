@@ -534,6 +534,7 @@ final class ShellSmokeState: ObservableObject {
             var moveResult = u3_overworld_move_result()
             if u3_overworld_move(&overworldState, event.command, &moveResult) != 0,
                moveResult.handled != 0 {
+                persistOverworldPositionToCurrentSave()
                 renderOverworldFrame()
                 let moveState = moveResult.moved != 0 ? "Move" : "Blocked"
                 return "\(moveState) \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y)"
@@ -554,7 +555,7 @@ final class ShellSmokeState: ObservableObject {
                 return u3_render_make_synthetic_tile_frame()
             }
 
-            return u3_overworld_make_smoke_frame(mapBaseAddress, UInt32(overworldMapData.count), &overworldState)
+            return u3_overworld_make_view_frame(mapBaseAddress, UInt32(overworldMapData.count), &overworldState)
         }
         let locations = locationProvider.snapshot()
         resourceStatus = Self.describeResourceStatus(
@@ -562,6 +563,37 @@ final class ShellSmokeState: ObservableObject {
             validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
             renderStatus: "Overworld OK MAPS 419 pos \(overworldState.x),\(overworldState.y)"
         )
+    }
+
+    private func persistOverworldPositionToCurrentSave() {
+        guard var documentData = currentSaveDocument else {
+            return
+        }
+
+        let documentLength = documentData.count
+        let updated = documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return false
+            }
+
+            var partyRecord = u3_save_record()
+            guard u3_save_find_record(&document, Self.fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            return u3_overworld_write_party_position(party, partyRecord.length, &overworldState) != 0
+        }
+
+        if updated {
+            currentSaveDocument = documentData
+        }
     }
 
     private func applyCurrentSaveDocument(_ document: Data, locations: ShellLocationSnapshot, statusPrefix: String) {
@@ -640,5 +672,15 @@ final class ShellSmokeState: ObservableObject {
         }
 
         return "\(validation) | \(renderStatus) | root \(resourceRootPath)"
+    }
+
+    private static func fourCharacterCode(_ value: String) -> UInt32 {
+        var result: UInt32 = 0
+
+        for byte in value.utf8.prefix(4) {
+            result = (result << 8) | UInt32(byte)
+        }
+
+        return result
     }
 }

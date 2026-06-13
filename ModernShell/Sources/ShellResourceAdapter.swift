@@ -257,6 +257,7 @@ final class ShellResourceAdapter {
 
             var domainState = u3_save_domain_state()
             guard u3_save_load_domain_state(&document, &domainState) != 0,
+                  let party = domainState.party,
                   let map = domainState.current_sosaria_map,
                   domainState.current_sosaria_map_length > 0 else {
                 return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Failed load map")
@@ -267,12 +268,17 @@ final class ShellResourceAdapter {
                 return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Invalid MAPS 419 shape")
             }
 
+            guard let mapSize = mapData.first,
+                  u3_overworld_state_init_from_party(&state, party, domainState.party_length, mapSize) != 0 else {
+                return ShellOverworldSmokeResult(map: nil, frame: fallbackFrame, status: "Overworld Failed load party position")
+            }
+
             let frame = mapData.withUnsafeBytes { mapBuffer in
                 guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
                     return fallbackFrame
                 }
 
-                return u3_overworld_make_smoke_frame(mapBaseAddress, UInt32(mapData.count), &state)
+                return u3_overworld_make_view_frame(mapBaseAddress, UInt32(mapData.count), &state)
             }
             return ShellOverworldSmokeResult(
                 map: mapData,

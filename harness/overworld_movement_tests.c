@@ -76,6 +76,50 @@ static void test_moves_cardinally_with_bounds(void)
     ASSERT_EQ_INT(5, state.y);
 }
 
+static void test_initializes_wrapped_position_from_party_record(void)
+{
+    uint8_t party[64] = {0};
+    u3_overworld_state state;
+
+    party[U3_OVERWORLD_PARTY_X_OFFSET] = 62;
+    party[U3_OVERWORLD_PARTY_Y_OFFSET] = 63;
+
+    ASSERT_TRUE(u3_overworld_state_init_from_party(&state, party, sizeof(party), 64));
+    ASSERT_EQ_INT(62, state.x);
+    ASSERT_EQ_INT(63, state.y);
+    ASSERT_EQ_INT(64, state.width);
+    ASSERT_EQ_INT(64, state.height);
+    ASSERT_TRUE(state.wraps);
+
+    party[U3_OVERWORLD_PARTY_X_OFFSET] = 64;
+    party[U3_OVERWORLD_PARTY_Y_OFFSET] = 65;
+    ASSERT_TRUE(u3_overworld_state_init_from_party(&state, party, sizeof(party), 64));
+    ASSERT_EQ_INT(0, state.x);
+    ASSERT_EQ_INT(1, state.y);
+}
+
+static void test_wrapped_movement_updates_party_record(void)
+{
+    uint8_t party[64] = {0};
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 0, 0, 64, 64));
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_WEST, &result));
+    ASSERT_TRUE(result.moved);
+    ASSERT_EQ_INT(63, result.x);
+    ASSERT_EQ_INT(0, result.y);
+
+    ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_NORTH, &result));
+    ASSERT_TRUE(result.moved);
+    ASSERT_EQ_INT(63, result.x);
+    ASSERT_EQ_INT(63, result.y);
+
+    ASSERT_TRUE(u3_overworld_write_party_position(party, sizeof(party), &state));
+    ASSERT_EQ_INT(63, party[U3_OVERWORLD_PARTY_X_OFFSET]);
+    ASSERT_EQ_INT(63, party[U3_OVERWORLD_PARTY_Y_OFFSET]);
+}
+
 static void test_reports_blocked_edges_and_unknown_commands(void)
 {
     u3_overworld_state state;
@@ -98,6 +142,46 @@ static void test_reports_blocked_edges_and_unknown_commands(void)
     ASSERT_TRUE(u3_overworld_move(&state, 999, &result));
     ASSERT_FALSE(result.handled);
     ASSERT_FALSE(result.moved);
+}
+
+static void test_builds_centered_view_frame_from_party_position(void)
+{
+    uint8_t map_record[1 + (64 * 64)];
+    u3_overworld_state state;
+    u3_render_frame frame;
+    uint16_t index;
+    uint16_t party_command_index;
+
+    map_record[0] = 64;
+    for (index = 0; index < 64 * 64; index++)
+        map_record[1 + index] = (uint8_t)(index & 0xff);
+
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 10, 12, 64, 64));
+    frame = u3_overworld_make_view_frame(map_record, sizeof(map_record), &state);
+
+    ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2, frame.command_count);
+    ASSERT_EQ_INT(map_record[1 + (7 * 64) + 5], frame.commands[2].value);
+    party_command_index = (uint16_t)(2 + (5 * U3_RENDER_TILE_GRID_WIDTH) + 5);
+    ASSERT_EQ_INT(U3_OVERWORLD_PARTY_TILE, frame.commands[party_command_index].value);
+    ASSERT_EQ_INT(6, frame.commands[party_command_index].x);
+    ASSERT_EQ_INT(6, frame.commands[party_command_index].y);
+}
+
+static void test_centered_view_frame_wraps_at_map_edges(void)
+{
+    uint8_t map_record[1 + (64 * 64)];
+    u3_overworld_state state;
+    u3_render_frame frame;
+    uint16_t index;
+
+    map_record[0] = 64;
+    for (index = 0; index < 64 * 64; index++)
+        map_record[1 + index] = (uint8_t)(index & 0xff);
+
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 0, 0, 64, 64));
+    frame = u3_overworld_make_view_frame(map_record, sizeof(map_record), &state);
+
+    ASSERT_EQ_INT(map_record[1 + (59 * 64) + 59], frame.commands[2].value);
 }
 
 static void test_builds_smoke_frame_from_known_map_and_party_position(void)
@@ -141,7 +225,11 @@ int main(void)
 {
     test_initializes_bounded_position();
     test_moves_cardinally_with_bounds();
+    test_initializes_wrapped_position_from_party_record();
+    test_wrapped_movement_updates_party_record();
     test_reports_blocked_edges_and_unknown_commands();
+    test_builds_centered_view_frame_from_party_position();
+    test_centered_view_frame_wraps_at_map_edges();
     test_builds_smoke_frame_from_known_map_and_party_position();
     test_invalid_map_falls_back_to_synthetic_frame();
 

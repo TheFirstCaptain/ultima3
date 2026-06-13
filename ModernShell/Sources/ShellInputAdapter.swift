@@ -29,6 +29,19 @@ final class ShellInputAdapter {
     }
 
     func enqueueKeyboard(_ key: UInt8) -> Bool {
+        switch key {
+        case UInt8(ascii: "8"):
+            return enqueueKeyboardCommand(UInt16(U3_OVERWORLD_COMMAND_NORTH))
+        case UInt8(ascii: "2"):
+            return enqueueKeyboardCommand(UInt16(U3_OVERWORLD_COMMAND_SOUTH))
+        case UInt8(ascii: "4"):
+            return enqueueKeyboardCommand(UInt16(U3_OVERWORLD_COMMAND_WEST))
+        case UInt8(ascii: "6"):
+            return enqueueKeyboardCommand(UInt16(U3_OVERWORLD_COMMAND_EAST))
+        default:
+            break
+        }
+
         guard u3_input_queue_push_keyboard(&queue, key) != 0 else {
             return false
         }
