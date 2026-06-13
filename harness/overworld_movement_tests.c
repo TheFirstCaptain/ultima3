@@ -130,6 +130,7 @@ static void test_reports_blocked_edges_and_unknown_commands(void)
     ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_NORTH, &result));
     ASSERT_TRUE(result.handled);
     ASSERT_FALSE(result.moved);
+    ASSERT_TRUE(result.blocked);
     ASSERT_EQ_INT(0, result.x);
     ASSERT_EQ_INT(0, result.y);
 
@@ -165,6 +166,122 @@ static void test_builds_centered_view_frame_from_party_position(void)
     ASSERT_EQ_INT(U3_OVERWORLD_PARTY_TILE, frame.commands[party_command_index].value);
     ASSERT_EQ_INT(6, frame.commands[party_command_index].x);
     ASSERT_EQ_INT(6, frame.commands[party_command_index].y);
+}
+
+static void test_passability_matches_first_non_ship_terrain_slice(void)
+{
+    ASSERT_FALSE(u3_overworld_tile_passable_on_foot(0));
+    ASSERT_FALSE(u3_overworld_tile_passable_on_foot(16));
+    ASSERT_FALSE(u3_overworld_tile_passable_on_foot(48));
+    ASSERT_TRUE(u3_overworld_tile_passable_on_foot(4));
+    ASSERT_TRUE(u3_overworld_tile_passable_on_foot(44));
+    ASSERT_TRUE(u3_overworld_tile_passable_on_foot(128));
+    ASSERT_TRUE(u3_overworld_tile_passable_on_foot(132));
+    ASSERT_TRUE(u3_overworld_tile_passable_on_foot(136));
+    ASSERT_TRUE(u3_overworld_tile_passable_on_foot(248));
+}
+
+static void test_map_aware_movement_blocks_impassable_target_tile(void)
+{
+    uint8_t map_record[1 + (64 * 64)] = {0};
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    map_record[0] = 64;
+    map_record[1 + (20 * 64) + 42] = 4;
+    map_record[1 + (20 * 64) + 43] = 0;
+
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 42, 20, 64, 64));
+    ASSERT_TRUE(u3_overworld_move_on_map(&state, map_record, sizeof(map_record), U3_OVERWORLD_COMMAND_EAST, &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_FALSE(result.moved);
+    ASSERT_TRUE(result.blocked);
+    ASSERT_EQ_INT(42, result.x);
+    ASSERT_EQ_INT(20, result.y);
+    ASSERT_EQ_INT(43, result.target_x);
+    ASSERT_EQ_INT(20, result.target_y);
+    ASSERT_EQ_INT(0, result.target_tile);
+    ASSERT_EQ_INT(42, state.x);
+    ASSERT_EQ_INT(20, state.y);
+}
+
+static void test_map_aware_movement_moves_onto_passable_target_tile(void)
+{
+    uint8_t map_record[1 + (64 * 64)] = {0};
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    map_record[0] = 64;
+    map_record[1 + (20 * 64) + 42] = 4;
+    map_record[1 + (20 * 64) + 43] = 4;
+
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 42, 20, 64, 64));
+    ASSERT_TRUE(u3_overworld_move_on_map(&state, map_record, sizeof(map_record), U3_OVERWORLD_COMMAND_EAST, &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_TRUE(result.moved);
+    ASSERT_FALSE(result.blocked);
+    ASSERT_EQ_INT(43, result.x);
+    ASSERT_EQ_INT(20, result.y);
+    ASSERT_EQ_INT(43, result.target_x);
+    ASSERT_EQ_INT(20, result.target_y);
+    ASSERT_EQ_INT(4, result.target_tile);
+    ASSERT_EQ_INT(43, state.x);
+    ASSERT_EQ_INT(20, state.y);
+}
+
+static void test_map_aware_movement_wraps_before_passability_check(void)
+{
+    uint8_t map_record[1 + (64 * 64)] = {0};
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    map_record[0] = 64;
+    map_record[1 + (20 * 64) + 63] = 4;
+    map_record[1 + (20 * 64) + 0] = 16;
+
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 63, 20, 64, 64));
+    ASSERT_TRUE(u3_overworld_move_on_map(&state, map_record, sizeof(map_record), U3_OVERWORLD_COMMAND_EAST, &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_FALSE(result.moved);
+    ASSERT_TRUE(result.blocked);
+    ASSERT_EQ_INT(0, result.target_x);
+    ASSERT_EQ_INT(20, result.target_y);
+    ASSERT_EQ_INT(16, result.target_tile);
+    ASSERT_EQ_INT(63, state.x);
+    ASSERT_EQ_INT(20, state.y);
+}
+
+static void test_map_aware_movement_rejects_state_map_size_mismatch(void)
+{
+    uint8_t map_record[1 + (64 * 64)] = {0};
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    map_record[0] = 64;
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 42, 20, 65, 65));
+
+    ASSERT_FALSE(u3_overworld_move_on_map(&state, map_record, sizeof(map_record), U3_OVERWORLD_COMMAND_EAST, &result));
+}
+
+static void test_map_aware_bounded_edge_blocks_without_moving(void)
+{
+    uint8_t map_record[1 + (11 * 11)] = {0};
+    u3_overworld_state state;
+    u3_overworld_move_result result;
+
+    map_record[0] = 11;
+    map_record[1] = 4;
+
+    ASSERT_TRUE(u3_overworld_state_init(&state, 0, 0, 11, 11));
+    ASSERT_TRUE(u3_overworld_move_on_map(&state, map_record, sizeof(map_record), U3_OVERWORLD_COMMAND_NORTH, &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_FALSE(result.moved);
+    ASSERT_TRUE(result.blocked);
+    ASSERT_EQ_INT(0, result.x);
+    ASSERT_EQ_INT(0, result.y);
+    ASSERT_EQ_INT(0, result.target_x);
+    ASSERT_EQ_INT(0, result.target_y);
+    ASSERT_EQ_INT(4, result.target_tile);
 }
 
 static void test_centered_view_frame_wraps_at_map_edges(void)
@@ -228,6 +345,12 @@ int main(void)
     test_initializes_wrapped_position_from_party_record();
     test_wrapped_movement_updates_party_record();
     test_reports_blocked_edges_and_unknown_commands();
+    test_passability_matches_first_non_ship_terrain_slice();
+    test_map_aware_movement_blocks_impassable_target_tile();
+    test_map_aware_movement_moves_onto_passable_target_tile();
+    test_map_aware_movement_wraps_before_passability_check();
+    test_map_aware_movement_rejects_state_map_size_mismatch();
+    test_map_aware_bounded_edge_blocks_without_moving();
     test_builds_centered_view_frame_from_party_position();
     test_centered_view_frame_wraps_at_map_edges();
     test_builds_smoke_frame_from_known_map_and_party_position();

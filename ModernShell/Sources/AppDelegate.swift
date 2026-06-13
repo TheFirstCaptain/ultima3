@@ -532,16 +532,35 @@ final class ShellSmokeState: ObservableObject {
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
             var moveResult = u3_overworld_move_result()
-            if u3_overworld_move(&overworldState, event.command, &moveResult) != 0,
+            if consumeOverworldMovement(event.command, result: &moveResult),
                moveResult.handled != 0 {
-                persistOverworldPositionToCurrentSave()
+                if moveResult.moved != 0 {
+                    persistOverworldPositionToCurrentSave()
+                }
                 renderOverworldFrame()
                 let moveState = moveResult.moved != 0 ? "Move" : "Blocked"
+                if moveResult.blocked != 0 {
+                    return "\(moveState) \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y) tile \(moveResult.target_tile)"
+                }
                 return "\(moveState) \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y)"
             }
         }
 
         return inputAdapter.describe(event)
+    }
+
+    private func consumeOverworldMovement(_ command: UInt16, result: inout u3_overworld_move_result) -> Bool {
+        guard let overworldMapData else {
+            return u3_overworld_move(&overworldState, command, &result) != 0
+        }
+
+        return overworldMapData.withUnsafeBytes { mapBuffer in
+            guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            return u3_overworld_move_on_map(&overworldState, mapBaseAddress, UInt32(overworldMapData.count), command, &result) != 0
+        }
     }
 
     private func renderOverworldFrame() {

@@ -88,6 +88,23 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(state.tickStatus, "Tick 6 phase 2 input 6 audio 0 running")
     }
 
+    func testTickReportsBlockedOverworldTerrain() {
+        let state = ShellSmokeState()
+        var blockedCommand: String?
+
+        for _ in 0..<64 {
+            state.submitOverworldCommand(moveEastCommand)
+            state.runTick()
+            if state.lastCommand.hasPrefix("Blocked East ") {
+                blockedCommand = state.lastCommand
+                break
+            }
+        }
+
+        XCTAssertNotNil(blockedCommand)
+        XCTAssertTrue(blockedCommand?.contains(" tile ") == true)
+    }
+
     func testSaveBackedOverworldMovementPersistsAfterWriteAndReload() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)

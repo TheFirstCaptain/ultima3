@@ -58,6 +58,65 @@ static uint8_t u3_overworld_valid_map(const uint8_t *map_record,
     return 1;
 }
 
+static uint8_t u3_overworld_target_for_command(const u3_overworld_state *state,
+                                               uint16_t command,
+                                               uint8_t *target_x,
+                                               uint8_t *target_y)
+{
+    int16_t x;
+    int16_t y;
+
+    if (state == 0 || target_x == 0 || target_y == 0)
+        return 0;
+
+    x = state->x;
+    y = state->y;
+    switch (command) {
+    case U3_OVERWORLD_COMMAND_NORTH:
+        y--;
+        break;
+    case U3_OVERWORLD_COMMAND_SOUTH:
+        y++;
+        break;
+    case U3_OVERWORLD_COMMAND_WEST:
+        x--;
+        break;
+    case U3_OVERWORLD_COMMAND_EAST:
+        x++;
+        break;
+    default:
+        return 0;
+    }
+
+    if (state->wraps) {
+        x = u3_overworld_constrain(x, state->width);
+        y = u3_overworld_constrain(y, state->height);
+    } else {
+        if (x < 0)
+            x = 0;
+        if (x >= state->width)
+            x = (int16_t)(state->width - 1);
+        if (y < 0)
+            y = 0;
+        if (y >= state->height)
+            y = (int16_t)(state->height - 1);
+    }
+
+    *target_x = (uint8_t)x;
+    *target_y = (uint8_t)y;
+    return 1;
+}
+
+uint8_t u3_overworld_tile_passable_on_foot(uint8_t tile)
+{
+    /* Legacy reference: Sources/UltimaMain.c ValidDir non-ship branch. */
+    if (tile == 136 || tile == 248)
+        tile = 4;
+    if (tile == 128 || tile == 132)
+        return 1;
+    return (uint8_t)(tile < 48 && tile != 0 && tile != 16);
+}
+
 uint8_t u3_overworld_state_init(u3_overworld_state *state,
                                 uint8_t x,
                                 uint8_t y,
@@ -149,6 +208,52 @@ uint8_t u3_overworld_move(u3_overworld_state *state,
     }
 
     result->moved = (uint8_t)(state->x != original_x || state->y != original_y);
+    result->blocked = (uint8_t)(result->handled && !result->moved);
+    result->x = state->x;
+    result->y = state->y;
+    result->target_x = state->x;
+    result->target_y = state->y;
+    return 1;
+}
+
+uint8_t u3_overworld_move_on_map(u3_overworld_state *state,
+                                 const uint8_t *map_record,
+                                 uint32_t map_record_length,
+                                 uint16_t command,
+                                 u3_overworld_move_result *result)
+{
+    uint8_t map_size;
+    uint8_t target_x;
+    uint8_t target_y;
+    uint8_t target_tile;
+
+    u3_overworld_result_clear(result);
+    if (state == 0 || result == 0 || state->width == 0 || state->height == 0)
+        return 0;
+    if (!u3_overworld_valid_map(map_record, map_record_length, &map_size))
+        return 0;
+    if (state->width != map_size || state->height != map_size)
+        return 0;
+
+    result->handled = u3_overworld_target_for_command(state, command, &target_x, &target_y);
+    result->x = state->x;
+    result->y = state->y;
+    if (!result->handled)
+        return 1;
+
+    result->target_x = target_x;
+    result->target_y = target_y;
+    target_tile = map_record[1 + (target_y * map_size) + target_x];
+    result->target_tile = target_tile;
+
+    if ((target_x == state->x && target_y == state->y) || !u3_overworld_tile_passable_on_foot(target_tile)) {
+        result->blocked = 1;
+        return 1;
+    }
+
+    state->x = target_x;
+    state->y = target_y;
+    result->moved = 1;
     result->x = state->x;
     result->y = state->y;
     return 1;

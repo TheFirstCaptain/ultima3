@@ -28,8 +28,12 @@ typedef struct u3_overworld_state {
 typedef struct u3_overworld_move_result {
     uint8_t handled;
     uint8_t moved;
+    uint8_t blocked;
     uint8_t x;
     uint8_t y;
+    uint8_t target_x;
+    uint8_t target_y;
+    uint8_t target_tile;
 } u3_overworld_move_result;
 
 uint8_t u3_overworld_state_init(u3_overworld_state *state,
@@ -52,6 +56,12 @@ uint8_t u3_overworld_write_party_position(uint8_t *party,
 uint8_t u3_overworld_move(u3_overworld_state *state,
                           uint16_t command,
                           u3_overworld_move_result *result);
+uint8_t u3_overworld_move_on_map(u3_overworld_state *state,
+                                 const uint8_t *map_record,
+                                 uint32_t map_record_length,
+                                 uint16_t command,
+                                 u3_overworld_move_result *result);
+uint8_t u3_overworld_tile_passable_on_foot(uint8_t tile);
 u3_render_frame u3_overworld_make_smoke_frame(const uint8_t *map_record,
                                               uint32_t map_record_length,
                                               const u3_overworld_state *state);
