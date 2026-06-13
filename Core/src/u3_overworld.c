@@ -117,6 +117,23 @@ uint8_t u3_overworld_tile_passable_on_foot(uint8_t tile)
     return (uint8_t)(tile < 48 && tile != 0 && tile != 16);
 }
 
+static void u3_overworld_result_set_feedback(u3_overworld_move_result *result)
+{
+    if (result == 0 || result->handled == 0)
+        return;
+
+    if (result->moved) {
+        result->redraw = 1;
+        result->feedback = U3_OVERWORLD_FEEDBACK_MOVED;
+        result->status = U3_OVERWORLD_STATUS_MOVED;
+        result->sound_id = U3_AUDIO_SOUND_STEP;
+    } else if (result->blocked) {
+        result->feedback = U3_OVERWORLD_FEEDBACK_BLOCKED;
+        result->status = U3_OVERWORLD_STATUS_BLOCKED;
+        result->sound_id = U3_AUDIO_SOUND_BUMP;
+    }
+}
+
 uint8_t u3_overworld_state_init(u3_overworld_state *state,
                                 uint8_t x,
                                 uint8_t y,
@@ -213,6 +230,7 @@ uint8_t u3_overworld_move(u3_overworld_state *state,
     result->y = state->y;
     result->target_x = state->x;
     result->target_y = state->y;
+    u3_overworld_result_set_feedback(result);
     return 1;
 }
 
@@ -248,6 +266,7 @@ uint8_t u3_overworld_move_on_map(u3_overworld_state *state,
 
     if ((target_x == state->x && target_y == state->y) || !u3_overworld_tile_passable_on_foot(target_tile)) {
         result->blocked = 1;
+        u3_overworld_result_set_feedback(result);
         return 1;
     }
 
@@ -256,6 +275,7 @@ uint8_t u3_overworld_move_on_map(u3_overworld_state *state,
     result->moved = 1;
     result->x = state->x;
     result->y = state->y;
+    u3_overworld_result_set_feedback(result);
     return 1;
 }
 

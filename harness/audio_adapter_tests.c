@@ -58,6 +58,7 @@ static void test_sound_music_and_volume_events_share_queue(void)
     u3_audio_queue_init(&queue);
 
     ASSERT_TRUE(u3_audio_queue_push_sound(&queue, U3_AUDIO_SOUND_ERROR1, 1));
+    ASSERT_TRUE(u3_audio_queue_push_sound(&queue, U3_AUDIO_SOUND_BUMP, 1));
     ASSERT_TRUE(u3_audio_queue_push_music(&queue, U3_AUDIO_MUSIC_SONG_1));
     ASSERT_TRUE(u3_audio_queue_push_sound_volume(&queue, 75));
     ASSERT_TRUE(u3_audio_queue_push_stop_music(&queue));
@@ -65,6 +66,11 @@ static void test_sound_music_and_volume_events_share_queue(void)
     event = pop_required(&queue);
     ASSERT_EQ_INT(U3_AUDIO_EVENT_PLAY_SOUND, event.kind);
     ASSERT_EQ_INT(U3_AUDIO_SOUND_ERROR1, event.resource_id);
+    ASSERT_EQ_INT(1, event.async);
+
+    event = pop_required(&queue);
+    ASSERT_EQ_INT(U3_AUDIO_EVENT_PLAY_SOUND, event.kind);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_BUMP, event.resource_id);
     ASSERT_EQ_INT(1, event.async);
 
     event = pop_required(&queue);

@@ -136,6 +136,8 @@ final class ShellAudioAdapter {
         switch Int32(resourceID) {
         case U3_AUDIO_SOUND_STEP:
             return "Step"
+        case U3_AUDIO_SOUND_BUMP:
+            return "Bump"
         case U3_AUDIO_SOUND_ERROR1:
             fallthrough
         default:

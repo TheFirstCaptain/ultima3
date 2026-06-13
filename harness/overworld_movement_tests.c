@@ -57,6 +57,11 @@ static void test_moves_cardinally_with_bounds(void)
     ASSERT_TRUE(u3_overworld_move(&state, U3_OVERWORLD_COMMAND_NORTH, &result));
     ASSERT_TRUE(result.handled);
     ASSERT_TRUE(result.moved);
+    ASSERT_FALSE(result.blocked);
+    ASSERT_TRUE(result.redraw);
+    ASSERT_EQ_INT(U3_OVERWORLD_FEEDBACK_MOVED, result.feedback);
+    ASSERT_EQ_INT(U3_OVERWORLD_STATUS_MOVED, result.status);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_STEP, result.sound_id);
     ASSERT_EQ_INT(5, state.x);
     ASSERT_EQ_INT(4, state.y);
 
@@ -131,6 +136,10 @@ static void test_reports_blocked_edges_and_unknown_commands(void)
     ASSERT_TRUE(result.handled);
     ASSERT_FALSE(result.moved);
     ASSERT_TRUE(result.blocked);
+    ASSERT_FALSE(result.redraw);
+    ASSERT_EQ_INT(U3_OVERWORLD_FEEDBACK_BLOCKED, result.feedback);
+    ASSERT_EQ_INT(U3_OVERWORLD_STATUS_BLOCKED, result.status);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_BUMP, result.sound_id);
     ASSERT_EQ_INT(0, result.x);
     ASSERT_EQ_INT(0, result.y);
 
@@ -143,6 +152,10 @@ static void test_reports_blocked_edges_and_unknown_commands(void)
     ASSERT_TRUE(u3_overworld_move(&state, 999, &result));
     ASSERT_FALSE(result.handled);
     ASSERT_FALSE(result.moved);
+    ASSERT_FALSE(result.blocked);
+    ASSERT_EQ_INT(U3_OVERWORLD_FEEDBACK_NONE, result.feedback);
+    ASSERT_EQ_INT(U3_OVERWORLD_STATUS_NONE, result.status);
+    ASSERT_EQ_INT(0, result.sound_id);
 }
 
 static void test_builds_centered_view_frame_from_party_position(void)
@@ -196,6 +209,9 @@ static void test_map_aware_movement_blocks_impassable_target_tile(void)
     ASSERT_TRUE(result.handled);
     ASSERT_FALSE(result.moved);
     ASSERT_TRUE(result.blocked);
+    ASSERT_EQ_INT(U3_OVERWORLD_FEEDBACK_BLOCKED, result.feedback);
+    ASSERT_EQ_INT(U3_OVERWORLD_STATUS_BLOCKED, result.status);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_BUMP, result.sound_id);
     ASSERT_EQ_INT(42, result.x);
     ASSERT_EQ_INT(20, result.y);
     ASSERT_EQ_INT(43, result.target_x);
@@ -220,6 +236,10 @@ static void test_map_aware_movement_moves_onto_passable_target_tile(void)
     ASSERT_TRUE(result.handled);
     ASSERT_TRUE(result.moved);
     ASSERT_FALSE(result.blocked);
+    ASSERT_TRUE(result.redraw);
+    ASSERT_EQ_INT(U3_OVERWORLD_FEEDBACK_MOVED, result.feedback);
+    ASSERT_EQ_INT(U3_OVERWORLD_STATUS_MOVED, result.status);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_STEP, result.sound_id);
     ASSERT_EQ_INT(43, result.x);
     ASSERT_EQ_INT(20, result.y);
     ASSERT_EQ_INT(43, result.target_x);
@@ -244,6 +264,10 @@ static void test_map_aware_movement_wraps_before_passability_check(void)
     ASSERT_TRUE(result.handled);
     ASSERT_FALSE(result.moved);
     ASSERT_TRUE(result.blocked);
+    ASSERT_FALSE(result.redraw);
+    ASSERT_EQ_INT(U3_OVERWORLD_FEEDBACK_BLOCKED, result.feedback);
+    ASSERT_EQ_INT(U3_OVERWORLD_STATUS_BLOCKED, result.status);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_BUMP, result.sound_id);
     ASSERT_EQ_INT(0, result.target_x);
     ASSERT_EQ_INT(20, result.target_y);
     ASSERT_EQ_INT(16, result.target_tile);
@@ -277,6 +301,9 @@ static void test_map_aware_bounded_edge_blocks_without_moving(void)
     ASSERT_TRUE(result.handled);
     ASSERT_FALSE(result.moved);
     ASSERT_TRUE(result.blocked);
+    ASSERT_EQ_INT(U3_OVERWORLD_FEEDBACK_BLOCKED, result.feedback);
+    ASSERT_EQ_INT(U3_OVERWORLD_STATUS_BLOCKED, result.status);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_BUMP, result.sound_id);
     ASSERT_EQ_INT(0, result.x);
     ASSERT_EQ_INT(0, result.y);
     ASSERT_EQ_INT(0, result.target_x);

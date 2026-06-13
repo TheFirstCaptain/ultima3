@@ -537,12 +537,21 @@ final class ShellSmokeState: ObservableObject {
                 if moveResult.moved != 0 {
                     persistOverworldPositionToCurrentSave()
                 }
-                renderOverworldFrame()
-                let moveState = moveResult.moved != 0 ? "Move" : "Blocked"
-                if moveResult.blocked != 0 {
-                    return "\(moveState) \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y) tile \(moveResult.target_tile)"
+                if moveResult.redraw != 0 {
+                    renderOverworldFrame()
                 }
-                return "\(moveState) \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y)"
+                if moveResult.sound_id != 0 {
+                    _ = audioAdapter.enqueueSound(Int32(moveResult.sound_id))
+                }
+
+                switch Int32(moveResult.status) {
+                case U3_OVERWORLD_STATUS_BLOCKED:
+                    return "Blocked \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y) tile \(moveResult.target_tile)"
+                case U3_OVERWORLD_STATUS_MOVED:
+                    return "Move \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y)"
+                default:
+                    return inputAdapter.describe(event)
+                }
             }
         }
 

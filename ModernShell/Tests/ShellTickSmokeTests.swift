@@ -54,8 +54,8 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.runTick()
 
-        XCTAssertEqual(state.lastCommand, "Move East 43,20")
-        XCTAssertEqual(state.tickStatus, "Tick 1 phase 1 input 1 audio 0 running")
+        XCTAssertEqual(state.lastCommand, "Move East 43,20 | Audio Sound Step")
+        XCTAssertEqual(state.tickStatus, "Tick 1 phase 1 input 1 audio 1 running")
         XCTAssertTrue(state.resourceStatus.contains("root "))
         let movedPartyCommand = renderCommand(in: state.renderFrame, index: partyCommandIndex)
         XCTAssertEqual(movedPartyCommand.value, partyTileValue)
@@ -69,8 +69,8 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.runTick()
 
-        XCTAssertEqual(state.lastCommand, "Move East 43,20")
-        XCTAssertEqual(state.tickStatus, "Tick 1 phase 1 input 1 audio 0 running")
+        XCTAssertEqual(state.lastCommand, "Move East 43,20 | Audio Sound Step")
+        XCTAssertEqual(state.tickStatus, "Tick 1 phase 1 input 1 audio 1 running")
     }
 
     func testTickUsesWrappedSaveBackedOverworldMovement() {
@@ -84,8 +84,8 @@ final class ShellTickSmokeTests: XCTestCase {
         state.submitOverworldCommand(moveWestCommand)
         state.runTick()
 
-        XCTAssertEqual(state.lastCommand, "Move West 36,20")
-        XCTAssertEqual(state.tickStatus, "Tick 6 phase 2 input 6 audio 0 running")
+        XCTAssertEqual(state.lastCommand, "Move West 36,20 | Audio Sound Step")
+        XCTAssertEqual(state.tickStatus, "Tick 6 phase 2 input 6 audio 6 running")
     }
 
     func testTickReportsBlockedOverworldTerrain() {
@@ -103,6 +103,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         XCTAssertNotNil(blockedCommand)
         XCTAssertTrue(blockedCommand?.contains(" tile ") == true)
+        XCTAssertTrue(blockedCommand?.contains("Audio Sound Bump") == true)
     }
 
     func testSaveBackedOverworldMovementPersistsAfterWriteAndReload() {
@@ -112,7 +113,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Move East 43,20")
+        XCTAssertEqual(state.lastCommand, "Move East 43,20 | Audio Sound Step")
 
         state.writeSaveSmoke()
         XCTAssertEqual(state.lastCommand, "Save current")
@@ -123,7 +124,7 @@ final class ShellTickSmokeTests: XCTestCase {
         reloadedState.submitOverworldCommand(moveEastCommand)
         reloadedState.runTick()
 
-        XCTAssertEqual(reloadedState.lastCommand, "Move East 44,20")
+        XCTAssertEqual(reloadedState.lastCommand, "Move East 44,20 | Audio Sound Step")
     }
 
     private func renderCommand(in frame: u3_render_frame, index: Int) -> u3_render_command {
