@@ -179,6 +179,65 @@ uint8_t u3_overworld_write_party_position(uint8_t *party,
     return 1;
 }
 
+uint32_t u3_overworld_read_party_move_counter(const uint8_t *party,
+                                              uint32_t party_length)
+{
+    if (party == 0 || party_length <= U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET)
+        return 0;
+
+    return ((uint32_t)party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET] * 1000000u) +
+           ((uint32_t)party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET] * 10000u) +
+           ((uint32_t)party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET] * 100u) +
+           party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET];
+}
+
+uint8_t u3_overworld_increment_party_move_counter(uint8_t *party,
+                                                  uint32_t party_length,
+                                                  u3_overworld_move_result *result)
+{
+    uint8_t party_size;
+    uint32_t before;
+
+    if (party == 0 || party_length <= U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET)
+        return 0;
+
+    party_size = party[U3_OVERWORLD_PARTY_SIZE_OFFSET];
+    before = u3_overworld_read_party_move_counter(party, party_length);
+
+    /* Legacy reference: Sources/UltimaMisc.c IncMoves. */
+    party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] =
+        (uint8_t)(party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] + party_size);
+    if (party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] > 99) {
+        party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] =
+            (uint8_t)(party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] - 100);
+        party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET]++;
+        if (party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET] > 99) {
+            party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET] =
+                (uint8_t)(party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET] - 100);
+            party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET]++;
+            if (party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET] > 99) {
+                party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET] =
+                    (uint8_t)(party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET] - 100);
+                party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET]++;
+                if (party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET] > 99) {
+                    party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] = 99;
+                    party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET] = 99;
+                    party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET] = 99;
+                    party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET] = 99;
+                }
+            }
+        }
+    }
+
+    if (result != 0) {
+        result->turn_applied = 1;
+        result->turn_delta = party_size;
+        result->move_counter_before = before;
+        result->move_counter_after = u3_overworld_read_party_move_counter(party, party_length);
+    }
+    return 1;
+}
+
 uint8_t u3_overworld_move(u3_overworld_state *state,
                           uint16_t command,
                           u3_overworld_move_result *result)

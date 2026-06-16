@@ -534,9 +534,7 @@ final class ShellSmokeState: ObservableObject {
             var moveResult = u3_overworld_move_result()
             if consumeOverworldMovement(event.command, result: &moveResult),
                moveResult.handled != 0 {
-                if moveResult.moved != 0 {
-                    persistOverworldPositionToCurrentSave()
-                }
+                persistOverworldTurnToCurrentSave(result: &moveResult)
                 if moveResult.redraw != 0 {
                     renderOverworldFrame()
                 }
@@ -546,9 +544,9 @@ final class ShellSmokeState: ObservableObject {
 
                 switch Int32(moveResult.status) {
                 case U3_OVERWORLD_STATUS_BLOCKED:
-                    return "Blocked \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y) tile \(moveResult.target_tile)"
+                    return "Blocked \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y) tile \(moveResult.target_tile)\(describeTurnDelta(moveResult))"
                 case U3_OVERWORLD_STATUS_MOVED:
-                    return "Move \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y)"
+                    return "Move \(inputAdapter.describeKey(event.command)) \(moveResult.x),\(moveResult.y)\(describeTurnDelta(moveResult))"
                 default:
                     return inputAdapter.describe(event)
                 }
@@ -593,7 +591,7 @@ final class ShellSmokeState: ObservableObject {
         )
     }
 
-    private func persistOverworldPositionToCurrentSave() {
+    private func persistOverworldTurnToCurrentSave(result: inout u3_overworld_move_result) {
         guard var documentData = currentSaveDocument else {
             return
         }
@@ -616,7 +614,12 @@ final class ShellSmokeState: ObservableObject {
                 return false
             }
 
-            return u3_overworld_write_party_position(party, partyRecord.length, &overworldState) != 0
+            if result.moved != 0,
+               u3_overworld_write_party_position(party, partyRecord.length, &overworldState) == 0 {
+                return false
+            }
+
+            return u3_overworld_increment_party_move_counter(party, partyRecord.length, &result) != 0
         }
 
         if updated {
@@ -692,6 +695,14 @@ final class ShellSmokeState: ObservableObject {
         }
 
         return String(Character(scalar))
+    }
+
+    private func describeTurnDelta(_ result: u3_overworld_move_result) -> String {
+        guard result.turn_applied != 0 else {
+            return ""
+        }
+
+        return " moves \(result.move_counter_after)"
     }
 
     private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String, renderStatus: String) -> String {

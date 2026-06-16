@@ -113,7 +113,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Move East 43,20 | Audio Sound Step")
+        XCTAssertEqual(state.lastCommand, "Move East 43,20 moves 4 | Audio Sound Step")
 
         state.writeSaveSmoke()
         XCTAssertEqual(state.lastCommand, "Save current")
@@ -124,7 +124,27 @@ final class ShellTickSmokeTests: XCTestCase {
         reloadedState.submitOverworldCommand(moveEastCommand)
         reloadedState.runTick()
 
-        XCTAssertEqual(reloadedState.lastCommand, "Move East 44,20 | Audio Sound Step")
+        XCTAssertEqual(reloadedState.lastCommand, "Move East 44,20 moves 8 | Audio Sound Step")
+    }
+
+    func testSaveBackedBlockedOverworldMovementConsumesTurn() {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        var blockedCommand: String?
+        state.loadNewGameSmoke()
+
+        for _ in 0..<64 {
+            state.submitOverworldCommand(moveEastCommand)
+            state.runTick()
+            if state.lastCommand.hasPrefix("Blocked East ") {
+                blockedCommand = state.lastCommand
+                break
+            }
+        }
+
+        XCTAssertNotNil(blockedCommand)
+        XCTAssertTrue(blockedCommand?.contains(" moves ") == true)
+        XCTAssertTrue(blockedCommand?.contains("Audio Sound Bump") == true)
     }
 
     private func renderCommand(in frame: u3_render_frame, index: Int) -> u3_render_command {

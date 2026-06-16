@@ -125,6 +125,70 @@ static void test_wrapped_movement_updates_party_record(void)
     ASSERT_EQ_INT(63, party[U3_OVERWORLD_PARTY_Y_OFFSET]);
 }
 
+static void test_party_move_counter_adds_party_size_with_decimal_carry(void)
+{
+    uint8_t party[64] = {0};
+    u3_overworld_move_result result;
+
+    party[U3_OVERWORLD_PARTY_SIZE_OFFSET] = 4;
+    party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] = 98;
+    party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET] = 99;
+    party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET] = 2;
+    party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET] = 1;
+
+    ASSERT_EQ_INT(1029998, u3_overworld_read_party_move_counter(party, sizeof(party)));
+    ASSERT_TRUE(u3_overworld_increment_party_move_counter(party, sizeof(party), &result));
+
+    ASSERT_TRUE(result.turn_applied);
+    ASSERT_EQ_INT(4, result.turn_delta);
+    ASSERT_EQ_INT(1029998, result.move_counter_before);
+    ASSERT_EQ_INT(1030002, result.move_counter_after);
+    ASSERT_EQ_INT(2, party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET]);
+    ASSERT_EQ_INT(0, party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET]);
+    ASSERT_EQ_INT(3, party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET]);
+    ASSERT_EQ_INT(1, party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET]);
+}
+
+static void test_party_move_counter_saturates_at_legacy_maximum(void)
+{
+    uint8_t party[64] = {0};
+    u3_overworld_move_result result;
+
+    party[U3_OVERWORLD_PARTY_SIZE_OFFSET] = 4;
+    party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] = 99;
+    party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET] = 99;
+    party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET] = 99;
+    party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET] = 99;
+
+    ASSERT_TRUE(u3_overworld_increment_party_move_counter(party, sizeof(party), &result));
+
+    ASSERT_TRUE(result.turn_applied);
+    ASSERT_EQ_INT(4, result.turn_delta);
+    ASSERT_EQ_INT(U3_OVERWORLD_PARTY_MOVE_COUNTER_MAX, result.move_counter_before);
+    ASSERT_EQ_INT(U3_OVERWORLD_PARTY_MOVE_COUNTER_MAX, result.move_counter_after);
+    ASSERT_EQ_INT(99, party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET]);
+    ASSERT_EQ_INT(99, party[U3_OVERWORLD_PARTY_MOVE_HUNDREDS_OFFSET]);
+    ASSERT_EQ_INT(99, party[U3_OVERWORLD_PARTY_MOVE_TEN_THOUSANDS_OFFSET]);
+    ASSERT_EQ_INT(99, party[U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET]);
+}
+
+static void test_party_move_counter_zero_party_size_is_noop_turn(void)
+{
+    uint8_t party[64] = {0};
+    u3_overworld_move_result result;
+
+    party[U3_OVERWORLD_PARTY_SIZE_OFFSET] = 0;
+    party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET] = 12;
+
+    ASSERT_TRUE(u3_overworld_increment_party_move_counter(party, sizeof(party), &result));
+
+    ASSERT_TRUE(result.turn_applied);
+    ASSERT_EQ_INT(0, result.turn_delta);
+    ASSERT_EQ_INT(12, result.move_counter_before);
+    ASSERT_EQ_INT(12, result.move_counter_after);
+    ASSERT_EQ_INT(12, party[U3_OVERWORLD_PARTY_MOVE_ONES_OFFSET]);
+}
+
 static void test_reports_blocked_edges_and_unknown_commands(void)
 {
     u3_overworld_state state;
@@ -371,6 +435,9 @@ int main(void)
     test_moves_cardinally_with_bounds();
     test_initializes_wrapped_position_from_party_record();
     test_wrapped_movement_updates_party_record();
+    test_party_move_counter_adds_party_size_with_decimal_carry();
+    test_party_move_counter_saturates_at_legacy_maximum();
+    test_party_move_counter_zero_party_size_is_noop_turn();
     test_reports_blocked_edges_and_unknown_commands();
     test_passability_matches_first_non_ship_terrain_slice();
     test_map_aware_movement_blocks_impassable_target_tile();
