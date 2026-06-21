@@ -193,6 +193,43 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertTrue(blockedCommand?.contains("Audio Sound Bump") == true)
     }
 
+    func testEnterReportsLcbTowneTransitionWithoutMutatingSaveState() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Enter town index 2 MAPS 402 return 46,19 start 1,32 heading 2"
+        )
+        XCTAssertFalse(state.hasUnsavedChanges)
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testEnterAtUnrecognizedCoordinateReportsUnavailable() {
+        let state = ShellSmokeState()
+        state.newGame()
+
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Enter unavailable 42,20")
+        XCTAssertTrue(state.hasUnsavedChanges)
+    }
+
     private func renderCommand(in frame: u3_render_frame, index: Int) -> u3_render_command {
         var frame = frame
         return withUnsafePointer(to: &frame.commands) { pointer in
@@ -364,6 +401,37 @@ final class ShellTickSmokeTests: XCTestCase {
             }
 
             party[2] = location
+            return true
+        }
+    }
+
+    private var resourceRootPath: String {
+        URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .appendingPathComponent("Resources", isDirectory: true)
+            .path
+    }
+
+    private func setPartyPosition(x: UInt8, y: UInt8, in documentData: inout Data) -> Bool {
+        let documentLength = documentData.count
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return false
+            }
+
+            var partyRecord = u3_save_record()
+            guard u3_save_find_record(&document, 0x50525459, Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            party[Int(U3_OVERWORLD_PARTY_X_OFFSET)] = x
+            party[Int(U3_OVERWORLD_PARTY_Y_OFFSET)] = y
             return true
         }
     }

@@ -288,6 +288,52 @@ final class ShellResourceAdapter {
         }
     }
 
+    func handleOverworldLocationCommand(
+        documentData: Data?,
+        mapData: Data?,
+        state: inout u3_overworld_state,
+        command: UInt16,
+        result: inout u3_location_transition_result
+    ) -> Bool {
+        guard let documentData, let mapData else {
+            return false
+        }
+
+        return documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0 else {
+                return false
+            }
+
+            var domainState = u3_save_domain_state()
+            guard u3_save_load_domain_state(&document, &domainState) != 0,
+                  let locationTable = domainState.misc.4,
+                  domainState.misc_length.4 >= U3_LOCATION_TABLE_LENGTH else {
+                return false
+            }
+
+            return mapData.withUnsafeBytes { mapBuffer in
+                guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    return false
+                }
+
+                return u3_location_handle_overworld_command(
+                    &state,
+                    mapBaseAddress,
+                    UInt32(mapData.count),
+                    locationTable,
+                    domainState.misc_length.4,
+                    command,
+                    &result
+                ) != 0
+            }
+        }
+    }
+
     private static func hasValidOverworldMapShape(_ mapData: Data) -> Bool {
         guard let mapSize = mapData.first,
               mapSize > 0 else {

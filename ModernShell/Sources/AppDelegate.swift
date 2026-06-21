@@ -625,6 +625,24 @@ final class ShellSmokeState: ObservableObject {
                     return inputAdapter.describe(event)
                 }
             }
+
+            var transitionResult = u3_location_transition_result()
+            if resourceAdapter.handleOverworldLocationCommand(
+                documentData: currentSaveDocument,
+                mapData: overworldMapData,
+                state: &overworldState,
+                command: event.command,
+                result: &transitionResult
+            ), transitionResult.handled != 0 {
+                switch Int32(transitionResult.status) {
+                case U3_LOCATION_STATUS_TOWN_REQUESTED:
+                    return "Enter town index \(transitionResult.location_index) MAPS \(transitionResult.resource_id) return \(transitionResult.return_x),\(transitionResult.return_y) start \(transitionResult.initial_x),\(transitionResult.initial_y) heading \(transitionResult.initial_heading)"
+                case U3_LOCATION_STATUS_NOT_ENTERABLE:
+                    return "Enter unavailable \(transitionResult.return_x),\(transitionResult.return_y)"
+                default:
+                    return inputAdapter.describe(event)
+                }
+            }
         }
 
         return inputAdapter.describe(event)
