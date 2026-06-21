@@ -72,6 +72,38 @@ static void load_fixture(uint8_t **resource_bytes,
     ASSERT_TRUE(u3_resource_find(&resource_file, U3_RESOURCE_TYPE('M', 'I', 'S', 'C'), 404, locations));
 }
 
+static u3_resource_record require_resource(const u3_resource_file *resource_file,
+                                           uint32_t type,
+                                           int16_t id)
+{
+    u3_resource_record record;
+
+    ASSERT_TRUE(u3_resource_find(resource_file, type, id, &record));
+    return record;
+}
+
+static u3_location_transition_result make_request(uint8_t kind,
+                                                  uint8_t index,
+                                                  uint8_t initial_x,
+                                                  uint8_t initial_y,
+                                                  uint8_t heading)
+{
+    u3_location_transition_result request;
+
+    memset(&request, 0, sizeof(request));
+    request.handled = 1;
+    request.requested = 1;
+    request.destination_kind = kind;
+    request.location_index = index;
+    request.resource_id = u3_location_resource_id_for_index(index);
+    request.return_x = 46;
+    request.return_y = 19;
+    request.initial_x = initial_x;
+    request.initial_y = initial_y;
+    request.initial_heading = heading;
+    return request;
+}
+
 static void test_detects_lcb_towne_fixture(void)
 {
     uint8_t *resource_bytes;
@@ -202,6 +234,120 @@ static void test_rejects_truncated_inputs(void)
                                                       &result));
 }
 
+static void test_initializes_town_castle_and_dungeon_sessions(void)
+{
+    uint8_t *resource_bytes;
+    size_t resource_length;
+    u3_resource_file resource_file;
+    u3_resource_record map;
+    u3_resource_record monsters;
+    u3_resource_record talk;
+    u3_location_transition_result request;
+    u3_location_session session;
+
+    resource_bytes = read_file("../Resources/English.lproj/MainResources.rsrc", &resource_length);
+    ASSERT_TRUE(resource_bytes != 0);
+    ASSERT_TRUE(u3_resource_open(resource_bytes, resource_length, &resource_file));
+
+    request = make_request(U3_LOCATION_KIND_TOWN, 2, 1, 32, 2);
+    map = require_resource(&resource_file, U3_RESOURCE_TYPE('M', 'A', 'P', 'S'), 402);
+    monsters = require_resource(&resource_file, U3_RESOURCE_TYPE('M', 'O', 'N', 'S'), 402);
+    talk = require_resource(&resource_file, U3_RESOURCE_TYPE('T', 'L', 'K', 'S'), 402);
+    ASSERT_TRUE(u3_location_session_init(&request,
+                                         map.data, map.length,
+                                         monsters.data, monsters.length,
+                                         talk.data, talk.length,
+                                         &session));
+    ASSERT_TRUE(session.active);
+    ASSERT_EQ_INT(U3_LOCATION_KIND_TOWN, session.destination_kind);
+    ASSERT_EQ_INT(U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL, session.map_shape);
+    ASSERT_EQ_INT(64, session.map_size);
+    ASSERT_EQ_INT(4097, (int)session.map_length);
+    ASSERT_EQ_INT(256, (int)session.monster_length);
+    ASSERT_EQ_INT(256, (int)session.talk_length);
+    ASSERT_EQ_INT(1, session.x);
+    ASSERT_EQ_INT(32, session.y);
+    ASSERT_EQ_INT(2, session.heading);
+    ASSERT_EQ_INT(46, session.return_x);
+    ASSERT_EQ_INT(19, session.return_y);
+
+    request = make_request(U3_LOCATION_KIND_CASTLE, 0, 32, 62, 2);
+    map = require_resource(&resource_file, U3_RESOURCE_TYPE('M', 'A', 'P', 'S'), 400);
+    monsters = require_resource(&resource_file, U3_RESOURCE_TYPE('M', 'O', 'N', 'S'), 400);
+    talk = require_resource(&resource_file, U3_RESOURCE_TYPE('T', 'L', 'K', 'S'), 400);
+    ASSERT_TRUE(u3_location_session_init(&request,
+                                         map.data, map.length,
+                                         monsters.data, monsters.length,
+                                         talk.data, talk.length,
+                                         &session));
+    ASSERT_EQ_INT(U3_LOCATION_KIND_CASTLE, session.destination_kind);
+    ASSERT_EQ_INT(400, session.resource_id);
+    ASSERT_EQ_INT(U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL, session.map_shape);
+
+    request = make_request(U3_LOCATION_KIND_DUNGEON, 12, 1, 1, 1);
+    map = require_resource(&resource_file, U3_RESOURCE_TYPE('M', 'A', 'P', 'S'), 412);
+    talk = require_resource(&resource_file, U3_RESOURCE_TYPE('T', 'L', 'K', 'S'), 412);
+    ASSERT_TRUE(u3_location_session_init(&request,
+                                         map.data, map.length,
+                                         0, 0,
+                                         talk.data, talk.length,
+                                         &session));
+    ASSERT_EQ_INT(U3_LOCATION_KIND_DUNGEON, session.destination_kind);
+    ASSERT_EQ_INT(U3_LOCATION_MAP_SHAPE_DUNGEON, session.map_shape);
+    ASSERT_EQ_INT(16, session.map_size);
+    ASSERT_EQ_INT(2048, (int)session.map_length);
+    ASSERT_EQ_INT(0, (int)session.monster_length);
+
+    free(resource_bytes);
+}
+
+static void test_session_validation_rejects_partial_or_mismatched_records(void)
+{
+    uint8_t map[U3_LOCATION_TWO_DIMENSIONAL_MAP_LENGTH] = {64};
+    uint8_t monsters[U3_LOCATION_MONSTER_LENGTH] = {0};
+    uint8_t talk[U3_LOCATION_TALK_LENGTH] = {0};
+    u3_location_transition_result request = make_request(U3_LOCATION_KIND_TOWN, 2, 1, 32, 2);
+    u3_location_session session;
+
+    ASSERT_FALSE(u3_location_session_init(&request,
+                                          map, sizeof(map),
+                                          0, 0,
+                                          talk, sizeof(talk),
+                                          &session));
+    ASSERT_FALSE(session.active);
+    ASSERT_FALSE(u3_location_session_init(&request,
+                                          map, sizeof(map),
+                                          monsters, sizeof(monsters),
+                                          talk, sizeof(talk) - 1,
+                                          &session));
+    request.resource_id++;
+    ASSERT_FALSE(u3_location_session_init(&request,
+                                          map, sizeof(map),
+                                          monsters, sizeof(monsters),
+                                          talk, sizeof(talk),
+                                          &session));
+    request = make_request(U3_LOCATION_KIND_TOWN, 2, 64, 32, 2);
+    ASSERT_FALSE(u3_location_session_init(&request,
+                                          map, sizeof(map),
+                                          monsters, sizeof(monsters),
+                                          talk, sizeof(talk),
+                                          &session));
+    request = make_request(U3_LOCATION_KIND_TOWN, 2, 1, 32, 4);
+    ASSERT_FALSE(u3_location_session_init(&request,
+                                          map, sizeof(map),
+                                          monsters, sizeof(monsters),
+                                          talk, sizeof(talk),
+                                          &session));
+}
+
+static void test_resource_id_mapping_preserves_legacy_gap(void)
+{
+    ASSERT_EQ_INT(400, u3_location_resource_id_for_index(0));
+    ASSERT_EQ_INT(418, u3_location_resource_id_for_index(18));
+    ASSERT_EQ_INT(422, u3_location_resource_id_for_index(19));
+    ASSERT_EQ_INT(434, u3_location_resource_id_for_index(31));
+}
+
 int main(void)
 {
     test_detects_lcb_towne_fixture();
@@ -209,6 +355,9 @@ int main(void)
     test_matching_non_town_tile_is_not_enterable();
     test_non_enter_command_is_ignored();
     test_rejects_truncated_inputs();
+    test_initializes_town_castle_and_dungeon_sessions();
+    test_session_validation_rejects_partial_or_mismatched_records();
+    test_resource_id_mapping_preserves_legacy_gap();
 
     printf("location transition tests passed\n");
     return 0;

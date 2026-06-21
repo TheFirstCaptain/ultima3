@@ -12,6 +12,23 @@ struct ShellOverworldSmokeResult {
     let status: String
 }
 
+struct ShellLocationSession {
+    let descriptor: u3_location_session
+    let mapData: Data
+    let monsterData: Data?
+    let talkData: Data
+    let frame: u3_render_frame
+
+    var status: String {
+        "Location OK MAPS \(descriptor.resource_id) kind \(descriptor.destination_kind) pos \(descriptor.x),\(descriptor.y)"
+    }
+}
+
+enum ShellLocationSessionLoadResult {
+    case success(ShellLocationSession)
+    case failure(String)
+}
+
 final class ShellResourceAdapter {
     func validateMainResources(resourceRootPath: String?) -> String {
         guard let resourceRootPath else {
@@ -331,6 +348,112 @@ final class ShellResourceAdapter {
                     &result
                 ) != 0
             }
+        }
+    }
+
+    func loadLocationSession(
+        resourceRootPath: String?,
+        request: u3_location_transition_result
+    ) -> ShellLocationSessionLoadResult {
+        guard request.requested != 0 else {
+            return .failure("Location request missing")
+        }
+        guard let resourceRootPath else {
+            return .failure("Location resource root missing")
+        }
+
+        let resourceURL = mainResourcesURL(resourceRootPath: resourceRootPath)
+        guard FileManager.default.fileExists(atPath: resourceURL.path),
+              let resourceData = try? Data(contentsOf: resourceURL) else {
+            return .failure("Location resources missing")
+        }
+
+        return resourceData.withUnsafeBytes { resourceBuffer in
+            guard let resourceBaseAddress = resourceBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return .failure("Location resources empty")
+            }
+
+            var resourceFile = u3_resource_file()
+            guard u3_resource_open(resourceBaseAddress, resourceData.count, &resourceFile) != 0 else {
+                return .failure("Location resources invalid")
+            }
+
+            let resourceID = Int16(bitPattern: request.resource_id)
+            guard let mapRecord = findResource(resourceFile: &resourceFile, type: fourCharacterCode("MAPS"), id: resourceID),
+                  let mapPointer = mapRecord.data,
+                  let talkRecord = findResource(resourceFile: &resourceFile, type: fourCharacterCode("TLKS"), id: resourceID),
+                  let talkPointer = talkRecord.data else {
+                return .failure("Location MAPS/TLKS \(request.resource_id) missing")
+            }
+
+            let monsterRecord: u3_resource_record?
+            switch Int32(request.destination_kind) {
+            case U3_LOCATION_KIND_TOWN, U3_LOCATION_KIND_CASTLE:
+                monsterRecord = findResource(resourceFile: &resourceFile, type: fourCharacterCode("MONS"), id: resourceID)
+                guard monsterRecord?.data != nil else {
+                    return .failure("Location MONS \(request.resource_id) missing")
+                }
+            case U3_LOCATION_KIND_DUNGEON:
+                monsterRecord = nil
+            default:
+                return .failure("Location kind \(request.destination_kind) unsupported")
+            }
+
+            var mutableRequest = request
+            var descriptor = u3_location_session()
+            guard u3_location_session_init(
+                &mutableRequest,
+                mapPointer,
+                mapRecord.length,
+                monsterRecord?.data,
+                monsterRecord?.length ?? 0,
+                talkPointer,
+                talkRecord.length,
+                &descriptor
+            ) != 0 else {
+                return .failure("Location records \(request.resource_id) invalid")
+            }
+
+            let mapData = Data(bytes: mapPointer, count: Int(mapRecord.length))
+            let monsterData = monsterRecord.flatMap { record -> Data? in
+                guard let pointer = record.data else {
+                    return nil
+                }
+                return Data(bytes: pointer, count: Int(record.length))
+            }
+            let talkData = Data(bytes: talkPointer, count: Int(talkRecord.length))
+            let frame = makeLocationFrame(descriptor: descriptor, mapData: mapData)
+            return .success(ShellLocationSession(
+                descriptor: descriptor,
+                mapData: mapData,
+                monsterData: monsterData,
+                talkData: talkData,
+                frame: frame
+            ))
+        }
+    }
+
+    private func makeLocationFrame(descriptor: u3_location_session, mapData: Data) -> u3_render_frame {
+        guard Int32(descriptor.map_shape) == U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL else {
+            return u3_render_make_synthetic_tile_frame()
+        }
+
+        var state = u3_overworld_state()
+        guard u3_overworld_state_init(
+            &state,
+            descriptor.x,
+            descriptor.y,
+            UInt8(descriptor.map_size),
+            UInt8(descriptor.map_size)
+        ) != 0 else {
+            return u3_render_make_synthetic_tile_frame()
+        }
+
+        return mapData.withUnsafeBytes { mapBuffer in
+            guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return u3_render_make_synthetic_tile_frame()
+            }
+            return u3_overworld_make_view_frame(mapBaseAddress, UInt32(mapData.count), &state)
         }
     }
 

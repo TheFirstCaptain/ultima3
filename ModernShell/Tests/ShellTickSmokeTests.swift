@@ -211,9 +211,21 @@ final class ShellTickSmokeTests: XCTestCase {
 
         XCTAssertEqual(
             state.lastCommand,
-            "Enter town index 2 MAPS 402 return 46,19 start 1,32 heading 2"
+            "Loaded town index 2 MAPS 402 return 46,19 start 1,32 heading 2"
         )
+        XCTAssertTrue(state.resourceStatus.contains("Location OK MAPS 402 kind 1 pos 1,32"))
         XCTAssertFalse(state.hasUnsavedChanges)
+
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location MAPS 402 static; command East deferred")
+        XCTAssertFalse(state.hasUnsavedChanges)
+
+        state.refreshLocationStatus()
+        XCTAssertEqual(state.lastCommand, "Locations refreshed")
+        XCTAssertTrue(state.resourceStatus.contains("Overworld OK MAPS 419 pos 46,19"))
+        XCTAssertFalse(state.hasUnsavedChanges)
+
         state.saveGame()
         XCTAssertEqual(state.lastCommand, "Game saved")
         XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)

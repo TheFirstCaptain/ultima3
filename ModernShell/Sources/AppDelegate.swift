@@ -409,6 +409,7 @@ final class ShellSmokeState: ObservableObject {
     private var tickState = u3_tick_state()
     private var overworldState = u3_overworld_state()
     private var overworldMapData: Data?
+    private var activeLocationSession: ShellLocationSession?
     private var currentSaveDocument: Data?
     @Published private(set) var hasUnsavedChanges = false
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
@@ -520,7 +521,13 @@ final class ShellSmokeState: ObservableObject {
 
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
-        let overworldSmoke = resourceAdapter.buildOverworldSmoke(resourceRootPath: locations.resourceRootPath, state: &overworldState)
+        activeLocationSession = nil
+        let overworldSmoke: ShellOverworldSmokeResult
+        if let currentSaveDocument {
+            overworldSmoke = resourceAdapter.buildOverworldSmoke(documentData: currentSaveDocument, state: &overworldState)
+        } else {
+            overworldSmoke = resourceAdapter.buildOverworldSmoke(resourceRootPath: locations.resourceRootPath, state: &overworldState)
+        }
         overworldMapData = overworldSmoke.map
         renderFrame = overworldSmoke.frame
         resourceStatus = Self.describeResourceStatus(
@@ -605,6 +612,10 @@ final class ShellSmokeState: ObservableObject {
 
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
+            if let activeLocationSession {
+                return "Location MAPS \(activeLocationSession.descriptor.resource_id) static; command \(inputAdapter.describeKey(event.command)) deferred"
+            }
+
             var moveResult = u3_overworld_move_result()
             if consumeOverworldMovement(event.command, result: &moveResult),
                moveResult.handled != 0 {
@@ -636,7 +647,7 @@ final class ShellSmokeState: ObservableObject {
             ), transitionResult.handled != 0 {
                 switch Int32(transitionResult.status) {
                 case U3_LOCATION_STATUS_TOWN_REQUESTED:
-                    return "Enter town index \(transitionResult.location_index) MAPS \(transitionResult.resource_id) return \(transitionResult.return_x),\(transitionResult.return_y) start \(transitionResult.initial_x),\(transitionResult.initial_y) heading \(transitionResult.initial_heading)"
+                    return activateLocationSession(request: transitionResult)
                 case U3_LOCATION_STATUS_NOT_ENTERABLE:
                     return "Enter unavailable \(transitionResult.return_x),\(transitionResult.return_y)"
                 default:
@@ -646,6 +657,26 @@ final class ShellSmokeState: ObservableObject {
         }
 
         return inputAdapter.describe(event)
+    }
+
+    private func activateLocationSession(request: u3_location_transition_result) -> String {
+        let locations = locationProvider.snapshot()
+        switch resourceAdapter.loadLocationSession(
+            resourceRootPath: locations.resourceRootPath,
+            request: request
+        ) {
+        case .success(let session):
+            activeLocationSession = session
+            renderFrame = session.frame
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: session.status
+            )
+            return "Loaded town index \(session.descriptor.location_index) MAPS \(session.descriptor.resource_id) return \(session.descriptor.return_x),\(session.descriptor.return_y) start \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading)"
+        case .failure(let status):
+            return status
+        }
     }
 
     private func consumeOverworldMovement(_ command: UInt16, result: inout u3_overworld_move_result) -> Bool {
@@ -721,6 +752,7 @@ final class ShellSmokeState: ObservableObject {
     }
 
     private func applyCurrentSaveDocument(_ document: Data, locations: ShellLocationSnapshot, statusPrefix: String) {
+        activeLocationSession = nil
         currentSaveDocument = document
         saveStatus = resourceAdapter.describeSaveDomain(document, prefix: statusPrefix)
         let overworldSmoke = resourceAdapter.buildOverworldSmoke(documentData: document, state: &overworldState)

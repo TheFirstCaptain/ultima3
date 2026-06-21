@@ -21,7 +21,7 @@ static uint8_t u3_location_valid_map(const u3_overworld_state *state,
     return (uint8_t)(map_record_length >= required_length);
 }
 
-static uint16_t u3_location_resource_id(uint8_t location_index)
+uint16_t u3_location_resource_id_for_index(uint8_t location_index)
 {
     uint16_t resource_id = (uint16_t)(U3_LOCATION_RESOURCE_BASE + location_index);
 
@@ -71,7 +71,7 @@ uint8_t u3_location_handle_overworld_command(
         result->requested = 1;
         result->destination_kind = U3_LOCATION_KIND_TOWN;
         result->location_index = index;
-        result->resource_id = u3_location_resource_id(index);
+        result->resource_id = u3_location_resource_id_for_index(index);
         result->initial_x = U3_LOCATION_TOWN_INITIAL_X;
         result->initial_y = U3_LOCATION_TOWN_INITIAL_Y;
         result->initial_heading = U3_LOCATION_TOWN_INITIAL_HEADING;
@@ -79,5 +79,71 @@ uint8_t u3_location_handle_overworld_command(
         return 1;
     }
 
+    return 1;
+}
+
+uint8_t u3_location_session_init(
+    const u3_location_transition_result *request,
+    const uint8_t *map_record,
+    uint32_t map_record_length,
+    const uint8_t *monster_record,
+    uint32_t monster_record_length,
+    const uint8_t *talk_record,
+    uint32_t talk_record_length,
+    u3_location_session *session)
+{
+    uint8_t map_shape;
+    uint16_t map_size;
+
+    if (session == 0)
+        return 0;
+    memset(session, 0, sizeof(*session));
+
+    if (request == 0 || request->requested == 0 ||
+        request->destination_kind == U3_LOCATION_KIND_NONE ||
+        request->resource_id != u3_location_resource_id_for_index(request->location_index) ||
+        map_record == 0 || talk_record == 0 ||
+        talk_record_length != U3_LOCATION_TALK_LENGTH)
+        return 0;
+
+    switch (request->destination_kind) {
+    case U3_LOCATION_KIND_TOWN:
+    case U3_LOCATION_KIND_CASTLE:
+        if (map_record_length != U3_LOCATION_TWO_DIMENSIONAL_MAP_LENGTH ||
+            map_record[0] != U3_LOCATION_TWO_DIMENSIONAL_MAP_SIZE ||
+            monster_record == 0 || monster_record_length != U3_LOCATION_MONSTER_LENGTH)
+            return 0;
+        map_shape = U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL;
+        map_size = U3_LOCATION_TWO_DIMENSIONAL_MAP_SIZE;
+        break;
+    case U3_LOCATION_KIND_DUNGEON:
+        if (map_record_length != U3_LOCATION_DUNGEON_MAP_LENGTH ||
+            monster_record != 0 || monster_record_length != 0)
+            return 0;
+        map_shape = U3_LOCATION_MAP_SHAPE_DUNGEON;
+        map_size = 16;
+        break;
+    default:
+        return 0;
+    }
+
+    if (request->initial_x >= map_size || request->initial_y >= map_size ||
+        request->initial_heading > 3)
+        return 0;
+
+    session->active = 1;
+    session->destination_kind = request->destination_kind;
+    session->location_index = request->location_index;
+    session->resource_id = request->resource_id;
+    session->map_shape = map_shape;
+    session->map_size = map_size;
+    session->map_length = map_record_length;
+    session->monster_length = monster_record_length;
+    session->talk_length = talk_record_length;
+    session->x = request->initial_x;
+    session->y = request->initial_y;
+    session->heading = request->initial_heading;
+    session->return_x = request->return_x;
+    session->return_y = request->return_y;
     return 1;
 }

@@ -122,4 +122,84 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(result.status, "Render Missing resource root")
         XCTAssertEqual(result.frame.command_count, UInt16(renderTileCount + 2))
     }
+
+    func testLoadLocationSessionOwnsTownFixtureDataAndBuildsFrame() throws {
+        let adapter = ShellResourceAdapter()
+        let result = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_TOWN), index: 2, x: 1, y: 32, heading: 2)
+        )
+
+        guard case .success(let session) = result else {
+            return XCTFail("Expected LCB Towne session")
+        }
+        XCTAssertEqual(session.descriptor.resource_id, 402)
+        XCTAssertEqual(Int32(session.descriptor.map_shape), U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL)
+        XCTAssertEqual(session.mapData.count, Int(U3_LOCATION_TWO_DIMENSIONAL_MAP_LENGTH))
+        XCTAssertEqual(session.monsterData?.count, Int(U3_LOCATION_MONSTER_LENGTH))
+        XCTAssertEqual(session.talkData.count, Int(U3_LOCATION_TALK_LENGTH))
+        XCTAssertEqual(session.frame.command_count, UInt16(renderTileCount + 2))
+        XCTAssertEqual(session.mapData.first, 64)
+        XCTAssertEqual(session.status, "Location OK MAPS 402 kind 1 pos 1,32")
+    }
+
+    func testLoadLocationSessionValidatesCastleAndDungeonFamilies() {
+        let adapter = ShellResourceAdapter()
+        let castleResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_CASTLE), index: 0, x: 32, y: 62, heading: 2)
+        )
+        guard case .success(let castle) = castleResult else {
+            return XCTFail("Expected castle session")
+        }
+        XCTAssertEqual(castle.descriptor.resource_id, 400)
+        XCTAssertEqual(castle.monsterData?.count, 256)
+
+        let dungeonResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(let dungeon) = dungeonResult else {
+            return XCTFail("Expected dungeon session")
+        }
+        XCTAssertEqual(dungeon.descriptor.resource_id, 412)
+        XCTAssertEqual(Int32(dungeon.descriptor.map_shape), U3_LOCATION_MAP_SHAPE_DUNGEON)
+        XCTAssertEqual(dungeon.mapData.count, 2048)
+        XCTAssertNil(dungeon.monsterData)
+        XCTAssertEqual(dungeon.talkData.count, 256)
+    }
+
+    func testLoadLocationSessionRejectsInvalidRequestWithoutProducingSession() {
+        let adapter = ShellResourceAdapter()
+        var request = makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_TOWN), index: 2, x: 1, y: 32, heading: 2)
+        request.resource_id = 403
+
+        let result = adapter.loadLocationSession(resourceRootPath: resourceRootPath, request: request)
+
+        guard case .failure(let status) = result else {
+            return XCTFail("Expected invalid request failure")
+        }
+        XCTAssertEqual(status, "Location records 403 invalid")
+    }
+
+    private func makeLocationRequest(
+        kind: UInt8,
+        index: UInt8,
+        x: UInt8,
+        y: UInt8,
+        heading: UInt8
+    ) -> u3_location_transition_result {
+        var request = u3_location_transition_result()
+        request.handled = 1
+        request.requested = 1
+        request.destination_kind = kind
+        request.location_index = index
+        request.resource_id = u3_location_resource_id_for_index(index)
+        request.return_x = 46
+        request.return_y = 19
+        request.initial_x = x
+        request.initial_y = y
+        request.initial_heading = heading
+        return request
+    }
 }
