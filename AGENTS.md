@@ -24,6 +24,8 @@ Before implementing or reviewing modern shell, adapter, or `Core/` changes, read
 
 After completing any coding task, run an independent subagent code review before final handoff. Treat review findings as part of the task: resolve them, or explicitly document why they are accepted residual risk. If subagent tooling is unavailable, state that clearly in the handoff. After review findings and fixes are complete, include step-by-step instructions for the user to test the changed behavior manually, especially for UI, rendering, input, audio, or other human-in-the-loop validation paths.
 
+README maintenance is part of every change. Before final handoff, review the root `README.md` and any subsystem README affected by the work, such as `ModernShell/README.md`, and update them to describe the current behavior, commands, limitations, or workflow. If a README does not require a content change, explicitly state that it was reviewed and why no update was needed; do not silently skip the review.
+
 ## Commit & Pull Request Guidelines
 
 Git history is minimal and uses short, sentence-case commit subjects such as `Initial commit` and `Final state of code for public release`. Keep new commit messages concise and imperative, for example `Fix sound volume clamping`. Pull requests should describe the changed behavior, note whether a legacy or modern Xcode build was attempted, list manual verification steps, and include screenshots for UI or rendering changes.
