@@ -82,5 +82,5 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-032 | First Overworld Gameplay Interaction Slice | Complete | Done | [F-032.md](./F-032.md) | 2026-06-13 | Non-ship terrain/passability blocks impassable overworld movement and reports target tile results. |
 | F-033 | Overworld Turn Economy Slice | Complete | Done | [F-033.md](./F-033.md) | 2026-06-16 | Save-backed handled overworld movement attempts now increment the legacy `PRTY` move counter by active party size. |
 | F-034 | Overworld Command Feedback and Event Results | Complete | Done | [F-034.md](./F-034.md) | 2026-06-13 | Portable overworld result fields now drive shell status, redraw, and Step/Bump audio feedback. |
-| F-036 | Save Workflow and Autosave Policy | Proposed | Proposed | [F-036.md](./F-036.md) | 2026-06-12 | Turn smoke save/load commands into a documented gameplay save workflow and safe write policy. |
+| F-036 | Save Workflow and Autosave Policy | Complete | Done | [F-036.md](./F-036.md) | 2026-06-21 | Manual Sosaria-only save workflow, safe atomic writes, dirty-state tracking, launch restore, and quit handling complete. |
 | F-035 | First Overworld Location Transition Slice | Proposed | Proposed | [F-035.md](./F-035.md) | 2026-06-12 | Detect and handle one bounded special-location transition after movement and terrain rules. |

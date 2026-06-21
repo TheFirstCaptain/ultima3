@@ -16,15 +16,14 @@ final class ShellSaveAdapterTests: XCTestCase {
         }
     }
 
-    func testWriteSmokeDocumentCreatesDirectoryAndRoundTripsValidDocument() throws {
+    func testWriteDocumentCreatesDirectoryAndRoundTripsValidDocument() throws {
         let adapter = ShellSaveAdapter()
         let saveURL = temporaryDirectory
             .appendingPathComponent("Nested", isDirectory: true)
             .appendingPathComponent("Smoke.u3save", isDirectory: false)
         let document = makeValidSaveDocument(payload: [1, 2, 3, 4])
 
-        XCTAssertEqual(adapter.writeSmokeDocument(document, saveDocumentPath: saveURL.path), "Save OK Smoke")
-        XCTAssertEqual(adapter.readSmokeDocument(saveDocumentPath: saveURL.path), "Save Read OK Smoke")
+        XCTAssertEqual(adapter.writeDocument(document, saveDocumentPath: saveURL.path), .saved)
         XCTAssertEqual(try Data(contentsOf: saveURL), document)
     }
 
@@ -33,7 +32,7 @@ final class ShellSaveAdapterTests: XCTestCase {
         let saveURL = temporaryDirectory.appendingPathComponent("Smoke.u3save", isDirectory: false)
         let document = makeValidSaveDocument(payload: [21, 22, 23, 24])
 
-        XCTAssertEqual(adapter.writeSmokeDocument(document, saveDocumentPath: saveURL.path), "Save OK Smoke")
+        XCTAssertEqual(adapter.writeDocument(document, saveDocumentPath: saveURL.path), .saved)
         XCTAssertEqual(adapter.readDocument(saveDocumentPath: saveURL.path), document)
     }
 
@@ -45,7 +44,6 @@ final class ShellSaveAdapterTests: XCTestCase {
         try invalidDocument.write(to: saveURL)
 
         XCTAssertNil(adapter.readDocument(saveDocumentPath: saveURL.path))
-        XCTAssertEqual(adapter.readSmokeDocument(saveDocumentPath: saveURL.path), "Save Read Invalid Smoke")
     }
 
     func testInvalidReplacementRetainsPreviousValidDocument() throws {
@@ -55,10 +53,9 @@ final class ShellSaveAdapterTests: XCTestCase {
         var invalidDocument = document
         invalidDocument[0] = UInt8(ascii: "X")
 
-        XCTAssertEqual(adapter.writeSmokeDocument(document, saveDocumentPath: saveURL.path), "Save OK Smoke")
-        XCTAssertEqual(adapter.writeSmokeDocument(invalidDocument, saveDocumentPath: saveURL.path), "Save Rejected invalid smoke document")
+        XCTAssertEqual(adapter.writeDocument(document, saveDocumentPath: saveURL.path), .saved)
+        XCTAssertEqual(adapter.writeDocument(invalidDocument, saveDocumentPath: saveURL.path), .rejectedInvalidDocument)
         XCTAssertEqual(try Data(contentsOf: saveURL), document)
-        XCTAssertEqual(adapter.readSmokeDocument(saveDocumentPath: saveURL.path), "Save Read OK Smoke")
     }
 
     func testValidReplacementOverwritesPreviousDocument() throws {
@@ -67,10 +64,36 @@ final class ShellSaveAdapterTests: XCTestCase {
         let firstDocument = makeValidSaveDocument(payload: [13, 14, 15, 16])
         let secondDocument = makeValidSaveDocument(payload: [17, 18, 19, 20])
 
-        XCTAssertEqual(adapter.writeSmokeDocument(firstDocument, saveDocumentPath: saveURL.path), "Save OK Smoke")
-        XCTAssertEqual(adapter.writeSmokeDocument(secondDocument, saveDocumentPath: saveURL.path), "Save OK Smoke")
+        XCTAssertEqual(adapter.writeDocument(firstDocument, saveDocumentPath: saveURL.path), .saved)
+        XCTAssertEqual(adapter.writeDocument(secondDocument, saveDocumentPath: saveURL.path), .saved)
         XCTAssertEqual(try Data(contentsOf: saveURL), secondDocument)
-        XCTAssertEqual(adapter.readSmokeDocument(saveDocumentPath: saveURL.path), "Save Read OK Smoke")
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: temporaryDirectory.path)
+                .filter { $0.hasSuffix(".backup") },
+            []
+        )
+    }
+
+    func testReadbackFailureRestoresPreviousDocument() throws {
+        let saveURL = temporaryDirectory.appendingPathComponent("Smoke.u3save", isDirectory: false)
+        let firstDocument = makeValidSaveDocument(payload: [31, 32, 33, 34])
+        let secondDocument = makeValidSaveDocument(payload: [35, 36, 37, 38])
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(firstDocument, saveDocumentPath: saveURL.path),
+            .saved
+        )
+        let failingReadbackAdapter = ShellSaveAdapter(readback: { _ in nil })
+
+        XCTAssertEqual(
+            failingReadbackAdapter.writeDocument(secondDocument, saveDocumentPath: saveURL.path),
+            .failedReadback
+        )
+        XCTAssertEqual(try Data(contentsOf: saveURL), firstDocument)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: temporaryDirectory.path)
+                .filter { $0.hasSuffix(".backup") || $0.hasSuffix(".tmp") },
+            []
+        )
     }
 
     func testFailedWriteCleansUniqueTemporaryFiles() throws {
@@ -80,7 +103,7 @@ final class ShellSaveAdapterTests: XCTestCase {
         let document = makeValidSaveDocument(payload: [9, 10, 11, 12])
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
 
-        XCTAssertEqual(adapter.writeSmokeDocument(document, saveDocumentPath: saveURL.path), "Save Failed Smoke")
+        XCTAssertEqual(adapter.writeDocument(document, saveDocumentPath: saveURL.path), .failed)
 
         let temporaryFiles = try FileManager.default.contentsOfDirectory(atPath: temporaryDirectory.path)
             .filter { $0.contains(".tmp") }

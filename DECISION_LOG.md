@@ -195,3 +195,16 @@ Status: Accepted
 - This intentionally follows the actual bundled resource lengths inherited by `OpenRstr` when it creates mutable `MISC` records from resources 400 through 405.
 - The legacy `GetMiscStuff` and `PutMiscStuff` loops copy 12 bytes for the type-initial, weapon-use, and armour-use tables, but the modern native save adapter does not synthesize or accept an extra compatibility byte for `MISC` 501, 502, or 503.
 - If a future real mutable legacy `Ultima III Roster` fixture proves those resources expand to 12 bytes on disk, compatibility should be added as an explicit legacy import policy rather than changing native save-domain lengths silently.
+
+## 2026-06-21: First Gameplay Save Workflow Is Manual and Sosaria-Only
+
+Status: Accepted
+
+- The first user-facing workflow uses Game > New Game, Game > Save, and Game > Load Game against the shell's single current native save path.
+- Gameplay mutations remain in memory and mark the current document as having unsaved changes. They are not autosaved.
+- Manual save is allowed only for a structurally valid, domain-valid document whose party is in Sosaria, preserving the established legacy outdoor-save restriction.
+- The persistence adapter stages and validates the complete document, atomically replaces the prior file, and verifies an exact readback. Rejected or failed writes do not intentionally replace the previous valid save.
+- A valid durable document may be restored at launch. Loading replaces the in-memory current document and clears its unsaved marker.
+- Quitting with unsaved changes prompts to save, discard, or cancel. Save failure or an unsafe current state cancels termination.
+- Starting or loading another game requires confirmation before discarding in-memory changes.
+- Autosave is deferred until location-transition and non-overworld persistence timing is characterized.

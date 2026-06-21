@@ -100,7 +100,8 @@ final class GameHostView: NSView {
         )
         drawStatusLine("Last command: \(shellState.lastCommand) | \(shellState.tickStatus) | Core probe: \(shellState.coreHeadingProbe)", index: 0, attributes: statusAttributes)
         drawStatusLine(shellState.resourceStatus, index: 1, attributes: statusAttributes)
-        drawStatusLine(shellState.saveStatus, index: 2, attributes: statusAttributes)
+        let saveState = shellState.hasUnsavedChanges ? "Unsaved changes" : "Saved state unchanged"
+        drawStatusLine("\(saveState) | \(shellState.saveStatus)", index: 2, attributes: statusAttributes)
     }
 
     private func drawStatusLine(_ text: String, index: Int, attributes: [NSAttributedString.Key: Any]) {

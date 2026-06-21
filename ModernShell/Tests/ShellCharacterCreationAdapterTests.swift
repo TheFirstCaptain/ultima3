@@ -97,7 +97,7 @@ final class ShellCharacterCreationAdapterTests: XCTestCase {
         XCTAssertEqual(state.lastCommand, "Character save failed")
         XCTAssertEqual(state.saveStatus, "Character requires current save")
 
-        state.loadNewGameSmoke()
+        state.newGame()
         state.acceptCharacterCandidate(validDraft)
         XCTAssertEqual(state.lastCommand, "Character saved roster 5")
         XCTAssertEqual(state.saveStatus, "Party OK size 4 active 1/2/3/4 occupied 5 lead Tatiana G E/T/F HP 100/100 L1 food 150 gold 150")

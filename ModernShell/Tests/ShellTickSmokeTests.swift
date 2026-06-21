@@ -106,32 +106,78 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertTrue(blockedCommand?.contains("Audio Sound Bump") == true)
     }
 
-    func testSaveBackedOverworldMovementPersistsAfterWriteAndReload() {
+    func testSaveBackedOverworldMovementPersistsAfterSaveAndReload() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)
-        state.loadNewGameSmoke()
+        state.newGame()
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
         XCTAssertEqual(state.lastCommand, "Move East 43,20 moves 4 | Audio Sound Step")
 
-        state.writeSaveSmoke()
-        XCTAssertEqual(state.lastCommand, "Save current")
-        XCTAssertTrue(state.saveStatus.contains("Save OK Smoke | Save Read OK Smoke"))
+        XCTAssertTrue(state.hasUnsavedChanges)
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+        XCTAssertFalse(state.hasUnsavedChanges)
+        XCTAssertTrue(state.saveStatus.contains("Game saved |"))
 
         let reloadedState = ShellSmokeState(locationProvider: locationProvider)
-        reloadedState.loadSavedSmoke()
+        reloadedState.loadGame()
         reloadedState.submitOverworldCommand(moveEastCommand)
         reloadedState.runTick()
 
         XCTAssertEqual(reloadedState.lastCommand, "Move East 44,20 moves 8 | Audio Sound Step")
     }
 
+    func testGameplayMutationRemainsInMemoryUntilManualSave() {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.newGame()
+        state.saveGame()
+
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider)
+        reloadedState.loadGame()
+        reloadedState.submitOverworldCommand(moveEastCommand)
+        reloadedState.runTick()
+
+        XCTAssertEqual(reloadedState.lastCommand, "Move East 43,20 moves 4 | Audio Sound Step")
+    }
+
+    func testManualSaveRejectsNonSosariaStateAndPreservesPriorSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.newGame()
+        state.saveGame()
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+
+        var unsafeDocument = savedDocument
+        XCTAssertTrue(setPartyLocation(1, in: &unsafeDocument))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(unsafeDocument, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        state.loadGame()
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(savedDocument, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+
+        state.saveGame()
+
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(state.saveStatus, "Save unavailable outside Sosaria")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
     func testSaveBackedBlockedOverworldMovementConsumesTurn() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)
         var blockedCommand: String?
-        state.loadNewGameSmoke()
+        state.newGame()
 
         for _ in 0..<64 {
             state.submitOverworldCommand(moveEastCommand)
@@ -178,21 +224,22 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(state.tickStatus, "Tick 1 phase 1 input 0 audio 0 paused")
     }
 
-    func testWriteSaveSmokeRequiresCurrentDocument() {
+    func testSaveGameRequiresCurrentDocument() {
         let state = ShellSmokeState()
 
-        state.writeSaveSmoke()
+        state.saveGame()
 
-        XCTAssertEqual(state.lastCommand, "Save current missing")
-        XCTAssertEqual(state.saveStatus, "Save Missing current document")
+        XCTAssertEqual(state.lastCommand, "Save unavailable")
+        XCTAssertEqual(state.saveStatus, "Save unavailable: start or load a game first")
     }
 
-    func testLoadNewGameSmokeStoresCurrentDocumentForInspection() {
+    func testNewGameStoresCurrentDocumentForInspection() {
         let state = ShellSmokeState()
 
-        state.loadNewGameSmoke()
+        state.newGame()
 
-        XCTAssertEqual(state.lastCommand, "Current save loaded")
+        XCTAssertEqual(state.lastCommand, "New game started")
+        XCTAssertTrue(state.hasUnsavedChanges)
         XCTAssertEqual(state.saveStatus, "Current Save OK party 64 roster 1280 map 4101 creatures 256 misc 16/11/11/11/64/16")
 
         state.inspectPartyRoster()
@@ -204,15 +251,15 @@ final class ShellTickSmokeTests: XCTestCase {
     func testAssembledPartyWritesAndLoadsFromSavedDocument() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)
-        state.loadNewGameSmoke()
+        state.newGame()
         state.acceptPartyAssembly([2, 1])
 
-        state.writeSaveSmoke()
-        XCTAssertEqual(state.lastCommand, "Save current")
-        XCTAssertTrue(state.saveStatus.contains("Save OK Smoke | Save Read OK Smoke"))
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+        XCTAssertTrue(state.saveStatus.contains("Game saved |"))
 
         let reloadedState = ShellSmokeState(locationProvider: locationProvider)
-        reloadedState.loadSavedSmoke()
+        reloadedState.loadGame()
         reloadedState.inspectPartyRoster()
 
         XCTAssertEqual(reloadedState.lastCommand, "Party roster")
@@ -222,12 +269,12 @@ final class ShellTickSmokeTests: XCTestCase {
     func testStartupStyleLoadAdoptsSavedAssembledPartyWhenAvailable() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)
-        state.loadNewGameSmoke()
+        state.newGame()
         state.acceptPartyAssembly([2, 1])
-        state.writeSaveSmoke()
+        state.saveGame()
 
         let launchedState = ShellSmokeState(locationProvider: locationProvider)
-        launchedState.loadSavedSmokeIfAvailable()
+        launchedState.loadSavedGameIfAvailable()
         launchedState.inspectPartyRoster()
 
         XCTAssertEqual(launchedState.lastCommand, "Party roster")
@@ -238,16 +285,16 @@ final class ShellTickSmokeTests: XCTestCase {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)
 
-        state.loadSavedSmokeIfAvailable()
+        state.loadSavedGameIfAvailable()
 
         XCTAssertEqual(state.lastCommand, "Ready")
         XCTAssertTrue(state.saveStatus.contains("Save path \(saveDocumentURL.path)"))
     }
 
-    func testLoadSavedSmokeRejectsDomainInvalidDocumentWithoutReplacingCurrentDocument() throws {
+    func testLoadGameRejectsDomainInvalidDocumentWithoutReplacingCurrentDocument() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let state = ShellSmokeState(locationProvider: locationProvider)
-        state.loadNewGameSmoke()
+        state.newGame()
 
         let invalidDomainDocument = makeStructurallyValidSaveDocument(payload: [1, 2, 3, 4])
         try FileManager.default.createDirectory(
@@ -256,9 +303,9 @@ final class ShellTickSmokeTests: XCTestCase {
         )
         try invalidDomainDocument.write(to: saveDocumentURL)
 
-        state.loadSavedSmoke()
+        state.loadGame()
 
-        XCTAssertEqual(state.lastCommand, "Saved load failed")
+        XCTAssertEqual(state.lastCommand, "Load failed")
         XCTAssertEqual(state.saveStatus, "Saved Game Failed load domain state")
 
         state.inspectPartyRoster()
@@ -295,5 +342,29 @@ final class ShellTickSmokeTests: XCTestCase {
         data[offset + 1] = UInt8((value >> 16) & 0xFF)
         data[offset + 2] = UInt8((value >> 8) & 0xFF)
         data[offset + 3] = UInt8(value & 0xFF)
+    }
+
+    private func setPartyLocation(_ location: UInt8, in documentData: inout Data) -> Bool {
+        let documentLength = documentData.count
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return false
+            }
+
+            var partyRecord = u3_save_record()
+            guard u3_save_find_record(&document, 0x50525459, Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            party[2] = location
+            return true
+        }
     }
 }

@@ -9,18 +9,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var partyAssemblyWindowController: NSWindowController?
     private var suppressCharacterCreationCloseStatus = false
     private var suppressPartyAssemblyCloseStatus = false
+    private var discardUnsavedChangesOnTermination = false
     private var tickTimer: Timer?
     private let shellState = ShellSmokeState()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
         openMainWindow()
-        shellState.loadSavedSmokeIfAvailable()
+        shellState.loadSavedGameIfAvailable()
         startTickTimer()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if discardUnsavedChangesOnTermination {
+            discardUnsavedChangesOnTermination = false
+            return .terminateNow
+        }
+        guard shellState.hasUnsavedChanges else {
+            return .terminateNow
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Save changes before quitting?"
+        alert.informativeText = "Unsaved gameplay changes are kept in memory until you save."
+        alert.addButton(withTitle: "Save and Quit")
+        alert.addButton(withTitle: "Quit Without Saving")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            shellState.saveGame()
+            return shellState.hasUnsavedChanges ? .terminateCancel : .terminateNow
+        case .alertSecondButtonReturn:
+            return .terminateNow
+        default:
+            return .terminateCancel
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -29,11 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func newGame(_ sender: Any?) {
-        shellState.submitMenuCommand(U3_INPUT_MENU_NEW_GAME)
+        guard confirmDiscardUnsavedChanges(for: "starting a new game") else {
+            return
+        }
+        shellState.newGame()
     }
 
     @objc private func saveGame(_ sender: Any?) {
-        shellState.submitMenuCommand(U3_INPUT_MENU_SAVE)
+        shellState.saveGame()
     }
 
     @objc private func testSound(_ sender: Any?) {
@@ -55,16 +86,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         shellState.refreshLocationStatus()
     }
 
-    @objc private func writeSaveSmoke(_ sender: Any?) {
-        shellState.writeSaveSmoke()
+    @objc private func loadGame(_ sender: Any?) {
+        guard confirmDiscardUnsavedChanges(for: "loading the saved game") else {
+            return
+        }
+        shellState.loadGame()
     }
 
-    @objc private func loadNewGameSmoke(_ sender: Any?) {
-        shellState.loadNewGameSmoke()
-    }
+    private func confirmDiscardUnsavedChanges(for action: String) -> Bool {
+        guard shellState.hasUnsavedChanges else {
+            return true
+        }
 
-    @objc private func loadSavedSmoke(_ sender: Any?) {
-        shellState.loadSavedSmoke()
+        let alert = NSAlert()
+        alert.messageText = "Discard unsaved changes?"
+        alert.informativeText = "Unsaved gameplay changes will be lost before \(action)."
+        alert.addButton(withTitle: "Discard Changes")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @objc private func inspectPartyRoster(_ sender: Any?) {
@@ -153,6 +192,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === window else {
+            return true
+        }
+        guard shellState.hasUnsavedChanges else {
+            NSApp.terminate(nil)
+            return false
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Save changes before closing?"
+        alert.informativeText = "Unsaved gameplay changes are kept in memory until you save."
+        alert.addButton(withTitle: "Save and Close")
+        alert.addButton(withTitle: "Close Without Saving")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            shellState.saveGame()
+            if !shellState.hasUnsavedChanges {
+                NSApp.terminate(nil)
+            }
+            return false
+        case .alertSecondButtonReturn:
+            discardUnsavedChangesOnTermination = true
+            NSApp.terminate(nil)
+            return false
+        default:
+            return false
+        }
+    }
+
     private func closeCharacterCreationPanel() {
         guard let controller = characterCreationWindowController else {
             return
@@ -208,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         window.title = "Ultima III Modern Shell"
         window.contentView = gameHostView
+        window.delegate = self
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(gameHostView)
@@ -251,27 +323,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             target: self
         ))
         gameMenu.addItem(makeMenuItem(
+            withTitle: "Load Game",
+            action: #selector(loadGame(_:)),
+            keyEquivalent: "o",
+            target: self
+        ))
+        gameMenu.addItem(NSMenuItem.separator())
+        gameMenu.addItem(makeMenuItem(
             withTitle: "Refresh Locations",
             action: #selector(refreshLocations(_:)),
             keyEquivalent: "l",
-            target: self
-        ))
-        gameMenu.addItem(makeMenuItem(
-            withTitle: "Write Save Smoke",
-            action: #selector(writeSaveSmoke(_:)),
-            keyEquivalent: "w",
-            target: self
-        ))
-        gameMenu.addItem(makeMenuItem(
-            withTitle: "Load New Game Smoke",
-            action: #selector(loadNewGameSmoke(_:)),
-            keyEquivalent: "d",
-            target: self
-        ))
-        gameMenu.addItem(makeMenuItem(
-            withTitle: "Load Saved Smoke",
-            action: #selector(loadSavedSmoke(_:)),
-            keyEquivalent: "o",
             target: self
         ))
         gameMenu.addItem(makeMenuItem(
@@ -349,6 +410,7 @@ final class ShellSmokeState: ObservableObject {
     private var overworldState = u3_overworld_state()
     private var overworldMapData: Data?
     private var currentSaveDocument: Data?
+    @Published private(set) var hasUnsavedChanges = false
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
 
     init(
@@ -470,55 +532,66 @@ final class ShellSmokeState: ObservableObject {
         lastCommand = "Locations refreshed"
     }
 
-    func writeSaveSmoke() {
+    func saveGame() {
         let locations = locationProvider.snapshot()
         guard let document = currentSaveDocument else {
-            saveStatus = "Save Missing current document"
-            lastCommand = "Save current missing"
+            saveStatus = "Save unavailable: start or load a game first"
+            lastCommand = "Save unavailable"
+            return
+        }
+        guard resourceAdapter.isValidSaveDomain(document) else {
+            saveStatus = "Save rejected: invalid current game"
+            lastCommand = "Save rejected"
             return
         }
         guard resourceAdapter.currentSosariaSaveAllowed(documentData: document) else {
-            saveStatus = "Save Rejected not in Sosaria"
-            lastCommand = "Save current rejected"
+            saveStatus = "Save unavailable outside Sosaria"
+            lastCommand = "Save rejected"
             return
         }
 
-        let writeStatus = saveAdapter.writeSmokeDocument(document, saveDocumentPath: locations.saveDocumentPath)
-        let readStatus = saveAdapter.readSmokeDocument(saveDocumentPath: locations.saveDocumentPath)
-        saveStatus = "\(writeStatus) | \(readStatus) | \(locations.saveDocumentPath)"
-        lastCommand = "Save current"
+        let result = saveAdapter.writeDocument(document, saveDocumentPath: locations.saveDocumentPath)
+        saveStatus = "\(result.message) | \(locations.saveDocumentPath)"
+        if result == .saved {
+            hasUnsavedChanges = false
+            lastCommand = "Game saved"
+        } else {
+            lastCommand = "Save failed"
+        }
     }
 
-    func loadNewGameSmoke() {
+    func newGame() {
         let locations = locationProvider.snapshot()
         guard let document = resourceAdapter.buildNativeNewGameSmokeDocument(resourceRootPath: locations.resourceRootPath) else {
-            saveStatus = "New Game Failed build smoke document"
+            saveStatus = "New game failed: could not build save document"
             lastCommand = "New game failed"
             return
         }
 
         applyCurrentSaveDocument(document, locations: locations, statusPrefix: "Current Save")
-        lastCommand = "Current save loaded"
+        hasUnsavedChanges = true
+        lastCommand = "New game started"
     }
 
-    func loadSavedSmoke() {
+    func loadGame() {
         let locations = locationProvider.snapshot()
         guard let document = saveAdapter.readDocument(saveDocumentPath: locations.saveDocumentPath) else {
-            saveStatus = "Save Missing current document"
-            lastCommand = "Saved load failed"
+            saveStatus = "No saved game found | \(locations.saveDocumentPath)"
+            lastCommand = "Load failed"
             return
         }
         guard resourceAdapter.isValidSaveDomain(document) else {
             saveStatus = resourceAdapter.describeSaveDomain(document, prefix: "Saved Game")
-            lastCommand = "Saved load failed"
+            lastCommand = "Load failed"
             return
         }
 
         applyCurrentSaveDocument(document, locations: locations, statusPrefix: "Saved Game")
-        lastCommand = "Saved game loaded"
+        hasUnsavedChanges = false
+        lastCommand = "Game loaded"
     }
 
-    func loadSavedSmokeIfAvailable() {
+    func loadSavedGameIfAvailable() {
         let locations = locationProvider.snapshot()
         guard let document = saveAdapter.readDocument(saveDocumentPath: locations.saveDocumentPath),
               resourceAdapter.isValidSaveDomain(document) else {
@@ -526,7 +599,8 @@ final class ShellSmokeState: ObservableObject {
         }
 
         applyCurrentSaveDocument(document, locations: locations, statusPrefix: "Saved Game")
-        lastCommand = "Saved game loaded"
+        hasUnsavedChanges = false
+        lastCommand = "Game loaded"
     }
 
     private func consumeInputEvent(_ event: u3_input_event) -> String {
@@ -624,6 +698,7 @@ final class ShellSmokeState: ObservableObject {
 
         if updated {
             currentSaveDocument = documentData
+            hasUnsavedChanges = true
         }
     }
 
@@ -659,6 +734,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         currentSaveDocument = document
+        hasUnsavedChanges = true
         saveStatus = resourceAdapter.inspectPartyRoster(documentData: document)
         lastCommand = "Character saved roster \(result.rosterID)"
     }
@@ -680,6 +756,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         currentSaveDocument = document
+        hasUnsavedChanges = true
         saveStatus = resourceAdapter.inspectPartyRoster(documentData: document)
         lastCommand = result.message
     }

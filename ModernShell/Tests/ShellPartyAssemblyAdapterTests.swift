@@ -102,7 +102,7 @@ final class ShellPartyAssemblyAdapterTests: XCTestCase {
         XCTAssertEqual(state.lastCommand, "Party assembly failed")
         XCTAssertEqual(state.saveStatus, "Party assembly requires current save")
 
-        state.loadNewGameSmoke()
+        state.newGame()
         state.acceptPartyAssembly([2, 1])
         XCTAssertEqual(state.lastCommand, "Party assembled 2/1")
         XCTAssertTrue(state.saveStatus.contains("Party OK size 2 active 2/1/0/0 occupied 4"))
