@@ -612,8 +612,40 @@ final class ShellSmokeState: ObservableObject {
 
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
-            if let activeLocationSession {
-                return "Location MAPS \(activeLocationSession.descriptor.resource_id) static; command \(inputAdapter.describeKey(event.command)) deferred"
+            if var locationSession = activeLocationSession {
+                var locationResult = u3_location_move_result()
+                if resourceAdapter.moveLocationSession(
+                    &locationSession,
+                    command: event.command,
+                    result: &locationResult
+                ), locationResult.handled != 0 {
+                    persistLocationTurnToCurrentSave(result: &locationResult)
+                    activeLocationSession = locationSession
+                    if locationResult.redraw != 0 {
+                        renderFrame = locationSession.frame
+                        let locations = locationProvider.snapshot()
+                        resourceStatus = Self.describeResourceStatus(
+                            locations: locations,
+                            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                            renderStatus: locationSession.status
+                        )
+                    }
+                    if locationResult.sound_id != 0 {
+                        _ = audioAdapter.enqueueSound(Int32(locationResult.sound_id))
+                    }
+
+                    switch Int32(locationResult.status) {
+                    case U3_LOCATION_MOVE_STATUS_EXIT_REQUESTED:
+                        return "Location exit pending \(locationResult.x),\(locationResult.y)\(describeLocationTurnDelta(locationResult))"
+                    case U3_LOCATION_MOVE_STATUS_BLOCKED:
+                        return "Location blocked \(inputAdapter.describeKey(event.command)) \(locationResult.x),\(locationResult.y) tile \(locationResult.target_tile)\(describeLocationTurnDelta(locationResult))"
+                    case U3_LOCATION_MOVE_STATUS_MOVED:
+                        return "Location move \(inputAdapter.describeKey(event.command)) \(locationResult.x),\(locationResult.y)\(describeLocationTurnDelta(locationResult))"
+                    default:
+                        return inputAdapter.describe(event)
+                    }
+                }
+                return "Location MAPS \(locationSession.descriptor.resource_id) command \(inputAdapter.describeKey(event.command)) deferred"
             }
 
             var moveResult = u3_overworld_move_result()
@@ -751,6 +783,38 @@ final class ShellSmokeState: ObservableObject {
         }
     }
 
+    private func persistLocationTurnToCurrentSave(result: inout u3_location_move_result) {
+        guard var documentData = currentSaveDocument else {
+            return
+        }
+
+        let documentLength = documentData.count
+        let updated = documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return false
+            }
+
+            var partyRecord = u3_save_record()
+            guard u3_save_find_record(&document, Self.fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            return u3_location_apply_party_turn(party, partyRecord.length, &result) != 0
+        }
+
+        if updated {
+            currentSaveDocument = documentData
+            hasUnsavedChanges = true
+        }
+    }
+
     private func applyCurrentSaveDocument(_ document: Data, locations: ShellLocationSnapshot, statusPrefix: String) {
         activeLocationSession = nil
         currentSaveDocument = document
@@ -825,6 +889,14 @@ final class ShellSmokeState: ObservableObject {
     }
 
     private func describeTurnDelta(_ result: u3_overworld_move_result) -> String {
+        guard result.turn_applied != 0 else {
+            return ""
+        }
+
+        return " moves \(result.move_counter_after)"
+    }
+
+    private func describeLocationTurnDelta(_ result: u3_location_move_result) -> String {
         guard result.turn_applied != 0 else {
             return ""
         }

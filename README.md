@@ -58,19 +58,20 @@ The app launched by this command is the modernization shell, not the original le
 
 ## Current Direction
 
-Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, representative map/talk/combat fixtures, shell resource/persistence integration, a byte-preserving native save domain, automated coverage for a resource-backed render smoke frame, a fixed shell tick smoke loop, bounded overworld movement, current save load/write, and persistent character creation.
+Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, representative map/talk/combat fixtures, shell resource/persistence integration, a byte-preserving native save domain, a fixed shell tick, persistent character creation and party assembly, manual save/load workflow, save-backed Sosaria movement and turn accounting, explicit location transitions, transient destination resource sessions, and non-wrapping town/castle navigation.
 
-The first modern app shell now exists under `ModernShell/` as a SwiftPM executable product named `Ultima3ModernShell`. AppKit owns lifecycle, windows, menus, command routing, input intake, the game host view, fullscreen/window behavior, and future concrete save-file location. SwiftUI is currently limited to a preferences panel boundary.
+The first modern app shell now exists under `ModernShell/` as a SwiftPM executable product named `Ultima3ModernShell`. AppKit owns lifecycle, windows, menus, command routing, input intake, the game host view, fullscreen/window behavior, and concrete save-file location. SwiftUI is limited to preferences and setup panels such as character creation and party assembly.
 
-The modern shell currently has early adapter smoke paths for rendering, input, audio, resources, persistence, current save-domain loading, character creation, bounded overworld movement, and a fixed AppKit-owned tick:
+The modern shell currently has adapter-backed paths for rendering, input, audio, resources, persistence, current save-domain loading, setup flows, Sosaria movement, and the first town session:
 
-- `GameHostView` renders a resource-backed portable frame from `CONS` 400 tile bytes through an AppKit renderer adapter, with a synthetic fallback if resources are unavailable.
-- Keyboard, mouse, and menu commands pass through a portable input queue and are consumed by the shell tick; arrow and keypad movement commands drive the bounded overworld smoke path.
+- `GameHostView` renders portable save/resource-backed Sosaria and location frames through an AppKit renderer adapter, with synthetic and `CONS` fixture paths retained for fallback and validation.
+- Keyboard, mouse, and menu commands pass through a portable input queue and are consumed by the shell tick; arrow and keypad commands drive wrapped Sosaria movement or non-wrapping location movement according to the active session.
 - A shell-owned AVFoundation audio adapter consumes portable audio events on tick and can play bundled sound assets.
 - Shell resource and save adapters validate bundled `MainResources.rsrc`, build native new-game save documents, load saved native documents, inspect party/roster state, and atomically write the current save document.
 - `Game > Create Character...` opens a SwiftUI setup panel that validates candidates through portable C rules and persists valid accepted characters into the first available native `ROST` slot when a current save document is loaded.
+- Explicit Enter at LCB Towne loads validated transient map, monster, and talk records; the town viewport supports cardinal movement, blocked feedback, shared move-counter updates, and a pending exit result without overwriting saved Sosaria coordinates.
 
-The next proposed backlog candidates include party assembly from occupied roster slots, save-backed overworld movement, and the first narrow overworld gameplay interaction slice.
+The next proposed backlog starts with completing the town entry/return round trip, followed by a bounded NPC talk slice and dungeon-session integration.
 
 ## App Shell Boundary
 

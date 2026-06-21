@@ -218,17 +218,43 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Location MAPS 402 static; command East deferred")
-        XCTAssertFalse(state.hasUnsavedChanges)
+        XCTAssertEqual(state.lastCommand, "Location move East 2,32 moves 4 | Audio Sound Step")
+        XCTAssertTrue(state.hasUnsavedChanges)
 
         state.refreshLocationStatus()
         XCTAssertEqual(state.lastCommand, "Locations refreshed")
         XCTAssertTrue(state.resourceStatus.contains("Overworld OK MAPS 419 pos 46,19"))
-        XCTAssertFalse(state.hasUnsavedChanges)
+        XCTAssertTrue(state.hasUnsavedChanges)
 
         state.saveGame()
         XCTAssertEqual(state.lastCommand, "Game saved")
-        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertNotEqual(updatedDocument, savedDocument)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.x, 46)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.y, 19)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 4)
+    }
+
+    func testTownWestMovementRequestsExitWithoutRestoringSosaria() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitOverworldCommand(moveWestCommand)
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Location exit pending 0,32 moves 4 | Audio Sound Step")
+        XCTAssertTrue(state.resourceStatus.contains("Location OK MAPS 402 kind 1 pos 0,32"))
+        XCTAssertTrue(state.hasUnsavedChanges)
     }
 
     func testEnterAtUnrecognizedCoordinateReportsUnavailable() {
@@ -445,6 +471,31 @@ final class ShellTickSmokeTests: XCTestCase {
             party[Int(U3_OVERWORLD_PARTY_X_OFFSET)] = x
             party[Int(U3_OVERWORLD_PARTY_Y_OFFSET)] = y
             return true
+        }
+    }
+
+    private func partyPositionAndMoves(in documentData: Data) -> (x: UInt8, y: UInt8, moves: UInt32)? {
+        documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0 else {
+                return nil
+            }
+
+            var partyRecord = u3_save_record()
+            guard u3_save_find_record(&document, 0x50525459, Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  let party = partyRecord.data else {
+                return nil
+            }
+
+            return (
+                party[Int(U3_OVERWORLD_PARTY_X_OFFSET)],
+                party[Int(U3_OVERWORLD_PARTY_Y_OFFSET)],
+                u3_overworld_read_party_move_counter(party, partyRecord.length)
+            )
         }
     }
 }

@@ -13,11 +13,11 @@ struct ShellOverworldSmokeResult {
 }
 
 struct ShellLocationSession {
-    let descriptor: u3_location_session
+    var descriptor: u3_location_session
     let mapData: Data
     let monsterData: Data?
     let talkData: Data
-    let frame: u3_render_frame
+    var frame: u3_render_frame
 
     var status: String {
         "Location OK MAPS \(descriptor.resource_id) kind \(descriptor.destination_kind) pos \(descriptor.x),\(descriptor.y)"
@@ -433,27 +433,41 @@ final class ShellResourceAdapter {
         }
     }
 
+    func moveLocationSession(
+        _ session: inout ShellLocationSession,
+        command: UInt16,
+        result: inout u3_location_move_result
+    ) -> Bool {
+        let moved = session.mapData.withUnsafeBytes { mapBuffer in
+            guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+            return u3_location_move(
+                &session.descriptor,
+                mapBaseAddress,
+                UInt32(session.mapData.count),
+                command,
+                &result
+            ) != 0
+        }
+
+        if moved && result.redraw != 0 {
+            session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
+        }
+        return moved
+    }
+
     private func makeLocationFrame(descriptor: u3_location_session, mapData: Data) -> u3_render_frame {
         guard Int32(descriptor.map_shape) == U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL else {
             return u3_render_make_synthetic_tile_frame()
         }
 
-        var state = u3_overworld_state()
-        guard u3_overworld_state_init(
-            &state,
-            descriptor.x,
-            descriptor.y,
-            UInt8(descriptor.map_size),
-            UInt8(descriptor.map_size)
-        ) != 0 else {
-            return u3_render_make_synthetic_tile_frame()
-        }
-
+        var descriptor = descriptor
         return mapData.withUnsafeBytes { mapBuffer in
             guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
                 return u3_render_make_synthetic_tile_frame()
             }
-            return u3_overworld_make_view_frame(mapBaseAddress, UInt32(mapData.count), &state)
+            return u3_location_make_view_frame(&descriptor, mapBaseAddress, UInt32(mapData.count))
         }
     }
 
