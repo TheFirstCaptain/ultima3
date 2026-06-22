@@ -348,6 +348,64 @@ static void test_resource_id_mapping_preserves_legacy_gap(void)
     ASSERT_EQ_INT(434, u3_location_resource_id_for_index(31));
 }
 
+static void test_entry_and_return_mutate_only_party_transition_fields(void)
+{
+    uint8_t party[64] = {0};
+    u3_location_transition_result request =
+        make_request(U3_LOCATION_KIND_TOWN, 2, 1, 32, 2);
+    u3_location_session session;
+
+    party[U3_OVERWORLD_PARTY_SIZE_OFFSET] = 4;
+    party[U3_OVERWORLD_PARTY_X_OFFSET] = 46;
+    party[U3_OVERWORLD_PARTY_Y_OFFSET] = 19;
+    ASSERT_TRUE(u3_location_enter_party(party, sizeof(party), &request));
+    ASSERT_EQ_INT(U3_LOCATION_PARTY_MODE_TOWN,
+                  party[U3_LOCATION_PARTY_MODE_OFFSET]);
+    ASSERT_EQ_INT(46, party[U3_OVERWORLD_PARTY_X_OFFSET]);
+    ASSERT_EQ_INT(19, party[U3_OVERWORLD_PARTY_Y_OFFSET]);
+    ASSERT_TRUE(request.turn_applied);
+    ASSERT_EQ_INT(4, request.turn_delta);
+    ASSERT_EQ_INT(4, (int)request.move_counter_after);
+
+    memset(&session, 0, sizeof(session));
+    session.active = 1;
+    session.destination_kind = U3_LOCATION_KIND_TOWN;
+    session.location_index = 2;
+    session.resource_id = 402;
+    session.return_x = 46;
+    session.return_y = 19;
+    ASSERT_TRUE(u3_location_restore_party(party, sizeof(party), &session));
+    ASSERT_EQ_INT(U3_LOCATION_PARTY_MODE_SOSARIA,
+                  party[U3_LOCATION_PARTY_MODE_OFFSET]);
+    ASSERT_EQ_INT(46, party[U3_OVERWORLD_PARTY_X_OFFSET]);
+    ASSERT_EQ_INT(19, party[U3_OVERWORLD_PARTY_Y_OFFSET]);
+    ASSERT_EQ_INT(4, (int)u3_overworld_read_party_move_counter(party, sizeof(party)));
+}
+
+static void test_invalid_entry_and_return_leave_party_unchanged(void)
+{
+    uint8_t party[64] = {0};
+    uint8_t before[64];
+    u3_location_transition_result request =
+        make_request(U3_LOCATION_KIND_TOWN, 2, 1, 32, 2);
+    u3_location_session session;
+
+    party[U3_OVERWORLD_PARTY_SIZE_OFFSET] = 4;
+    memcpy(before, party, sizeof(party));
+    ASSERT_FALSE(u3_location_enter_party(party, sizeof(party), &request));
+    ASSERT_TRUE(memcmp(before, party, sizeof(party)) == 0);
+
+    memset(&session, 0, sizeof(session));
+    session.active = 1;
+    session.destination_kind = U3_LOCATION_KIND_TOWN;
+    session.location_index = 2;
+    session.resource_id = 402;
+    party[U3_LOCATION_PARTY_MODE_OFFSET] = U3_LOCATION_PARTY_MODE_SOSARIA;
+    memcpy(before, party, sizeof(party));
+    ASSERT_FALSE(u3_location_restore_party(party, sizeof(party), &session));
+    ASSERT_TRUE(memcmp(before, party, sizeof(party)) == 0);
+}
+
 int main(void)
 {
     test_detects_lcb_towne_fixture();
@@ -358,6 +416,8 @@ int main(void)
     test_initializes_town_castle_and_dungeon_sessions();
     test_session_validation_rejects_partial_or_mismatched_records();
     test_resource_id_mapping_preserves_legacy_gap();
+    test_entry_and_return_mutate_only_party_transition_fields();
+    test_invalid_entry_and_return_leave_party_unchanged();
 
     printf("location transition tests passed\n");
     return 0;

@@ -193,7 +193,7 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertTrue(blockedCommand?.contains("Audio Sound Bump") == true)
     }
 
-    func testEnterReportsLcbTowneTransitionWithoutMutatingSaveState() throws {
+    func testTownEntryMarksDocumentDirtyAndRejectsSave() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
         var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
@@ -211,31 +211,96 @@ final class ShellTickSmokeTests: XCTestCase {
 
         XCTAssertEqual(
             state.lastCommand,
-            "Loaded town index 2 MAPS 402 return 46,19 start 1,32 heading 2"
+            "Entered town index 2 MAPS 402 return 46,19 start 1,32 heading 2 moves 4"
         )
         XCTAssertTrue(state.resourceStatus.contains("Location OK MAPS 402 kind 1 pos 1,32"))
-        XCTAssertFalse(state.hasUnsavedChanges)
-
-        state.submitOverworldCommand(moveEastCommand)
-        state.runTick()
-        XCTAssertEqual(state.lastCommand, "Location move East 2,32 moves 4 | Audio Sound Step")
-        XCTAssertTrue(state.hasUnsavedChanges)
-
-        state.refreshLocationStatus()
-        XCTAssertEqual(state.lastCommand, "Locations refreshed")
-        XCTAssertTrue(state.resourceStatus.contains("Overworld OK MAPS 419 pos 46,19"))
         XCTAssertTrue(state.hasUnsavedChanges)
 
         state.saveGame()
-        XCTAssertEqual(state.lastCommand, "Game saved")
-        let updatedDocument = try Data(contentsOf: saveDocumentURL)
-        XCTAssertNotEqual(updatedDocument, savedDocument)
-        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.x, 46)
-        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.y, 19)
-        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 4)
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(state.saveStatus, "Save unavailable outside Sosaria")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+        XCTAssertEqual(
+            ShellTerminationPolicy.decision(
+                action: .saveAndQuit,
+                hasUnsavedChangesAfterSave: state.hasUnsavedChanges
+            ),
+            .cancel
+        )
+        XCTAssertEqual(
+            ShellTerminationPolicy.decision(
+                action: .quitWithoutSaving,
+                hasUnsavedChangesAfterSave: state.hasUnsavedChanges
+            ),
+            .terminate
+        )
+
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location move East 2,32 moves 8 | Audio Sound Step")
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.refreshLocationStatus()
+        XCTAssertEqual(state.lastCommand, "Location refreshed")
+        XCTAssertTrue(state.resourceStatus.contains("Location OK MAPS 402 kind 1 pos 2,32"))
+        XCTAssertTrue(state.hasUnsavedChanges)
     }
 
-    func testTownWestMovementRequestsExitWithoutRestoringSosaria() throws {
+    func testFailedTownEntryRetainsOutdoorDocumentAndFrame() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            locationTransitionAdapter: RejectingLocationTransitionAdapter(rejectEntry: true)
+        )
+        state.loadGame()
+
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Location entry failed: invalid current state")
+        XCTAssertFalse(state.hasUnsavedChanges)
+        XCTAssertTrue(state.resourceStatus.contains("Overworld OK MAPS 419 pos 46,19"))
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+    }
+
+    func testFailedTownExitRetainsTownSessionAndDocument() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            locationTransitionAdapter: RejectingLocationTransitionAdapter(rejectExit: true)
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitOverworldCommand(moveWestCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location transition failed")
+        XCTAssertTrue(state.resourceStatus.contains("Location OK MAPS 402 kind 1 pos 1,32"))
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location move East 2,32 moves 8 | Audio Sound Step")
+    }
+
+    func testTownWestBoundaryRestoresExactSosariaSessionAndCanSave() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
         var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
@@ -249,12 +314,39 @@ final class ShellTickSmokeTests: XCTestCase {
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
 
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location move East 2,32 moves 8 | Audio Sound Step")
+        state.submitOverworldCommand(moveWestCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location move West 1,32 moves 12 | Audio Sound Step")
+
         state.submitOverworldCommand(moveWestCommand)
         state.runTick()
 
-        XCTAssertEqual(state.lastCommand, "Location exit pending 0,32 moves 4 | Audio Sound Step")
-        XCTAssertTrue(state.resourceStatus.contains("Location OK MAPS 402 kind 1 pos 0,32"))
+        XCTAssertEqual(state.lastCommand, "Returned to Sosaria 46,19 moves 16 | Audio Sound Step")
+        XCTAssertTrue(state.resourceStatus.contains("Overworld OK MAPS 419 pos 46,19"))
         XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(
+            saveRecordData(type: 0x4D415053, id: Int16(U3_SAVE_ID_CURRENT_SOSARIA), in: updatedDocument),
+            saveRecordData(type: 0x4D415053, id: Int16(U3_SAVE_ID_CURRENT_SOSARIA), in: document)
+        )
+        XCTAssertEqual(
+            saveRecordData(type: UInt32(U3_SAVE_TYPE_CREATURES), id: Int16(U3_SAVE_ID_CURRENT_SOSARIA), in: updatedDocument),
+            saveRecordData(type: UInt32(U3_SAVE_TYPE_CREATURES), id: Int16(U3_SAVE_ID_CURRENT_SOSARIA), in: document)
+        )
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.location, 0)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.x, 46)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.y, 19)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 16)
+
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider)
+        reloadedState.loadGame()
+        XCTAssertTrue(reloadedState.resourceStatus.contains("Overworld OK MAPS 419 pos 46,19"))
     }
 
     func testEnterAtUnrecognizedCoordinateReportsUnavailable() {
@@ -474,7 +566,7 @@ final class ShellTickSmokeTests: XCTestCase {
         }
     }
 
-    private func partyPositionAndMoves(in documentData: Data) -> (x: UInt8, y: UInt8, moves: UInt32)? {
+    private func partyPositionAndMoves(in documentData: Data) -> (location: UInt8, x: UInt8, y: UInt8, moves: UInt32)? {
         documentData.withUnsafeBytes { documentBuffer in
             guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
                 return nil
@@ -492,10 +584,61 @@ final class ShellTickSmokeTests: XCTestCase {
             }
 
             return (
+                party[Int(U3_LOCATION_PARTY_MODE_OFFSET)],
                 party[Int(U3_OVERWORLD_PARTY_X_OFFSET)],
                 party[Int(U3_OVERWORLD_PARTY_Y_OFFSET)],
                 u3_overworld_read_party_move_counter(party, partyRecord.length)
             )
         }
+    }
+
+    private func saveRecordData(type: UInt32, id: Int16, in documentData: Data) -> Data? {
+        documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+
+            var document = u3_save_document()
+            var record = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, type, id, &record) != 0,
+                  let bytes = record.data else {
+                return nil
+            }
+
+            return Data(bytes: bytes, count: Int(record.length))
+        }
+    }
+}
+
+private final class RejectingLocationTransitionAdapter: ShellLocationDocumentTransitioning {
+    private let wrapped = ShellLocationDocumentTransitionAdapter()
+    private let rejectEntry: Bool
+    private let rejectExit: Bool
+
+    init(rejectEntry: Bool = false, rejectExit: Bool = false) {
+        self.rejectEntry = rejectEntry
+        self.rejectExit = rejectExit
+    }
+
+    func applyEntry(
+        to documentData: inout Data,
+        request: inout u3_location_transition_result
+    ) -> Bool {
+        if rejectEntry {
+            return false
+        }
+        return wrapped.applyEntry(to: &documentData, request: &request)
+    }
+
+    func applyMove(
+        to documentData: inout Data,
+        session: ShellLocationSession,
+        result: inout u3_location_move_result
+    ) -> Bool {
+        if rejectExit && result.exit_requested != 0 {
+            return false
+        }
+        return wrapped.applyMove(to: &documentData, session: session, result: &result)
     }
 }

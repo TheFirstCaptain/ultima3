@@ -34,6 +34,9 @@
 #define U3_LOCATION_TOWN_INITIAL_X 1
 #define U3_LOCATION_TOWN_INITIAL_Y 32
 #define U3_LOCATION_TOWN_INITIAL_HEADING 2
+#define U3_LOCATION_PARTY_MODE_OFFSET 2
+#define U3_LOCATION_PARTY_MODE_SOSARIA 0
+#define U3_LOCATION_PARTY_MODE_TOWN 2
 #define U3_LOCATION_TWO_DIMENSIONAL_MAP_SIZE 64
 #define U3_LOCATION_TWO_DIMENSIONAL_MAP_LENGTH 4097
 #define U3_LOCATION_DUNGEON_MAP_LENGTH 2048
@@ -52,6 +55,10 @@ typedef struct u3_location_transition_result {
     uint8_t initial_y;
     uint8_t initial_heading;
     uint8_t status;
+    uint8_t turn_applied;
+    uint8_t turn_delta;
+    uint32_t move_counter_before;
+    uint32_t move_counter_after;
 } u3_location_transition_result;
 
 typedef struct u3_location_session {
@@ -110,6 +117,15 @@ uint8_t u3_location_session_init(
     const uint8_t *talk_record,
     uint32_t talk_record_length,
     u3_location_session *session);
+
+uint8_t u3_location_enter_party(
+    uint8_t *party,
+    uint32_t party_length,
+    u3_location_transition_result *request);
+uint8_t u3_location_restore_party(
+    uint8_t *party,
+    uint32_t party_length,
+    const u3_location_session *session);
 
 uint8_t u3_location_tile_passable(uint8_t tile);
 uint8_t u3_location_move(

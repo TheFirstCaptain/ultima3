@@ -2,6 +2,33 @@ import AppKit
 import SwiftUI
 import Ultima3Core
 
+enum ShellTerminationAction {
+    case saveAndQuit
+    case quitWithoutSaving
+    case cancel
+}
+
+enum ShellTerminationDecision: Equatable {
+    case terminate
+    case cancel
+}
+
+struct ShellTerminationPolicy {
+    static func decision(
+        action: ShellTerminationAction,
+        hasUnsavedChangesAfterSave: Bool
+    ) -> ShellTerminationDecision {
+        switch action {
+        case .saveAndQuit:
+            return hasUnsavedChangesAfterSave ? .cancel : .terminate
+        case .quitWithoutSaving:
+            return .terminate
+        case .cancel:
+            return .cancel
+        }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private var preferencesWindowController: NSWindowController?
@@ -43,7 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             shellState.saveGame()
-            return shellState.hasUnsavedChanges ? .terminateCancel : .terminateNow
+            return ShellTerminationPolicy.decision(
+                action: .saveAndQuit,
+                hasUnsavedChangesAfterSave: shellState.hasUnsavedChanges
+            ) == .terminate ? .terminateNow : .terminateCancel
         case .alertSecondButtonReturn:
             return .terminateNow
         default:
@@ -211,7 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             shellState.saveGame()
-            if !shellState.hasUnsavedChanges {
+            if ShellTerminationPolicy.decision(
+                action: .saveAndQuit,
+                hasUnsavedChangesAfterSave: shellState.hasUnsavedChanges
+            ) == .terminate {
                 NSApp.terminate(nil)
             }
             return false
@@ -392,6 +425,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 }
 
+protocol ShellLocationDocumentTransitioning {
+    func applyEntry(
+        to documentData: inout Data,
+        request: inout u3_location_transition_result
+    ) -> Bool
+    func applyMove(
+        to documentData: inout Data,
+        session: ShellLocationSession,
+        result: inout u3_location_move_result
+    ) -> Bool
+}
+
+final class ShellLocationDocumentTransitionAdapter: ShellLocationDocumentTransitioning {
+    func applyEntry(
+        to documentData: inout Data,
+        request: inout u3_location_transition_result
+    ) -> Bool {
+        withMutableParty(in: &documentData) { party, length in
+            u3_location_enter_party(party, length, &request) != 0
+        }
+    }
+
+    func applyMove(
+        to documentData: inout Data,
+        session: ShellLocationSession,
+        result: inout u3_location_move_result
+    ) -> Bool {
+        withMutableParty(in: &documentData) { party, length in
+            guard u3_location_apply_party_turn(party, length, &result) != 0 else {
+                return false
+            }
+            if result.exit_requested != 0 {
+                var descriptor = session.descriptor
+                return u3_location_restore_party(party, length, &descriptor) != 0
+            }
+            return true
+        }
+    }
+
+    private func withMutableParty(
+        in documentData: inout Data,
+        mutation: (UnsafeMutablePointer<UInt8>, UInt32) -> Bool
+    ) -> Bool {
+        let documentLength = documentData.count
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return false
+            }
+
+            var partyRecord = u3_save_record()
+            guard u3_save_find_record(&document, 0x50525459, Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            return mutation(party, partyRecord.length)
+        }
+    }
+}
+
 final class ShellSmokeState: ObservableObject {
     @Published private(set) var lastCommand = "Ready"
     @Published private(set) var resourceStatus: String
@@ -404,6 +503,7 @@ final class ShellSmokeState: ObservableObject {
     private let locationProvider: ShellLocationProvider
     private let resourceAdapter: ShellResourceAdapter
     private let saveAdapter: ShellSaveAdapter
+    private let locationTransitionAdapter: ShellLocationDocumentTransitioning
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
     private let partyAssemblyAdapter = ShellPartyAssemblyAdapter()
     private var tickState = u3_tick_state()
@@ -419,13 +519,15 @@ final class ShellSmokeState: ObservableObject {
         audioAdapter: ShellAudioAdapter = ShellAudioAdapter(),
         locationProvider: ShellLocationProvider = ShellLocationProvider(),
         resourceAdapter: ShellResourceAdapter = ShellResourceAdapter(),
-        saveAdapter: ShellSaveAdapter = ShellSaveAdapter()
+        saveAdapter: ShellSaveAdapter = ShellSaveAdapter(),
+        locationTransitionAdapter: ShellLocationDocumentTransitioning = ShellLocationDocumentTransitionAdapter()
     ) {
         self.inputAdapter = inputAdapter
         self.audioAdapter = audioAdapter
         self.locationProvider = locationProvider
         self.resourceAdapter = resourceAdapter
         self.saveAdapter = saveAdapter
+        self.locationTransitionAdapter = locationTransitionAdapter
         u3_tick_state_init(&tickState)
         u3_overworld_state_init(
             &overworldState,
@@ -521,7 +623,17 @@ final class ShellSmokeState: ObservableObject {
 
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
-        activeLocationSession = nil
+        if let activeLocationSession {
+            renderFrame = activeLocationSession.frame
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: activeLocationSession.status
+            )
+            lastCommand = "Location refreshed"
+            return
+        }
+
         let overworldSmoke: ShellOverworldSmokeResult
         if let currentSaveDocument {
             overworldSmoke = resourceAdapter.buildOverworldSmoke(documentData: currentSaveDocument, state: &overworldState)
@@ -619,7 +731,20 @@ final class ShellSmokeState: ObservableObject {
                     command: event.command,
                     result: &locationResult
                 ), locationResult.handled != 0 {
-                    persistLocationTurnToCurrentSave(result: &locationResult)
+                    guard applyLocationMoveTransaction(
+                        session: locationSession,
+                        result: &locationResult
+                    ) else {
+                        return "Location transition failed"
+                    }
+
+                    if locationResult.exit_requested != 0 {
+                        if locationResult.sound_id != 0 {
+                            _ = audioAdapter.enqueueSound(Int32(locationResult.sound_id))
+                        }
+                        return "Returned to Sosaria \(overworldState.x),\(overworldState.y)\(describeLocationTurnDelta(locationResult))"
+                    }
+
                     activeLocationSession = locationSession
                     if locationResult.redraw != 0 {
                         renderFrame = locationSession.frame
@@ -635,8 +760,6 @@ final class ShellSmokeState: ObservableObject {
                     }
 
                     switch Int32(locationResult.status) {
-                    case U3_LOCATION_MOVE_STATUS_EXIT_REQUESTED:
-                        return "Location exit pending \(locationResult.x),\(locationResult.y)\(describeLocationTurnDelta(locationResult))"
                     case U3_LOCATION_MOVE_STATUS_BLOCKED:
                         return "Location blocked \(inputAdapter.describeKey(event.command)) \(locationResult.x),\(locationResult.y) tile \(locationResult.target_tile)\(describeLocationTurnDelta(locationResult))"
                     case U3_LOCATION_MOVE_STATUS_MOVED:
@@ -698,6 +821,16 @@ final class ShellSmokeState: ObservableObject {
             request: request
         ) {
         case .success(let session):
+            guard var documentData = currentSaveDocument else {
+                return "Location entry failed: no current game"
+            }
+            var appliedRequest = request
+            guard locationTransitionAdapter.applyEntry(to: &documentData, request: &appliedRequest) else {
+                return "Location entry failed: invalid current state"
+            }
+
+            currentSaveDocument = documentData
+            hasUnsavedChanges = true
             activeLocationSession = session
             renderFrame = session.frame
             resourceStatus = Self.describeResourceStatus(
@@ -705,7 +838,7 @@ final class ShellSmokeState: ObservableObject {
                 validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
                 renderStatus: session.status
             )
-            return "Loaded town index \(session.descriptor.location_index) MAPS \(session.descriptor.resource_id) return \(session.descriptor.return_x),\(session.descriptor.return_y) start \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading)"
+            return "Entered town index \(session.descriptor.location_index) MAPS \(session.descriptor.resource_id) return \(session.descriptor.return_x),\(session.descriptor.return_y) start \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) moves \(appliedRequest.move_counter_after)"
         case .failure(let status):
             return status
         }
@@ -783,36 +916,52 @@ final class ShellSmokeState: ObservableObject {
         }
     }
 
-    private func persistLocationTurnToCurrentSave(result: inout u3_location_move_result) {
+    private func applyLocationMoveTransaction(
+        session: ShellLocationSession,
+        result: inout u3_location_move_result
+    ) -> Bool {
         guard var documentData = currentSaveDocument else {
-            return
+            return false
         }
 
-        let documentLength = documentData.count
-        let updated = documentData.withUnsafeMutableBytes { documentBuffer in
-            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
-                return false
-            }
-
-            var document = u3_save_document()
-            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
-                return false
-            }
-
-            var partyRecord = u3_save_record()
-            guard u3_save_find_record(&document, Self.fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
-                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
-                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
-                return false
-            }
-
-            return u3_location_apply_party_turn(party, partyRecord.length, &result) != 0
+        guard locationTransitionAdapter.applyMove(
+            to: &documentData,
+            session: session,
+            result: &result
+        ) else {
+            return false
         }
 
-        if updated {
+        if result.exit_requested != 0 {
+            var restoredState = u3_overworld_state()
+            let overworldSmoke = resourceAdapter.buildOverworldSmoke(
+                documentData: documentData,
+                state: &restoredState
+            )
+            guard let restoredMap = overworldSmoke.map,
+                  restoredState.x == session.descriptor.return_x,
+                  restoredState.y == session.descriptor.return_y else {
+                return false
+            }
+
+            let locations = locationProvider.snapshot()
             currentSaveDocument = documentData
             hasUnsavedChanges = true
+            activeLocationSession = nil
+            overworldState = restoredState
+            overworldMapData = restoredMap
+            renderFrame = overworldSmoke.frame
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: overworldSmoke.status
+            )
+            return true
         }
+
+        currentSaveDocument = documentData
+        hasUnsavedChanges = true
+        return true
     }
 
     private func applyCurrentSaveDocument(_ document: Data, locations: ShellLocationSnapshot, statusPrefix: String) {

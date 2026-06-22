@@ -148,6 +148,55 @@ uint8_t u3_location_session_init(
     return 1;
 }
 
+uint8_t u3_location_enter_party(
+    uint8_t *party,
+    uint32_t party_length,
+    u3_location_transition_result *request)
+{
+    u3_overworld_move_result turn_result;
+
+    if (party == 0 || party_length <= U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET ||
+        request == 0 || request->handled == 0 || request->requested == 0 ||
+        request->destination_kind != U3_LOCATION_KIND_TOWN ||
+        request->resource_id != u3_location_resource_id_for_index(request->location_index) ||
+        request->return_x != party[U3_OVERWORLD_PARTY_X_OFFSET] ||
+        request->return_y != party[U3_OVERWORLD_PARTY_Y_OFFSET] ||
+        request->initial_x != U3_LOCATION_TOWN_INITIAL_X ||
+        request->initial_y != U3_LOCATION_TOWN_INITIAL_Y ||
+        request->initial_heading != U3_LOCATION_TOWN_INITIAL_HEADING ||
+        party[U3_LOCATION_PARTY_MODE_OFFSET] != U3_LOCATION_PARTY_MODE_SOSARIA)
+        return 0;
+
+    memset(&turn_result, 0, sizeof(turn_result));
+    if (!u3_overworld_increment_party_move_counter(party, party_length, &turn_result))
+        return 0;
+
+    party[U3_LOCATION_PARTY_MODE_OFFSET] = U3_LOCATION_PARTY_MODE_TOWN;
+    request->turn_applied = turn_result.turn_applied;
+    request->turn_delta = turn_result.turn_delta;
+    request->move_counter_before = turn_result.move_counter_before;
+    request->move_counter_after = turn_result.move_counter_after;
+    return 1;
+}
+
+uint8_t u3_location_restore_party(
+    uint8_t *party,
+    uint32_t party_length,
+    const u3_location_session *session)
+{
+    if (party == 0 || party_length <= U3_OVERWORLD_PARTY_Y_OFFSET ||
+        session == 0 || session->active == 0 ||
+        session->destination_kind != U3_LOCATION_KIND_TOWN ||
+        session->resource_id != u3_location_resource_id_for_index(session->location_index) ||
+        party[U3_LOCATION_PARTY_MODE_OFFSET] != U3_LOCATION_PARTY_MODE_TOWN)
+        return 0;
+
+    party[U3_LOCATION_PARTY_MODE_OFFSET] = U3_LOCATION_PARTY_MODE_SOSARIA;
+    party[U3_OVERWORLD_PARTY_X_OFFSET] = session->return_x;
+    party[U3_OVERWORLD_PARTY_Y_OFFSET] = session->return_y;
+    return 1;
+}
+
 static uint8_t u3_location_valid_two_dimensional_session(
     const u3_location_session *session,
     const uint8_t *map_record,

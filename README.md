@@ -58,7 +58,7 @@ The app launched by this command is the modernization shell, not the original le
 
 ## Current Direction
 
-Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, representative map/talk/combat fixtures, shell resource/persistence integration, a byte-preserving native save domain, a fixed shell tick, persistent character creation and party assembly, manual save/load workflow, save-backed Sosaria movement and turn accounting, explicit location transitions, transient destination resource sessions, and non-wrapping town/castle navigation.
+Completed modernization work has established the harness, seeded portable C core modules, and characterized map/math behavior, Pascal strings, combat predicates, combat action resolution, autocombat behavior, dungeon navigation, save/resource fixtures, resource inventory, persistence direction, representative map/talk/combat fixtures, shell resource/persistence integration, a byte-preserving native save domain, a fixed shell tick, persistent character creation and party assembly, manual save/load workflow, save-backed Sosaria movement and turn accounting, explicit location transitions, transient destination resource sessions, non-wrapping town/castle navigation, and the first complete town/Sosaria round trip.
 
 The first modern app shell now exists under `ModernShell/` as a SwiftPM executable product named `Ultima3ModernShell`. AppKit owns lifecycle, windows, menus, command routing, input intake, the game host view, fullscreen/window behavior, and concrete save-file location. SwiftUI is limited to preferences and setup panels such as character creation and party assembly.
 
@@ -69,9 +69,9 @@ The modern shell currently has adapter-backed paths for rendering, input, audio,
 - A shell-owned AVFoundation audio adapter consumes portable audio events on tick and can play bundled sound assets.
 - Shell resource and save adapters validate bundled `MainResources.rsrc`, build native new-game save documents, load saved native documents, inspect party/roster state, and atomically write the current save document.
 - `Game > Create Character...` opens a SwiftUI setup panel that validates candidates through portable C rules and persists valid accepted characters into the first available native `ROST` slot when a current save document is loaded.
-- Explicit Enter at LCB Towne loads validated transient map, monster, and talk records; the town viewport supports cardinal movement, blocked feedback, shared move-counter updates, and a pending exit result without overwriting saved Sosaria coordinates.
+- Explicit Enter at LCB Towne transactionally loads validated transient map, monster, and talk records, changes the in-memory party mode, and applies the shared turn cost. The town viewport supports cardinal movement and blocked feedback while preserving Sosaria data; reaching the west boundary restores the exact prior Sosaria position and frame so the game can be saved outdoors.
 
-The next proposed backlog starts with completing the town entry/return round trip, followed by a bounded NPC talk slice and dungeon-session integration.
+The next proposed backlog starts with a bounded town NPC talk slice, followed by dungeon-session integration and portable dungeon perspective rendering.
 
 ## App Shell Boundary
 
