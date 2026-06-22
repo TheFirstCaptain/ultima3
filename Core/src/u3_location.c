@@ -64,18 +64,28 @@ uint8_t u3_location_handle_overworld_command(
             location_table[U3_LOCATION_TABLE_COUNT + index] != state->y)
             continue;
 
-        tile = map_record[1u + ((uint32_t)state->y * map_size) + state->x];
-        if ((uint8_t)(tile / 2u) != U3_LOCATION_TOWN_TILE_CLASS)
-            return 1;
-
-        result->requested = 1;
-        result->destination_kind = U3_LOCATION_KIND_TOWN;
-        result->location_index = index;
-        result->resource_id = u3_location_resource_id_for_index(index);
-        result->initial_x = U3_LOCATION_TOWN_INITIAL_X;
-        result->initial_y = U3_LOCATION_TOWN_INITIAL_Y;
-        result->initial_heading = U3_LOCATION_TOWN_INITIAL_HEADING;
-        result->status = U3_LOCATION_STATUS_TOWN_REQUESTED;
+        tile = (uint8_t)(map_record[1u + ((uint32_t)state->y * map_size) + state->x] / 2u);
+        if (tile == U3_LOCATION_TOWN_TILE_CLASS) {
+            result->requested = 1;
+            result->destination_kind = U3_LOCATION_KIND_TOWN;
+            result->location_index = index;
+            result->resource_id = u3_location_resource_id_for_index(index);
+            result->initial_x = U3_LOCATION_TOWN_INITIAL_X;
+            result->initial_y = U3_LOCATION_TOWN_INITIAL_Y;
+            result->initial_heading = U3_LOCATION_TOWN_INITIAL_HEADING;
+            result->status = U3_LOCATION_STATUS_TOWN_REQUESTED;
+        } else if (tile == U3_LOCATION_DUNGEON_TILE_CLASS &&
+                   index == U3_LOCATION_DUNGEON_FIXTURE_INDEX) {
+            result->requested = 1;
+            result->destination_kind = U3_LOCATION_KIND_DUNGEON;
+            result->location_index = index;
+            result->resource_id = U3_LOCATION_DUNGEON_FIXTURE_RESOURCE_ID;
+            result->initial_x = U3_LOCATION_DUNGEON_INITIAL_X;
+            result->initial_y = U3_LOCATION_DUNGEON_INITIAL_Y;
+            result->initial_heading = U3_LOCATION_DUNGEON_INITIAL_HEADING;
+            result->initial_level = U3_LOCATION_DUNGEON_INITIAL_LEVEL;
+            result->status = U3_LOCATION_STATUS_DUNGEON_REQUESTED;
+        }
         return 1;
     }
 
@@ -118,7 +128,13 @@ uint8_t u3_location_session_init(
         break;
     case U3_LOCATION_KIND_DUNGEON:
         if (map_record_length != U3_LOCATION_DUNGEON_MAP_LENGTH ||
-            monster_record != 0 || monster_record_length != 0)
+            monster_record != 0 || monster_record_length != 0 ||
+            request->location_index != U3_LOCATION_DUNGEON_FIXTURE_INDEX ||
+            request->resource_id != U3_LOCATION_DUNGEON_FIXTURE_RESOURCE_ID ||
+            request->initial_x != U3_LOCATION_DUNGEON_INITIAL_X ||
+            request->initial_y != U3_LOCATION_DUNGEON_INITIAL_Y ||
+            request->initial_heading != U3_LOCATION_DUNGEON_INITIAL_HEADING ||
+            request->initial_level != U3_LOCATION_DUNGEON_INITIAL_LEVEL)
             return 0;
         map_shape = U3_LOCATION_MAP_SHAPE_DUNGEON;
         map_size = 16;
@@ -143,6 +159,7 @@ uint8_t u3_location_session_init(
     session->x = request->initial_x;
     session->y = request->initial_y;
     session->heading = request->initial_heading;
+    session->dungeon_level = request->initial_level;
     session->return_x = request->return_x;
     session->return_y = request->return_y;
     return 1;
@@ -154,24 +171,38 @@ uint8_t u3_location_enter_party(
     u3_location_transition_result *request)
 {
     u3_overworld_move_result turn_result;
+    uint8_t party_mode;
 
     if (party == 0 || party_length <= U3_OVERWORLD_PARTY_MOVE_MILLIONS_OFFSET ||
         request == 0 || request->handled == 0 || request->requested == 0 ||
-        request->destination_kind != U3_LOCATION_KIND_TOWN ||
         request->resource_id != u3_location_resource_id_for_index(request->location_index) ||
         request->return_x != party[U3_OVERWORLD_PARTY_X_OFFSET] ||
         request->return_y != party[U3_OVERWORLD_PARTY_Y_OFFSET] ||
-        request->initial_x != U3_LOCATION_TOWN_INITIAL_X ||
-        request->initial_y != U3_LOCATION_TOWN_INITIAL_Y ||
-        request->initial_heading != U3_LOCATION_TOWN_INITIAL_HEADING ||
         party[U3_LOCATION_PARTY_MODE_OFFSET] != U3_LOCATION_PARTY_MODE_SOSARIA)
         return 0;
+
+    if (request->destination_kind == U3_LOCATION_KIND_TOWN &&
+        request->initial_x == U3_LOCATION_TOWN_INITIAL_X &&
+        request->initial_y == U3_LOCATION_TOWN_INITIAL_Y &&
+        request->initial_heading == U3_LOCATION_TOWN_INITIAL_HEADING) {
+        party_mode = U3_LOCATION_PARTY_MODE_TOWN;
+    } else if (request->destination_kind == U3_LOCATION_KIND_DUNGEON &&
+               request->location_index == U3_LOCATION_DUNGEON_FIXTURE_INDEX &&
+               request->resource_id == U3_LOCATION_DUNGEON_FIXTURE_RESOURCE_ID &&
+               request->initial_x == U3_LOCATION_DUNGEON_INITIAL_X &&
+               request->initial_y == U3_LOCATION_DUNGEON_INITIAL_Y &&
+               request->initial_heading == U3_LOCATION_DUNGEON_INITIAL_HEADING &&
+               request->initial_level == U3_LOCATION_DUNGEON_INITIAL_LEVEL) {
+        party_mode = U3_LOCATION_PARTY_MODE_DUNGEON;
+    } else {
+        return 0;
+    }
 
     memset(&turn_result, 0, sizeof(turn_result));
     if (!u3_overworld_increment_party_move_counter(party, party_length, &turn_result))
         return 0;
 
-    party[U3_LOCATION_PARTY_MODE_OFFSET] = U3_LOCATION_PARTY_MODE_TOWN;
+    party[U3_LOCATION_PARTY_MODE_OFFSET] = party_mode;
     request->turn_applied = turn_result.turn_applied;
     request->turn_delta = turn_result.turn_delta;
     request->move_counter_before = turn_result.move_counter_before;

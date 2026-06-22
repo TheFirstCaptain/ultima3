@@ -275,6 +275,67 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 8)
     }
 
+    func testDungeonDoomEntryInitializesTransientSessionAndRejectsSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Entered dungeon index 12 MAPS 412 return 19,57 level 0 start 1,1 heading 1 moves 4"
+        )
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1"))
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location MAPS 412 command East deferred")
+        state.refreshLocationStatus()
+        XCTAssertEqual(state.lastCommand, "Location refreshed")
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1"))
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(state.saveStatus, "Save unavailable outside Sosaria")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testFailedDungeonEntryRetainsOutdoorDocumentAndFrame() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            locationTransitionAdapter: RejectingLocationTransitionAdapter(rejectEntry: true)
+        )
+        state.loadGame()
+
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Location entry failed: invalid current state")
+        XCTAssertFalse(state.hasUnsavedChanges)
+        XCTAssertTrue(state.resourceStatus.contains("Overworld OK MAPS 419 pos 19,57"))
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+    }
+
     func testFailedTownEntryRetainsOutdoorDocumentAndFrame() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()

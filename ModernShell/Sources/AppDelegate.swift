@@ -727,7 +727,8 @@ final class ShellSmokeState: ObservableObject {
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
             if var locationSession = activeLocationSession {
-                if awaitingTalkDirection {
+                if awaitingTalkDirection &&
+                    locationSession.descriptor.destination_kind == U3_LOCATION_KIND_TOWN {
                     awaitingTalkDirection = false
                     var talkResult = u3_location_talk_result()
                     guard resourceAdapter.talkLocationSession(
@@ -741,7 +742,8 @@ final class ShellSmokeState: ObservableObject {
                     return resourceAdapter.describeLocationTalk(&talkResult)
                 }
 
-                if event.command == U3_LOCATION_TALK_COMMAND {
+                if event.command == U3_LOCATION_TALK_COMMAND &&
+                    locationSession.descriptor.destination_kind == U3_LOCATION_KIND_TOWN {
                     awaitingTalkDirection = true
                     return "Talk: choose direction"
                 }
@@ -824,6 +826,8 @@ final class ShellSmokeState: ObservableObject {
                 switch Int32(transitionResult.status) {
                 case U3_LOCATION_STATUS_TOWN_REQUESTED:
                     return activateLocationSession(request: transitionResult)
+                case U3_LOCATION_STATUS_DUNGEON_REQUESTED:
+                    return activateLocationSession(request: transitionResult)
                 case U3_LOCATION_STATUS_NOT_ENTERABLE:
                     return "Enter unavailable \(transitionResult.return_x),\(transitionResult.return_y)"
                 default:
@@ -859,6 +863,9 @@ final class ShellSmokeState: ObservableObject {
                 validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
                 renderStatus: session.status
             )
+            if session.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON {
+                return "Entered dungeon index \(session.descriptor.location_index) MAPS \(session.descriptor.resource_id) return \(session.descriptor.return_x),\(session.descriptor.return_y) level \(session.descriptor.dungeon_level) start \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) moves \(appliedRequest.move_counter_after)"
+            }
             return "Entered town index \(session.descriptor.location_index) MAPS \(session.descriptor.resource_id) return \(session.descriptor.return_x),\(session.descriptor.return_y) start \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) moves \(appliedRequest.move_counter_after)"
         case .failure(let status):
             return status

@@ -19,6 +19,7 @@
 #define U3_LOCATION_STATUS_NONE 0
 #define U3_LOCATION_STATUS_NOT_ENTERABLE 1
 #define U3_LOCATION_STATUS_TOWN_REQUESTED 2
+#define U3_LOCATION_STATUS_DUNGEON_REQUESTED 3
 
 #define U3_LOCATION_MOVE_STATUS_NONE 0
 #define U3_LOCATION_MOVE_STATUS_MOVED 1
@@ -28,14 +29,22 @@
 #define U3_LOCATION_TABLE_COUNT 32
 #define U3_LOCATION_TABLE_LENGTH 64
 #define U3_LOCATION_TOWN_TILE_CLASS 0x0c
+#define U3_LOCATION_DUNGEON_TILE_CLASS 0x0a
 #define U3_LOCATION_RESOURCE_BASE 400
 #define U3_LOCATION_RESOURCE_GAP_INDEX 18
 #define U3_LOCATION_RESOURCE_GAP_SIZE 3
 #define U3_LOCATION_TOWN_INITIAL_X 1
 #define U3_LOCATION_TOWN_INITIAL_Y 32
 #define U3_LOCATION_TOWN_INITIAL_HEADING 2
+#define U3_LOCATION_DUNGEON_FIXTURE_INDEX 12
+#define U3_LOCATION_DUNGEON_FIXTURE_RESOURCE_ID 412
+#define U3_LOCATION_DUNGEON_INITIAL_X 1
+#define U3_LOCATION_DUNGEON_INITIAL_Y 1
+#define U3_LOCATION_DUNGEON_INITIAL_HEADING 1
+#define U3_LOCATION_DUNGEON_INITIAL_LEVEL 0
 #define U3_LOCATION_PARTY_MODE_OFFSET 2
 #define U3_LOCATION_PARTY_MODE_SOSARIA 0
+#define U3_LOCATION_PARTY_MODE_DUNGEON 1
 #define U3_LOCATION_PARTY_MODE_TOWN 2
 #define U3_LOCATION_TWO_DIMENSIONAL_MAP_SIZE 64
 #define U3_LOCATION_TWO_DIMENSIONAL_MAP_LENGTH 4097
@@ -54,6 +63,7 @@ typedef struct u3_location_transition_result {
     uint8_t initial_x;
     uint8_t initial_y;
     uint8_t initial_heading;
+    uint8_t initial_level;
     uint8_t status;
     uint8_t turn_applied;
     uint8_t turn_delta;
@@ -74,6 +84,7 @@ typedef struct u3_location_session {
     uint8_t x;
     uint8_t y;
     uint8_t heading;
+    uint8_t dungeon_level;
     uint8_t return_x;
     uint8_t return_y;
 } u3_location_session;

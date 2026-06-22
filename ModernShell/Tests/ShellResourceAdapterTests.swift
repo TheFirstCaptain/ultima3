@@ -190,6 +190,11 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(dungeon.mapData.count, 2048)
         XCTAssertNil(dungeon.monsterData)
         XCTAssertEqual(dungeon.talkData.count, 256)
+        XCTAssertEqual(dungeon.descriptor.dungeon_level, 0)
+        XCTAssertEqual(dungeon.descriptor.x, 1)
+        XCTAssertEqual(dungeon.descriptor.y, 1)
+        XCTAssertEqual(dungeon.descriptor.heading, 1)
+        XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 1")
     }
 
     func testLoadLocationSessionRejectsInvalidRequestWithoutProducingSession() {

@@ -20,7 +20,10 @@ struct ShellLocationSession {
     var frame: u3_render_frame
 
     var status: String {
-        "Location OK MAPS \(descriptor.resource_id) kind \(descriptor.destination_kind) pos \(descriptor.x),\(descriptor.y)"
+        if descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON {
+            return "Dungeon OK MAPS \(descriptor.resource_id) level \(descriptor.dungeon_level) pos \(descriptor.x),\(descriptor.y) heading \(descriptor.heading)"
+        }
+        return "Location OK MAPS \(descriptor.resource_id) kind \(descriptor.destination_kind) pos \(descriptor.x),\(descriptor.y)"
     }
 }
 
@@ -462,7 +465,8 @@ final class ShellResourceAdapter {
         direction: UInt16,
         result: inout u3_location_talk_result
     ) -> Bool {
-        guard let monsterData = session.monsterData else {
+        guard session.descriptor.destination_kind == U3_LOCATION_KIND_TOWN,
+              let monsterData = session.monsterData else {
             return false
         }
 

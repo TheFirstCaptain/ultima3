@@ -137,6 +137,50 @@ static void test_detects_lcb_towne_fixture(void)
     free(resource_bytes);
 }
 
+static void test_detects_only_dungeon_doom_fixture_for_first_slice(void)
+{
+    uint8_t *resource_bytes;
+    u3_resource_record map;
+    u3_resource_record locations;
+    u3_overworld_state state;
+    u3_location_transition_result result;
+
+    load_fixture(&resource_bytes, &map, &locations);
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 19, 57, 64, 64));
+    ASSERT_TRUE(u3_location_handle_overworld_command(&state,
+                                                     map.data,
+                                                     map.length,
+                                                     locations.data,
+                                                     locations.length,
+                                                     U3_LOCATION_COMMAND_ENTER,
+                                                     &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_TRUE(result.requested);
+    ASSERT_EQ_INT(U3_LOCATION_KIND_DUNGEON, result.destination_kind);
+    ASSERT_EQ_INT(U3_LOCATION_DUNGEON_FIXTURE_INDEX, result.location_index);
+    ASSERT_EQ_INT(U3_LOCATION_DUNGEON_FIXTURE_RESOURCE_ID, result.resource_id);
+    ASSERT_EQ_INT(19, result.return_x);
+    ASSERT_EQ_INT(57, result.return_y);
+    ASSERT_EQ_INT(U3_LOCATION_DUNGEON_INITIAL_X, result.initial_x);
+    ASSERT_EQ_INT(U3_LOCATION_DUNGEON_INITIAL_Y, result.initial_y);
+    ASSERT_EQ_INT(U3_LOCATION_DUNGEON_INITIAL_HEADING, result.initial_heading);
+    ASSERT_EQ_INT(U3_LOCATION_DUNGEON_INITIAL_LEVEL, result.initial_level);
+    ASSERT_EQ_INT(U3_LOCATION_STATUS_DUNGEON_REQUESTED, result.status);
+
+    ASSERT_TRUE(u3_overworld_state_init_wrapped(&state, 49, 34, 64, 64));
+    ASSERT_TRUE(u3_location_handle_overworld_command(&state,
+                                                     map.data,
+                                                     map.length,
+                                                     locations.data,
+                                                     locations.length,
+                                                     U3_LOCATION_COMMAND_ENTER,
+                                                     &result));
+    ASSERT_TRUE(result.handled);
+    ASSERT_FALSE(result.requested);
+    ASSERT_EQ_INT(U3_LOCATION_STATUS_NOT_ENTERABLE, result.status);
+    free(resource_bytes);
+}
+
 static void test_enter_rejects_unrecognized_coordinate_without_mutation(void)
 {
     uint8_t map[65] = {8};
@@ -297,6 +341,7 @@ static void test_initializes_town_castle_and_dungeon_sessions(void)
     ASSERT_EQ_INT(16, session.map_size);
     ASSERT_EQ_INT(2048, (int)session.map_length);
     ASSERT_EQ_INT(0, (int)session.monster_length);
+    ASSERT_EQ_INT(0, session.dungeon_level);
 
     free(resource_bytes);
 }
@@ -336,6 +381,14 @@ static void test_session_validation_rejects_partial_or_mismatched_records(void)
     ASSERT_FALSE(u3_location_session_init(&request,
                                           map, sizeof(map),
                                           monsters, sizeof(monsters),
+                                          talk, sizeof(talk),
+                                          &session));
+
+    request = make_request(U3_LOCATION_KIND_DUNGEON, 12, 1, 1, 1);
+    request.initial_level = 1;
+    ASSERT_FALSE(u3_location_session_init(&request,
+                                          map, U3_LOCATION_DUNGEON_MAP_LENGTH,
+                                          0, 0,
                                           talk, sizeof(talk),
                                           &session));
 }
@@ -406,9 +459,28 @@ static void test_invalid_entry_and_return_leave_party_unchanged(void)
     ASSERT_TRUE(memcmp(before, party, sizeof(party)) == 0);
 }
 
+static void test_dungeon_entry_sets_mode_and_turn_without_overwriting_return_position(void)
+{
+    uint8_t party[64] = {0};
+    u3_location_transition_result request =
+        make_request(U3_LOCATION_KIND_DUNGEON, 12, 1, 1, 1);
+
+    party[U3_OVERWORLD_PARTY_SIZE_OFFSET] = 4;
+    party[U3_OVERWORLD_PARTY_X_OFFSET] = 46;
+    party[U3_OVERWORLD_PARTY_Y_OFFSET] = 19;
+    ASSERT_TRUE(u3_location_enter_party(party, sizeof(party), &request));
+    ASSERT_EQ_INT(U3_LOCATION_PARTY_MODE_DUNGEON,
+                  party[U3_LOCATION_PARTY_MODE_OFFSET]);
+    ASSERT_EQ_INT(46, party[U3_OVERWORLD_PARTY_X_OFFSET]);
+    ASSERT_EQ_INT(19, party[U3_OVERWORLD_PARTY_Y_OFFSET]);
+    ASSERT_TRUE(request.turn_applied);
+    ASSERT_EQ_INT(4, (int)request.move_counter_after);
+}
+
 int main(void)
 {
     test_detects_lcb_towne_fixture();
+    test_detects_only_dungeon_doom_fixture_for_first_slice();
     test_enter_rejects_unrecognized_coordinate_without_mutation();
     test_matching_non_town_tile_is_not_enterable();
     test_non_enter_command_is_ignored();
@@ -418,6 +490,7 @@ int main(void)
     test_resource_id_mapping_preserves_legacy_gap();
     test_entry_and_return_mutate_only_party_transition_fields();
     test_invalid_entry_and_return_leave_party_unchanged();
+    test_dungeon_entry_sets_mode_and_turn_without_overwriting_return_position();
 
     printf("location transition tests passed\n");
     return 0;
