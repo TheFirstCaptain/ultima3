@@ -246,6 +246,35 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertTrue(state.hasUnsavedChanges)
     }
 
+    func testTownTalkRoutesDirectionAndDoesNotConsumeTurn() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "T"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Talk: choose direction")
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Talk: no one at 2,32")
+
+        state.submitOverworldCommand(moveWestCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Returned to Sosaria 46,19 moves 8 | Audio Sound Step")
+        state.saveGame()
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 8)
+    }
+
     func testFailedTownEntryRetainsOutdoorDocumentAndFrame() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()

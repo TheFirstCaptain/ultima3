@@ -143,6 +143,29 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(session.status, "Location OK MAPS 402 kind 1 pos 1,32")
     }
 
+    func testTownTalkAdapterDisplaysStableBundledGuardLine() {
+        let adapter = ShellResourceAdapter()
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_TOWN), index: 2, x: 1, y: 32, heading: 2)
+        )
+        guard case .success(var session) = loadResult else {
+            return XCTFail("Expected LCB Towne session")
+        }
+        session.descriptor.x = 26
+        session.descriptor.y = 32
+        var talkResult = u3_location_talk_result()
+
+        XCTAssertTrue(adapter.talkLocationSession(
+            session,
+            direction: 4,
+            result: &talkResult
+        ))
+        XCTAssertEqual(talkResult.npc_slot, 31)
+        XCTAssertEqual(talkResult.talk_index, 8)
+        XCTAssertEqual(adapter.describeLocationTalk(&talkResult), "Talk: HO! HO!")
+    }
+
     func testLoadLocationSessionValidatesCastleAndDungeonFamilies() {
         let adapter = ShellResourceAdapter()
         let castleResult = adapter.loadLocationSession(

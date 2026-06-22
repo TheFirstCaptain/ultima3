@@ -87,7 +87,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-037 | Location Session State and Resource Loading | Complete | Done | [F-037.md](./F-037.md) | 2026-06-21 | Validated transient town/castle/dungeon records now load into an adapter-owned session and render a static LCB Towne frame. |
 | F-038 | Two-Dimensional Location Navigation | Complete | Done | [F-038.md](./F-038.md) | 2026-06-21 | Town/castle sessions now support non-wrapping movement, centered redraws, feedback, turn accounting, and pending exits. |
 | F-039 | First Town Entry and Sosaria Return Round Trip | Complete | Done | [F-039.md](./F-039.md) | 2026-06-22 | Transactional town entry, navigation, save restriction, and exact Sosaria restoration loop complete. |
-| F-040 | First Town NPC Talk Slice | Proposed | Proposed | [F-040.md](./F-040.md) | 2026-06-21 | Resolve and display one bounded adjacent-NPC talk interaction from bundled data. |
+| F-040 | First Town NPC Talk Slice | Complete | Done | [F-040.md](./F-040.md) | 2026-06-22 | Directional adjacent-NPC lookup and bounded bundled town dialogue display complete. |
 | F-041 | Dungeon Entry and Session Integration | Proposed | Proposed | [F-041.md](./F-041.md) | 2026-06-21 | Enter one characterized dungeon and initialize a validated transient dungeon session. |
 | F-042 | Portable Dungeon Perspective Render Contract | Proposed | Proposed | [F-042.md](./F-042.md) | 2026-06-21 | Derive renderer-neutral dungeon geometry and display it through the AppKit adapter. |
 | F-043 | Dungeon Navigation and Surface Return | Proposed | Proposed | [F-043.md](./F-043.md) | 2026-06-21 | Wire dungeon commands into the tick path and restore the retained Sosaria session on exit. |

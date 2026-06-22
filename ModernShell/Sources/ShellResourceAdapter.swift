@@ -457,6 +457,72 @@ final class ShellResourceAdapter {
         return moved
     }
 
+    func talkLocationSession(
+        _ session: ShellLocationSession,
+        direction: UInt16,
+        result: inout u3_location_talk_result
+    ) -> Bool {
+        guard let monsterData = session.monsterData else {
+            return false
+        }
+
+        return monsterData.withUnsafeBytes { monsterBuffer in
+            guard let monsterBaseAddress = monsterBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            return session.talkData.withUnsafeBytes { talkBuffer in
+                guard let talkBaseAddress = talkBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    return false
+                }
+
+                var descriptor = session.descriptor
+                return u3_location_talk(
+                    &descriptor,
+                    monsterBaseAddress,
+                    UInt32(monsterData.count),
+                    talkBaseAddress,
+                    UInt32(session.talkData.count),
+                    direction,
+                    &result
+                ) != 0
+            }
+        }
+    }
+
+    func locationTalkMessage(_ result: inout u3_location_talk_result) -> String? {
+        guard result.status == U3_LOCATION_TALK_STATUS_MESSAGE,
+              result.message_length > 0,
+              result.message_length <= U3_LOCATION_TALK_MESSAGE_CAPACITY else {
+            return nil
+        }
+
+        let bytes = withUnsafeBytes(of: &result.message) { buffer in
+            Array(buffer.prefix(Int(result.message_length)))
+        }
+        return String(decoding: bytes, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " / ")
+    }
+
+    func describeLocationTalk(_ result: inout u3_location_talk_result) -> String {
+        switch Int32(result.status) {
+        case U3_LOCATION_TALK_STATUS_MESSAGE:
+            guard let message = locationTalkMessage(&result) else {
+                return "Talk invalid message"
+            }
+            return "Talk: \(message)"
+        case U3_LOCATION_TALK_STATUS_NO_NPC:
+            return "Talk: no one at \(result.target_x),\(result.target_y)"
+        case U3_LOCATION_TALK_STATUS_INVALID_INDEX:
+            return "Talk: invalid entry \(result.talk_index)"
+        case U3_LOCATION_TALK_STATUS_UNSUPPORTED:
+            return "Talk: unsupported entry \(result.talk_index)"
+        default:
+            return "Talk: invalid direction"
+        }
+    }
+
     private func makeLocationFrame(descriptor: u3_location_session, mapData: Data) -> u3_render_frame {
         guard Int32(descriptor.map_shape) == U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL else {
             return u3_render_make_synthetic_tile_frame()

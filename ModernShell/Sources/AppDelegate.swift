@@ -510,6 +510,7 @@ final class ShellSmokeState: ObservableObject {
     private var overworldState = u3_overworld_state()
     private var overworldMapData: Data?
     private var activeLocationSession: ShellLocationSession?
+    private var awaitingTalkDirection = false
     private var currentSaveDocument: Data?
     @Published private(set) var hasUnsavedChanges = false
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
@@ -623,6 +624,7 @@ final class ShellSmokeState: ObservableObject {
 
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
+        awaitingTalkDirection = false
         if let activeLocationSession {
             renderFrame = activeLocationSession.frame
             resourceStatus = Self.describeResourceStatus(
@@ -725,6 +727,25 @@ final class ShellSmokeState: ObservableObject {
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
             if var locationSession = activeLocationSession {
+                if awaitingTalkDirection {
+                    awaitingTalkDirection = false
+                    var talkResult = u3_location_talk_result()
+                    guard resourceAdapter.talkLocationSession(
+                        locationSession,
+                        direction: event.command,
+                        result: &talkResult
+                    ) else {
+                        return "Talk unavailable"
+                    }
+
+                    return resourceAdapter.describeLocationTalk(&talkResult)
+                }
+
+                if event.command == U3_LOCATION_TALK_COMMAND {
+                    awaitingTalkDirection = true
+                    return "Talk: choose direction"
+                }
+
                 var locationResult = u3_location_move_result()
                 if resourceAdapter.moveLocationSession(
                     &locationSession,
@@ -966,6 +987,7 @@ final class ShellSmokeState: ObservableObject {
 
     private func applyCurrentSaveDocument(_ document: Data, locations: ShellLocationSnapshot, statusPrefix: String) {
         activeLocationSession = nil
+        awaitingTalkDirection = false
         currentSaveDocument = document
         saveStatus = resourceAdapter.describeSaveDomain(document, prefix: statusPrefix)
         let overworldSmoke = resourceAdapter.buildOverworldSmoke(documentData: document, state: &overworldState)

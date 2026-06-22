@@ -22,6 +22,7 @@ TESTS = \
 	$(BUILD_DIR)/overworld_movement_tests \
 	$(BUILD_DIR)/location_transition_tests \
 	$(BUILD_DIR)/location_navigation_tests \
+	$(BUILD_DIR)/location_talk_tests \
 	$(BUILD_DIR)/character_creation_tests
 
 .PHONY: test clean
@@ -85,6 +86,9 @@ $(BUILD_DIR)/location_transition_tests: location_transition_tests.c $(CORE_SRC)/
 
 $(BUILD_DIR)/location_navigation_tests: location_navigation_tests.c $(CORE_SRC)/u3_location.c $(CORE_INCLUDE)/u3_location.h $(CORE_SRC)/u3_overworld.c $(CORE_INCLUDE)/u3_overworld.h $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) location_navigation_tests.c $(CORE_SRC)/u3_location.c $(CORE_SRC)/u3_overworld.c $(CORE_SRC)/u3_render.c -o $@
+
+$(BUILD_DIR)/location_talk_tests: location_talk_tests.c $(CORE_SRC)/u3_location_talk.c $(CORE_INCLUDE)/u3_location_talk.h $(CORE_SRC)/u3_resource.c $(CORE_INCLUDE)/u3_resource.h ../Resources/English.lproj/MainResources.rsrc | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) location_talk_tests.c $(CORE_SRC)/u3_location_talk.c $(CORE_SRC)/u3_resource.c -o $@
 
 $(BUILD_DIR)/character_creation_tests: character_creation_tests.c $(CORE_SRC)/u3_character.c $(CORE_INCLUDE)/u3_character.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) character_creation_tests.c $(CORE_SRC)/u3_character.c -o $@
