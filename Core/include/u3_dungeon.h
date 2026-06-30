@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "u3_render.h"
+
 #define U3_DUNGEON_WIDTH 16
 #define U3_DUNGEON_HEIGHT 16
 #define U3_DUNGEON_LEVEL_COUNT 8
@@ -13,6 +15,15 @@
 #define U3_DUNGEON_TILE_TURN_BLOCK 0xA0
 #define U3_DUNGEON_TILE_UP_LADDER 0x10
 #define U3_DUNGEON_TILE_DOWN_LADDER 0x20
+#define U3_DUNGEON_TILE_CHEST 0x40
+
+#define U3_DUNGEON_VIEW_DEPTH 4
+
+#define U3_DUNGEON_RENDER_VALUE_WALL 1
+#define U3_DUNGEON_RENDER_VALUE_DOOR 2
+#define U3_DUNGEON_RENDER_VALUE_UP_LADDER 3
+#define U3_DUNGEON_RENDER_VALUE_DOWN_LADDER 4
+#define U3_DUNGEON_RENDER_VALUE_CHEST 5
 
 typedef struct u3_dungeon_state {
     uint8_t *dungeon;
@@ -44,5 +55,11 @@ u3_dungeon_result u3_dungeon_turn_right(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_turn_left(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_descend(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_climb(u3_dungeon_state *state);
+u3_render_frame u3_dungeon_make_view_frame(const uint8_t *dungeon,
+                                           uint32_t dungeon_length,
+                                           int16_t level,
+                                           int16_t x,
+                                           int16_t y,
+                                           int16_t heading);
 
 #endif

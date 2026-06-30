@@ -8,9 +8,14 @@ final class ShellResourceAdapterTests: XCTestCase {
     private let renderCommandClear = 1
     private let renderCommandRect = 2
     private let renderCommandTile = 3
+    private let dungeonWallValue = Int(U3_DUNGEON_RENDER_VALUE_WALL)
+    private let dungeonDoorValue = Int(U3_DUNGEON_RENDER_VALUE_DOOR)
 
     private var resourceRootPath: String {
-        URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("Resources", isDirectory: true)
             .path
     }
@@ -194,6 +199,11 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(dungeon.descriptor.x, 1)
         XCTAssertEqual(dungeon.descriptor.y, 1)
         XCTAssertEqual(dungeon.descriptor.heading, 1)
+        XCTAssertEqual(Int(dungeon.frame.commands.0.kind), renderCommandClear)
+        XCTAssertEqual(Int(dungeon.frame.commands.1.kind), renderCommandRect)
+        XCTAssertGreaterThan(dungeon.frame.command_count, 2)
+        XCTAssertGreaterThan(countCommands(in: dungeon.frame, value: dungeonWallValue), 0)
+        XCTAssertEqual(countCommands(in: dungeon.frame, value: dungeonDoorValue), 0)
         XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 1")
     }
 
@@ -229,5 +239,17 @@ final class ShellResourceAdapterTests: XCTestCase {
         request.initial_y = y
         request.initial_heading = heading
         return request
+    }
+
+    private func countCommands(in frame: u3_render_frame, value: Int) -> Int {
+        var frame = frame
+        let commandCount = min(Int(frame.command_count), Int(U3_RENDER_MAX_COMMANDS))
+        return withUnsafePointer(to: &frame.commands) { pointer in
+            pointer.withMemoryRebound(to: u3_render_command.self, capacity: commandCount) { commands in
+                (0..<commandCount).reduce(0) { count, index in
+                    count + (Int(commands[index].value) == value ? 1 : 0)
+                }
+            }
+        }
     }
 }

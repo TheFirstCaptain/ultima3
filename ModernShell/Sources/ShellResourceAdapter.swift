@@ -528,11 +528,27 @@ final class ShellResourceAdapter {
     }
 
     private func makeLocationFrame(descriptor: u3_location_session, mapData: Data) -> u3_render_frame {
+        var descriptor = descriptor
+        if Int32(descriptor.map_shape) == U3_LOCATION_MAP_SHAPE_DUNGEON {
+            return mapData.withUnsafeBytes { mapBuffer in
+                guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    return u3_render_make_synthetic_tile_frame()
+                }
+                return u3_dungeon_make_view_frame(
+                    mapBaseAddress,
+                    UInt32(mapData.count),
+                    Int16(descriptor.dungeon_level),
+                    Int16(descriptor.x),
+                    Int16(descriptor.y),
+                    Int16(descriptor.heading)
+                )
+            }
+        }
+
         guard Int32(descriptor.map_shape) == U3_LOCATION_MAP_SHAPE_TWO_DIMENSIONAL else {
             return u3_render_make_synthetic_tile_frame()
         }
 
-        var descriptor = descriptor
         return mapData.withUnsafeBytes { mapBuffer in
             guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
                 return u3_render_make_synthetic_tile_frame()

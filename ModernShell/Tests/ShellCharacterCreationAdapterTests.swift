@@ -3,7 +3,10 @@ import XCTest
 
 final class ShellCharacterCreationAdapterTests: XCTestCase {
     private var resourceRootPath: String {
-        URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("Resources", isDirectory: true)
             .path
     }
