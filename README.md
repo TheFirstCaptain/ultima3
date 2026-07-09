@@ -73,7 +73,7 @@ The modern shell currently has adapter-backed paths for rendering, input, audio,
 - Inside town, `T` followed by a cardinal direction resolves an adjacent NPC from copied `MONS` data and displays a bounded printable line from the matching `TLKS` entry. Empty targets and unsupported entries produce explicit status without mutating the save.
 - Explicit Enter at Dungeon Doom `(19,57)` loads validated `MAPS` and `TLKS` 412 records into a transient level-zero dungeon session at `(1,1)`, heading east. The shell retains the exact Sosaria return context, rejects Save in dungeon mode, and renders a portable first-person dungeon perspective frame that distinguishes walls, doors, ladders, and chests from explicit dungeon bytes.
 
-The next proposed backlog item is dungeon navigation and surface return.
+The next proposed backlog sequence starts with dungeon navigation and surface return, then continues through light/torch state, passive dungeon turn mechanics and encounter requests, special tile effects, and interactive dungeon tile flows. See `F-043` through `F-047` in the feature tracker for the current proposed scope.
 
 ## App Shell Boundary
 
