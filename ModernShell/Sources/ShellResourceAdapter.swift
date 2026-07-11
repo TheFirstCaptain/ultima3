@@ -21,7 +21,7 @@ struct ShellLocationSession {
 
     var status: String {
         if descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON {
-            return "Dungeon OK MAPS \(descriptor.resource_id) level \(descriptor.dungeon_level) pos \(descriptor.x),\(descriptor.y) heading \(descriptor.heading)"
+            return "Dungeon OK MAPS \(descriptor.resource_id) level \(descriptor.dungeon_level) pos \(descriptor.x),\(descriptor.y) heading \(descriptor.heading) light \(descriptor.light)"
         }
         return "Location OK MAPS \(descriptor.resource_id) kind \(descriptor.destination_kind) pos \(descriptor.x),\(descriptor.y)"
     }
@@ -116,7 +116,13 @@ final class ShellResourceAdapter {
                 return u3_save_build_new_game_fixture(&templates, outputBaseAddress, capacity, &written) != 0 && written == capacity
             }
 
-            return success ? output : nil
+            guard success else {
+                return nil
+            }
+            guard seedSmokeTorchInventory(documentData: &output) else {
+                return nil
+            }
+            return output
         }
     }
 
@@ -198,6 +204,39 @@ final class ShellResourceAdapter {
             return party[2] == 0
         case .failure:
             return false
+        }
+    }
+
+    func igniteTorch(documentData: inout Data) -> u3_party_ignite_result {
+        let documentLength = documentData.count
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return ShellResourceAdapter.makeIgniteResult(reason: UInt8(U3_PARTY_IGNITE_INVALID_ARGUMENT))
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return ShellResourceAdapter.makeIgniteResult(reason: UInt8(U3_PARTY_IGNITE_INVALID_PARTY))
+            }
+
+            var partyRecord = u3_save_record()
+            var rosterRecord = u3_save_record()
+            guard u3_save_find_record(&document, 0x50525459, Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  u3_save_find_record(&document, 0x524F5354, Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self),
+                  let roster = UnsafeMutableRawPointer(mutating: rosterRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return ShellResourceAdapter.makeIgniteResult(reason: UInt8(U3_PARTY_IGNITE_INVALID_ROSTER))
+            }
+
+            return u3_party_ignite_torch(
+                party,
+                partyRecord.length,
+                roster,
+                rosterRecord.length,
+                UInt8(U3_PARTY_IGNITE_AUTO_SLOT)
+            )
         }
     }
 
@@ -513,6 +552,23 @@ final class ShellResourceAdapter {
         return handled
     }
 
+    func decayDungeonLight(_ session: inout ShellLocationSession) -> Bool {
+        guard session.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
+            return false
+        }
+        let previousLight = session.descriptor.light
+        session.descriptor.light = u3_dungeon_decay_light(session.descriptor.light)
+        if session.descriptor.light != previousLight {
+            session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
+            return true
+        }
+        return false
+    }
+
+    func refreshLocationSessionFrame(_ session: inout ShellLocationSession) {
+        session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
+    }
+
     func talkLocationSession(
         _ session: ShellLocationSession,
         direction: UInt16,
@@ -587,13 +643,14 @@ final class ShellResourceAdapter {
                 guard let mapBaseAddress = mapBuffer.bindMemory(to: UInt8.self).baseAddress else {
                     return u3_render_make_synthetic_tile_frame()
                 }
-                return u3_dungeon_make_view_frame(
+                return u3_dungeon_make_lit_view_frame(
                     mapBaseAddress,
                     UInt32(mapData.count),
                     Int16(descriptor.dungeon_level),
                     Int16(descriptor.x),
                     Int16(descriptor.y),
-                    Int16(descriptor.heading)
+                    Int16(descriptor.heading),
+                    descriptor.light
                 )
             }
         }
@@ -628,6 +685,55 @@ final class ShellResourceAdapter {
             session.descriptor.y < U3_DUNGEON_HEIGHT &&
             session.descriptor.heading < 4 &&
             session.descriptor.dungeon_level < U3_DUNGEON_LEVEL_COUNT
+    }
+
+    private static func makeIgniteResult(reason: UInt8) -> u3_party_ignite_result {
+        var result = u3_party_ignite_result()
+        result.reason = reason
+        return result
+    }
+
+    private func seedSmokeTorchInventory(documentData: inout Data) -> Bool {
+        let documentLength = documentData.count
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return false
+            }
+
+            var partyRecord = u3_save_record()
+            var rosterRecord = u3_save_record()
+            guard u3_save_find_record(&document, fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self),
+                  let roster = UnsafeMutableRawPointer(mutating: rosterRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            let partySize = party[1]
+            guard partySize > 0 && partySize <= UInt8(U3_PARTY_ACTIVE_SLOT_COUNT) else {
+                return false
+            }
+
+            for index in 0..<Int(partySize) {
+                let rosterID = party[6 + index]
+                guard rosterID > 0 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+                    return false
+                }
+                let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
+                if record[0] > 22 && record[Int(U3_PARTY_ROSTER_TORCH_OFFSET)] == 0 {
+                    record[Int(U3_PARTY_ROSTER_TORCH_OFFSET)] = 2
+                }
+            }
+
+            return true
+        }
     }
 
     private static func hasValidOverworldMapShape(_ mapData: Data) -> Bool {

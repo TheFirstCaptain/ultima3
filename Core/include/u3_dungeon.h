@@ -18,6 +18,7 @@
 #define U3_DUNGEON_TILE_CHEST 0x40
 
 #define U3_DUNGEON_VIEW_DEPTH 4
+#define U3_DUNGEON_LIGHT_FULL 255
 
 #define U3_DUNGEON_RENDER_VALUE_WALL 1
 #define U3_DUNGEON_RENDER_VALUE_DOOR 2
@@ -55,11 +56,19 @@ u3_dungeon_result u3_dungeon_turn_right(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_turn_left(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_descend(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_climb(u3_dungeon_state *state);
+uint8_t u3_dungeon_decay_light(uint8_t light);
 u3_render_frame u3_dungeon_make_view_frame(const uint8_t *dungeon,
                                            uint32_t dungeon_length,
                                            int16_t level,
                                            int16_t x,
                                            int16_t y,
                                            int16_t heading);
+u3_render_frame u3_dungeon_make_lit_view_frame(const uint8_t *dungeon,
+                                               uint32_t dungeon_length,
+                                               int16_t level,
+                                               int16_t x,
+                                               int16_t y,
+                                               int16_t heading,
+                                               uint8_t light);
 
 #endif

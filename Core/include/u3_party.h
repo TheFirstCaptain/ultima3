@@ -9,6 +9,9 @@
 #define U3_PARTY_ROSTER_SLOT_COUNT 20
 #define U3_PARTY_ROSTER_RECORD_LENGTH 64
 #define U3_PARTY_NAME_CAPACITY 13
+#define U3_PARTY_ROSTER_STATUS_OFFSET 17
+#define U3_PARTY_ROSTER_TORCH_OFFSET 15
+#define U3_PARTY_TORCH_LIGHT_VALUE 255
 
 #define U3_PARTY_FORM_OK 0
 #define U3_PARTY_FORM_INVALID_ARGUMENT 1
@@ -18,6 +21,14 @@
 #define U3_PARTY_FORM_INVALID_ROSTER_ID 5
 #define U3_PARTY_FORM_DUPLICATE_ROSTER_ID 6
 #define U3_PARTY_FORM_UNOCCUPIED_ROSTER_ID 7
+
+#define U3_PARTY_IGNITE_OK 0
+#define U3_PARTY_IGNITE_INVALID_ARGUMENT 1
+#define U3_PARTY_IGNITE_INVALID_PARTY 2
+#define U3_PARTY_IGNITE_INVALID_ROSTER 3
+#define U3_PARTY_IGNITE_INVALID_CHARACTER 4
+#define U3_PARTY_IGNITE_NO_TORCH 5
+#define U3_PARTY_IGNITE_AUTO_SLOT 0
 
 typedef struct u3_party_roster_entry {
     uint8_t roster_id;
@@ -48,7 +59,18 @@ typedef struct u3_party_form_result {
     uint8_t active_roster_ids[U3_PARTY_ACTIVE_SLOT_COUNT];
 } u3_party_form_result;
 
+typedef struct u3_party_ignite_result {
+    uint8_t ignited;
+    uint8_t reason;
+    uint8_t active_slot;
+    uint8_t roster_id;
+    uint8_t torch_count_before;
+    uint8_t torch_count_after;
+    uint8_t light;
+} u3_party_ignite_result;
+
 int u3_party_load_summary(const u3_save_domain_state *state, u3_party_summary *summary);
 u3_party_form_result u3_party_form_from_roster(const u3_save_domain_state *state, const uint8_t *selected_roster_ids, uint8_t selected_count, uint8_t *party, uint32_t party_length);
+u3_party_ignite_result u3_party_ignite_torch(uint8_t *party, uint32_t party_length, uint8_t *roster, uint32_t roster_length, uint8_t active_slot);
 
 #endif

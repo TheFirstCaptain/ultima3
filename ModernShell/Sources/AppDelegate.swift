@@ -731,6 +731,10 @@ final class ShellSmokeState: ObservableObject {
                     return consumeDungeonInput(event, session: &locationSession)
                 }
 
+                if Self.normalizedKeyboardCommand(event.command) == UInt16(UInt8(ascii: "I")) {
+                    return "Ignite unavailable: not in dungeon"
+                }
+
                 if awaitingTalkDirection &&
                     locationSession.descriptor.destination_kind == U3_LOCATION_KIND_TOWN {
                     awaitingTalkDirection = false
@@ -798,6 +802,10 @@ final class ShellSmokeState: ObservableObject {
                 return "Location MAPS \(locationSession.descriptor.resource_id) command \(inputAdapter.describeKey(event.command)) deferred"
             }
 
+            if Self.normalizedKeyboardCommand(event.command) == UInt16(UInt8(ascii: "I")) {
+                return "Ignite unavailable: not in dungeon"
+            }
+
             var moveResult = u3_overworld_move_result()
             if consumeOverworldMovement(event.command, result: &moveResult),
                moveResult.handled != 0 {
@@ -844,6 +852,10 @@ final class ShellSmokeState: ObservableObject {
     }
 
     private func consumeDungeonInput(_ event: u3_input_event, session: inout ShellLocationSession) -> String {
+        if Self.normalizedKeyboardCommand(event.command) == UInt16(UInt8(ascii: "I")) {
+            return consumeIgniteCommand(session: &session)
+        }
+
         var dungeonResult = u3_dungeon_result()
         guard resourceAdapter.moveDungeonSession(
             &session,
@@ -861,6 +873,7 @@ final class ShellSmokeState: ObservableObject {
             return "Location transition failed"
         }
 
+        let lightChanged = resourceAdapter.decayDungeonLight(&session)
         if dungeonResult.blocked {
             _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_BUMP))
         } else if dungeonResult.moved || dungeonResult.turned || dungeonResult.level_changed {
@@ -872,7 +885,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         activeLocationSession = session
-        if dungeonResult.needs_redraw {
+        if dungeonResult.needs_redraw || lightChanged {
             renderFrame = session.frame
             let locations = locationProvider.snapshot()
             resourceStatus = Self.describeResourceStatus(
@@ -898,6 +911,32 @@ final class ShellSmokeState: ObservableObject {
             return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
         }
         return "Dungeon command \(describeDungeonCommand(event.command))\(describeLocationTurnDelta(locationResult))"
+    }
+
+    private func consumeIgniteCommand(session: inout ShellLocationSession) -> String {
+        guard var documentData = currentSaveDocument else {
+            return "Ignite failed: no current game"
+        }
+
+        let result = resourceAdapter.igniteTorch(documentData: &documentData)
+        guard result.ignited != 0 else {
+            return describeIgniteFailure(result)
+        }
+
+        currentSaveDocument = documentData
+        hasUnsavedChanges = true
+        session.descriptor.light = result.light
+        resourceAdapter.refreshLocationSessionFrame(&session)
+        activeLocationSession = session
+        renderFrame = session.frame
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: session.status
+        )
+        _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_TORCH_IGNITE))
+        return "Ignite roster \(result.roster_id) torches \(result.torch_count_after) light \(session.descriptor.light)"
     }
 
     private func makeLocationResult(
@@ -1166,12 +1205,7 @@ final class ShellSmokeState: ObservableObject {
     }
 
     private func describeDungeonCommand(_ command: UInt16) -> String {
-        let normalizedCommand: UInt16
-        if command >= UInt16(UInt8(ascii: "a")) && command <= UInt16(UInt8(ascii: "z")) {
-            normalizedCommand = command - 32
-        } else {
-            normalizedCommand = command
-        }
+        let normalizedCommand = Self.normalizedKeyboardCommand(command)
 
         switch Int32(normalizedCommand) {
         case U3_OVERWORLD_COMMAND_NORTH:
@@ -1192,7 +1226,25 @@ final class ShellSmokeState: ObservableObject {
     }
 
     private func describeDungeonPosition(_ session: ShellLocationSession) -> String {
-        "pos \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) level \(session.descriptor.dungeon_level)"
+        "pos \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) level \(session.descriptor.dungeon_level) light \(session.descriptor.light)"
+    }
+
+    private func describeIgniteFailure(_ result: u3_party_ignite_result) -> String {
+        switch Int32(result.reason) {
+        case U3_PARTY_IGNITE_NO_TORCH:
+            return "Ignite failed: no torch"
+        case U3_PARTY_IGNITE_INVALID_CHARACTER:
+            return "Ignite failed: invalid character"
+        default:
+            return "Ignite failed"
+        }
+    }
+
+    private static func normalizedKeyboardCommand(_ command: UInt16) -> UInt16 {
+        if command >= UInt16(UInt8(ascii: "a")) && command <= UInt16(UInt8(ascii: "z")) {
+            return command - 32
+        }
+        return command
     }
 
     private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String, renderStatus: String) -> String {

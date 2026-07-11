@@ -301,10 +301,10 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 moves 8 | Audio Sound Step")
+        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 light 0 moves 8 | Audio Sound Step")
         state.refreshLocationStatus()
         XCTAssertEqual(state.lastCommand, "Location refreshed")
-        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 2"))
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 2 light 0"))
 
         state.saveGame()
         XCTAssertEqual(state.lastCommand, "Save rejected")
@@ -328,7 +328,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitKeyboard(UInt8(ascii: "D"))
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Dungeon invalid Descend pos 1,1 heading 1 level 0 moves 8")
+        XCTAssertEqual(state.lastCommand, "Dungeon invalid Descend pos 1,1 heading 1 level 0 light 0 moves 8")
 
         var blockedCommand: String?
         for _ in 0..<20 {
@@ -369,6 +369,162 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.saveGame()
         XCTAssertEqual(state.lastCommand, "Save rejected")
+    }
+
+    func testIgniteIsRejectedOutsideDungeon() {
+        let state = ShellSmokeState()
+
+        state.submitKeyboard(UInt8(ascii: "I"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Ignite unavailable: not in dungeon")
+    }
+
+    func testIgniteIsRejectedInsideTown() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "I"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Ignite unavailable: not in dungeon")
+    }
+
+    func testDungeonIgniteConsumesTorchSetsLightDecaysAndPersistsAfterReturn() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertTrue(setActiveRosterTorchCount(rosterID: 1, torchCount: 2, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "I"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Ignite roster 1 torches 1 light 255 | Audio Sound TorchIgnite")
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1 light 255"))
+
+        state.submitOverworldCommand(moveEastCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 light 254 moves 8 | Audio Sound Step")
+        XCTAssertTrue(state.resourceStatus.contains("light 254"))
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Returned to Sosaria 19,57 moves 12 | Audio Sound Step")
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterTorchCount(rosterID: 1, in: updatedDocument), 1)
+    }
+
+    func testDungeonIgniteAcceptsPoisonedLivingCharacter() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertTrue(setActiveRosterTorchCount(rosterID: 1, torchCount: 2, in: &document))
+        XCTAssertTrue(setActiveRosterStatus(rosterID: 1, status: UInt8(ascii: "P"), in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "I"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Ignite roster 1 torches 1 light 255 | Audio Sound TorchIgnite")
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterTorchCount(rosterID: 1, in: updatedDocument), 1)
+    }
+
+    func testDungeonIgniteReportsNoTorchWithoutMutation() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        for rosterID in UInt8(1)...UInt8(4) {
+            XCTAssertTrue(setActiveRosterTorchCount(rosterID: rosterID, torchCount: 0, in: &document))
+        }
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "I"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Ignite failed: no torch")
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterTorchCount(rosterID: 1, in: updatedDocument), activeRosterTorchCount(rosterID: 1, in: savedDocument))
+    }
+
+    func testDungeonIgniteReportsInvalidCharacterWithoutMutation() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        for rosterID in UInt8(1)...UInt8(4) {
+            XCTAssertTrue(setActiveRosterTorchCount(rosterID: rosterID, torchCount: 2, in: &document))
+            XCTAssertTrue(setActiveRosterStatus(rosterID: rosterID, status: UInt8(ascii: "D"), in: &document))
+        }
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "I"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Ignite failed: invalid character")
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterTorchCount(rosterID: 1, in: updatedDocument), activeRosterTorchCount(rosterID: 1, in: savedDocument))
     }
 
     func testDungeonKlimbRestoresExactSosariaSessionAndCanSave() throws {
@@ -780,6 +936,60 @@ final class ShellTickSmokeTests: XCTestCase {
                 party[Int(U3_OVERWORLD_PARTY_Y_OFFSET)],
                 u3_overworld_read_party_move_counter(party, partyRecord.length)
             )
+        }
+    }
+
+    private func setActiveRosterTorchCount(rosterID: UInt8, torchCount: UInt8, in documentData: inout Data) -> Bool {
+        setActiveRosterByte(rosterID: rosterID, offset: UInt8(U3_PARTY_ROSTER_TORCH_OFFSET), value: torchCount, in: &documentData)
+    }
+
+    private func setActiveRosterStatus(rosterID: UInt8, status: UInt8, in documentData: inout Data) -> Bool {
+        setActiveRosterByte(rosterID: rosterID, offset: UInt8(U3_PARTY_ROSTER_STATUS_OFFSET), value: status, in: &documentData)
+    }
+
+    private func setActiveRosterByte(rosterID: UInt8, offset: UInt8, value: UInt8, in documentData: inout Data) -> Bool {
+        guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+            return false
+        }
+        let documentLength = documentData.count
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            var record = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0,
+                  u3_save_find_record(&document, 0x524F5354, Int16(U3_SAVE_ID_ROSTER), &record) != 0,
+                  record.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = UnsafeMutableRawPointer(mutating: record.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            roster[(Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH) + Int(offset)] = value
+            return true
+        }
+    }
+
+    private func activeRosterTorchCount(rosterID: UInt8, in documentData: Data) -> UInt8? {
+        guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+            return nil
+        }
+        return documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+
+            var document = u3_save_document()
+            var record = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, 0x524F5354, Int16(U3_SAVE_ID_ROSTER), &record) != 0,
+                  record.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = record.data else {
+                return nil
+            }
+
+            return roster[(Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH) + Int(U3_PARTY_ROSTER_TORCH_OFFSET)]
         }
     }
 

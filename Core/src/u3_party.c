@@ -56,7 +56,7 @@ int u3_party_load_summary(const u3_save_domain_state *state, u3_party_summary *s
             continue;
 
         u3_party_decode_name(record, entry->name);
-        entry->status = record[17];
+        entry->status = record[U3_PARTY_ROSTER_STATUS_OFFSET];
         entry->race = record[22];
         entry->character_class = record[23];
         entry->sex = record[24];
@@ -77,6 +77,111 @@ int u3_party_load_summary(const u3_save_domain_state *state, u3_party_summary *s
 
     *summary = loaded;
     return 1;
+}
+
+static u3_party_ignite_result u3_party_make_ignite_result(uint8_t ignited, uint8_t reason)
+{
+    u3_party_ignite_result result;
+
+    memset(&result, 0, sizeof(result));
+    result.ignited = ignited;
+    result.reason = reason;
+    return result;
+}
+
+static uint8_t u3_party_roster_slot_occupied(const uint8_t *record)
+{
+    return record[0] > 22 ? 1 : 0;
+}
+
+static uint8_t u3_party_roster_slot_can_ignite(const uint8_t *record)
+{
+    uint8_t status = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+
+    return status == 'G' || status == 'P';
+}
+
+static uint8_t u3_party_ignite_candidate(uint8_t *roster,
+                                         uint8_t roster_id,
+                                         uint8_t active_slot,
+                                         u3_party_ignite_result *result)
+{
+    uint8_t *record;
+
+    if (roster_id == 0 || roster_id > U3_PARTY_ROSTER_SLOT_COUNT)
+        return 0;
+    record = roster + ((roster_id - 1) * U3_PARTY_ROSTER_RECORD_LENGTH);
+    if (!u3_party_roster_slot_occupied(record) ||
+        !u3_party_roster_slot_can_ignite(record))
+        return 0;
+
+    result->active_slot = active_slot;
+    result->roster_id = roster_id;
+    result->torch_count_before = record[U3_PARTY_ROSTER_TORCH_OFFSET];
+    if (record[U3_PARTY_ROSTER_TORCH_OFFSET] == 0)
+        return 1;
+
+    record[U3_PARTY_ROSTER_TORCH_OFFSET]--;
+    result->ignited = 1;
+    result->reason = U3_PARTY_IGNITE_OK;
+    result->torch_count_after = record[U3_PARTY_ROSTER_TORCH_OFFSET];
+    result->light = U3_PARTY_TORCH_LIGHT_VALUE;
+    return 1;
+}
+
+u3_party_ignite_result u3_party_ignite_torch(uint8_t *party,
+                                             uint32_t party_length,
+                                             uint8_t *roster,
+                                             uint32_t roster_length,
+                                             uint8_t active_slot)
+{
+    u3_party_ignite_result result;
+    uint8_t index;
+    uint8_t party_size;
+    uint8_t saw_living_candidate = 0;
+
+    result = u3_party_make_ignite_result(0, U3_PARTY_IGNITE_INVALID_ARGUMENT);
+    if (party == 0 || roster == 0)
+        return result;
+    if (party_length != U3_SAVE_PARTY_LENGTH)
+        return u3_party_make_ignite_result(0, U3_PARTY_IGNITE_INVALID_PARTY);
+    if (roster_length != U3_SAVE_ROSTER_LENGTH)
+        return u3_party_make_ignite_result(0, U3_PARTY_IGNITE_INVALID_ROSTER);
+
+    party_size = party[1];
+    if (party_size == 0 || party_size > U3_PARTY_ACTIVE_SLOT_COUNT)
+        return u3_party_make_ignite_result(0, U3_PARTY_IGNITE_INVALID_PARTY);
+
+    if (active_slot != U3_PARTY_IGNITE_AUTO_SLOT) {
+        uint8_t roster_id;
+
+        if (active_slot < 1 || active_slot > party_size)
+            return u3_party_make_ignite_result(0, U3_PARTY_IGNITE_INVALID_CHARACTER);
+        roster_id = party[6 + (active_slot - 1)];
+        if (!u3_party_ignite_candidate(roster, roster_id, active_slot, &result))
+            return u3_party_make_ignite_result(0, U3_PARTY_IGNITE_INVALID_CHARACTER);
+        if (!result.ignited)
+            result.reason = U3_PARTY_IGNITE_NO_TORCH;
+        return result;
+    }
+
+    for (index = 0; index < party_size; index++) {
+        uint8_t roster_id = party[6 + index];
+        u3_party_ignite_result candidate =
+            u3_party_make_ignite_result(0, U3_PARTY_IGNITE_NO_TORCH);
+
+        if (!u3_party_ignite_candidate(roster, roster_id, (uint8_t)(index + 1), &candidate))
+            continue;
+        saw_living_candidate = 1;
+        if (candidate.ignited)
+            return candidate;
+        result = candidate;
+        result.reason = U3_PARTY_IGNITE_NO_TORCH;
+    }
+
+    if (!saw_living_candidate)
+        return u3_party_make_ignite_result(0, U3_PARTY_IGNITE_INVALID_CHARACTER);
+    return result;
 }
 
 static u3_party_form_result u3_party_make_form_result(uint8_t formed, uint8_t reason)

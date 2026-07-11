@@ -209,6 +209,29 @@ static void test_rendering_does_not_mutate_dungeon_bytes(void)
     ASSERT_EQ_INT(0, memcmp(before, dungeon, sizeof(before)));
 }
 
+static void test_light_limited_frame_suppresses_deeper_geometry(void)
+{
+    u3_render_frame dark_frame;
+    u3_render_frame lit_frame;
+
+    reset_dungeon();
+    put_cell(0, 2, 1, U3_DUNGEON_TILE_WALL);
+
+    dark_frame = u3_dungeon_make_lit_view_frame(dungeon, sizeof(dungeon), 0, 1, 1, 1, 0);
+    lit_frame = u3_dungeon_make_lit_view_frame(dungeon, sizeof(dungeon), 0, 1, 1, 1, U3_DUNGEON_LIGHT_FULL);
+
+    ASSERT_EQ_INT(2, dark_frame.command_count);
+    ASSERT_TRUE(lit_frame.command_count > dark_frame.command_count);
+}
+
+static void test_dungeon_light_decay_saturates_at_zero(void)
+{
+    ASSERT_EQ_INT(254, u3_dungeon_decay_light(255));
+    ASSERT_EQ_INT(1, u3_dungeon_decay_light(2));
+    ASSERT_EQ_INT(0, u3_dungeon_decay_light(1));
+    ASSERT_EQ_INT(0, u3_dungeon_decay_light(0));
+}
+
 int main(void)
 {
     test_builds_corridor_with_side_walls_and_front_door();
@@ -218,6 +241,8 @@ int main(void)
     test_boundary_sampling_wraps_like_legacy_dungeon_access();
     test_rejects_invalid_input_with_safe_empty_view();
     test_rendering_does_not_mutate_dungeon_bytes();
+    test_light_limited_frame_suppresses_deeper_geometry();
+    test_dungeon_light_decay_saturates_at_zero();
 
     printf("dungeon render characterization passed\n");
     return 0;

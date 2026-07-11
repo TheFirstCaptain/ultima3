@@ -85,6 +85,7 @@ typedef struct u3_location_session {
     uint8_t y;
     uint8_t heading;
     uint8_t dungeon_level;
+    uint8_t light;
     uint8_t return_x;
     uint8_t return_y;
 } u3_location_session;

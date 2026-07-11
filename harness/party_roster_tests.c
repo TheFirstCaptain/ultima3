@@ -333,6 +333,115 @@ static void test_form_rejects_duplicate_invalid_and_unoccupied_roster_ids(void)
     ASSERT_EQ_INT(0xCC, updated_party[0]);
 }
 
+static void test_ignite_auto_selects_first_living_active_torch_holder(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_party_ignite_result result;
+
+    memset(party, 0, sizeof(party));
+    memset(roster, 0, sizeof(roster));
+    party[1] = 3;
+    party[6] = 1;
+    party[7] = 2;
+    party[8] = 3;
+    mark_roster_occupied(roster, 1, "A");
+    mark_roster_occupied(roster, 2, "B");
+    mark_roster_occupied(roster, 3, "C");
+    roster[U3_PARTY_ROSTER_TORCH_OFFSET] = 0;
+    roster[U3_PARTY_ROSTER_RECORD_LENGTH + U3_PARTY_ROSTER_TORCH_OFFSET] = 2;
+    roster[(2 * U3_PARTY_ROSTER_RECORD_LENGTH) + U3_PARTY_ROSTER_TORCH_OFFSET] = 4;
+
+    result = u3_party_ignite_torch(
+        party,
+        sizeof(party),
+        roster,
+        sizeof(roster),
+        U3_PARTY_IGNITE_AUTO_SLOT);
+
+    ASSERT_TRUE(result.ignited);
+    ASSERT_EQ_INT(U3_PARTY_IGNITE_OK, result.reason);
+    ASSERT_EQ_INT(2, result.active_slot);
+    ASSERT_EQ_INT(2, result.roster_id);
+    ASSERT_EQ_INT(2, result.torch_count_before);
+    ASSERT_EQ_INT(1, result.torch_count_after);
+    ASSERT_EQ_INT(U3_PARTY_TORCH_LIGHT_VALUE, result.light);
+    ASSERT_EQ_INT(0, roster[U3_PARTY_ROSTER_TORCH_OFFSET]);
+    ASSERT_EQ_INT(1, roster[U3_PARTY_ROSTER_RECORD_LENGTH + U3_PARTY_ROSTER_TORCH_OFFSET]);
+    ASSERT_EQ_INT(4, roster[(2 * U3_PARTY_ROSTER_RECORD_LENGTH) + U3_PARTY_ROSTER_TORCH_OFFSET]);
+}
+
+static void test_ignite_accepts_poisoned_active_torch_holder(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_party_ignite_result result;
+
+    memset(party, 0, sizeof(party));
+    memset(roster, 0, sizeof(roster));
+    party[1] = 1;
+    party[6] = 1;
+    mark_roster_occupied(roster, 1, "A");
+    roster[U3_PARTY_ROSTER_STATUS_OFFSET] = 'P';
+    roster[U3_PARTY_ROSTER_TORCH_OFFSET] = 2;
+
+    result = u3_party_ignite_torch(
+        party,
+        sizeof(party),
+        roster,
+        sizeof(roster),
+        U3_PARTY_IGNITE_AUTO_SLOT);
+
+    ASSERT_TRUE(result.ignited);
+    ASSERT_EQ_INT(U3_PARTY_IGNITE_OK, result.reason);
+    ASSERT_EQ_INT(1, result.active_slot);
+    ASSERT_EQ_INT(1, result.roster_id);
+    ASSERT_EQ_INT(2, result.torch_count_before);
+    ASSERT_EQ_INT(1, result.torch_count_after);
+    ASSERT_EQ_INT(U3_PARTY_TORCH_LIGHT_VALUE, result.light);
+    ASSERT_EQ_INT(1, roster[U3_PARTY_ROSTER_TORCH_OFFSET]);
+}
+
+static void test_ignite_reports_no_torch_and_invalid_character_without_mutation(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_party_ignite_result result;
+
+    memset(party, 0, sizeof(party));
+    memset(roster, 0, sizeof(roster));
+    party[1] = 1;
+    party[6] = 1;
+    mark_roster_occupied(roster, 1, "A");
+    roster[U3_PARTY_ROSTER_TORCH_OFFSET] = 0;
+
+    result = u3_party_ignite_torch(
+        party,
+        sizeof(party),
+        roster,
+        sizeof(roster),
+        U3_PARTY_IGNITE_AUTO_SLOT);
+
+    ASSERT_FALSE(result.ignited);
+    ASSERT_EQ_INT(U3_PARTY_IGNITE_NO_TORCH, result.reason);
+    ASSERT_EQ_INT(1, result.active_slot);
+    ASSERT_EQ_INT(1, result.roster_id);
+    ASSERT_EQ_INT(0, result.torch_count_before);
+    ASSERT_EQ_INT(0, roster[U3_PARTY_ROSTER_TORCH_OFFSET]);
+
+    roster[U3_PARTY_ROSTER_STATUS_OFFSET] = 'D';
+    result = u3_party_ignite_torch(
+        party,
+        sizeof(party),
+        roster,
+        sizeof(roster),
+        1);
+
+    ASSERT_FALSE(result.ignited);
+    ASSERT_EQ_INT(U3_PARTY_IGNITE_INVALID_CHARACTER, result.reason);
+    ASSERT_EQ_INT(0, roster[U3_PARTY_ROSTER_TORCH_OFFSET]);
+}
+
 int main(void)
 {
     test_loads_default_party_roster_summary();
@@ -341,6 +450,9 @@ int main(void)
     test_forms_party_from_occupied_roster_slots();
     test_form_rejects_invalid_selection_counts();
     test_form_rejects_duplicate_invalid_and_unoccupied_roster_ids();
+    test_ignite_auto_selects_first_living_active_torch_holder();
+    test_ignite_accepts_poisoned_active_torch_holder();
+    test_ignite_reports_no_torch_and_invalid_character_without_mutation();
 
     printf("party roster characterization passed\n");
     return 0;

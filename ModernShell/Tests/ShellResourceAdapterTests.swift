@@ -40,6 +40,19 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertTrue(adapter.currentSosariaSaveAllowed(documentData: document))
     }
 
+    func testBuildNativeNewGameSmokeDocumentSeedsTorchInventory() throws {
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+
+        let result = adapter.igniteTorch(documentData: &document)
+
+        XCTAssertTrue(result.ignited != 0)
+        XCTAssertEqual(result.roster_id, 1)
+        XCTAssertEqual(result.torch_count_before, 2)
+        XCTAssertEqual(result.torch_count_after, 1)
+        XCTAssertEqual(result.light, UInt8(U3_PARTY_TORCH_LIGHT_VALUE))
+    }
+
     func testLoadNewGameSmokeStateReportsMissingInput() {
         let adapter = ShellResourceAdapter()
 
@@ -201,10 +214,10 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(dungeon.descriptor.heading, 1)
         XCTAssertEqual(Int(dungeon.frame.commands.0.kind), renderCommandClear)
         XCTAssertEqual(Int(dungeon.frame.commands.1.kind), renderCommandRect)
-        XCTAssertGreaterThan(dungeon.frame.command_count, 2)
-        XCTAssertGreaterThan(countCommands(in: dungeon.frame, value: dungeonWallValue), 0)
+        XCTAssertEqual(dungeon.frame.command_count, 2)
+        XCTAssertEqual(countCommands(in: dungeon.frame, value: dungeonWallValue), 0)
         XCTAssertEqual(countCommands(in: dungeon.frame, value: dungeonDoorValue), 0)
-        XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 1")
+        XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 1 light 0")
     }
 
     func testMoveDungeonSessionMapsCommandsAndRefreshesFrame() {
@@ -216,13 +229,15 @@ final class ShellResourceAdapterTests: XCTestCase {
         guard case .success(var dungeon) = loadResult else {
             return XCTFail("Expected dungeon session")
         }
+        dungeon.descriptor.light = UInt8(U3_DUNGEON_LIGHT_FULL)
+        adapter.refreshLocationSessionFrame(&dungeon)
         var result = u3_dungeon_result()
 
         XCTAssertTrue(adapter.moveDungeonSession(&dungeon, command: 4, result: &result))
         XCTAssertTrue(result.turned)
         XCTAssertTrue(result.needs_redraw)
         XCTAssertEqual(dungeon.descriptor.heading, 2)
-        XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 2")
+        XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 2 light 255")
         XCTAssertGreaterThan(dungeon.frame.command_count, 2)
 
         XCTAssertTrue(adapter.moveDungeonSession(&dungeon, command: UInt16(UInt8(ascii: "D")), result: &result))

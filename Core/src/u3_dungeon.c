@@ -50,6 +50,22 @@ static u3_render_color u3_dungeon_color(uint8_t red, uint8_t green, uint8_t blue
     return color;
 }
 
+static u3_render_frame u3_dungeon_make_background_frame(void)
+{
+    u3_render_frame frame;
+
+    u3_render_frame_init(&frame);
+    u3_render_frame_add_clear(&frame, u3_dungeon_color(4, 5, 7));
+    u3_render_frame_add_rect(&frame,
+                             0,
+                             0,
+                             U3_RENDER_LOGICAL_WIDTH,
+                             U3_RENDER_LOGICAL_HEIGHT,
+                             u3_dungeon_color(0, 0, 0),
+                             u3_dungeon_color(56, 56, 64));
+    return frame;
+}
+
 static int16_t u3_dungeon_wrap_coord(int16_t value)
 {
     /* Legacy reference: Sources/UltimaSpellCombat.c GetXYDng. */
@@ -381,30 +397,30 @@ u3_dungeon_result u3_dungeon_climb(u3_dungeon_state *state)
     return result;
 }
 
-u3_render_frame u3_dungeon_make_view_frame(const uint8_t *dungeon,
-                                           uint32_t dungeon_length,
-                                           int16_t level,
-                                           int16_t x,
-                                           int16_t y,
-                                           int16_t heading)
+uint8_t u3_dungeon_decay_light(uint8_t light)
+{
+    if (light > 0)
+        light--;
+    return light;
+}
+
+static u3_render_frame u3_dungeon_make_view_frame_with_depth(const uint8_t *dungeon,
+                                                             uint32_t dungeon_length,
+                                                             int16_t level,
+                                                             int16_t x,
+                                                             int16_t y,
+                                                             int16_t heading,
+                                                             uint8_t max_depth)
 {
     u3_render_frame frame;
     uint8_t depth;
 
-    u3_render_frame_init(&frame);
-    u3_render_frame_add_clear(&frame, u3_dungeon_color(4, 5, 7));
-    u3_render_frame_add_rect(&frame,
-                             0,
-                             0,
-                             U3_RENDER_LOGICAL_WIDTH,
-                             U3_RENDER_LOGICAL_HEIGHT,
-                             u3_dungeon_color(0, 0, 0),
-                             u3_dungeon_color(56, 56, 64));
+    frame = u3_dungeon_make_background_frame();
 
     if (!u3_dungeon_valid_view_input(dungeon, dungeon_length, level, x, y, heading))
         return frame;
 
-    for (depth = 0; depth <= U3_DUNGEON_VIEW_DEPTH; depth++) {
+    for (depth = 0; depth <= max_depth; depth++) {
         int16_t center_x = (int16_t)(x + (u3_dungeon_head_x[heading] * depth));
         int16_t center_y = (int16_t)(y + (u3_dungeon_head_y[heading] * depth));
         uint8_t left_tile = u3_dungeon_const_cell(dungeon,
@@ -434,4 +450,43 @@ u3_render_frame u3_dungeon_make_view_frame(const uint8_t *dungeon,
     }
 
     return frame;
+}
+
+u3_render_frame u3_dungeon_make_view_frame(const uint8_t *dungeon,
+                                           uint32_t dungeon_length,
+                                           int16_t level,
+                                           int16_t x,
+                                           int16_t y,
+                                           int16_t heading)
+{
+    return u3_dungeon_make_view_frame_with_depth(
+        dungeon,
+        dungeon_length,
+        level,
+        x,
+        y,
+        heading,
+        U3_DUNGEON_VIEW_DEPTH);
+}
+
+u3_render_frame u3_dungeon_make_lit_view_frame(const uint8_t *dungeon,
+                                               uint32_t dungeon_length,
+                                               int16_t level,
+                                               int16_t x,
+                                               int16_t y,
+                                               int16_t heading,
+                                               uint8_t light)
+{
+    if (light == 0)
+        return u3_dungeon_make_background_frame();
+    if (light < 3)
+        return u3_dungeon_make_view_frame_with_depth(dungeon, dungeon_length, level, x, y, heading, 0);
+    return u3_dungeon_make_view_frame_with_depth(
+        dungeon,
+        dungeon_length,
+        level,
+        x,
+        y,
+        heading,
+        U3_DUNGEON_VIEW_DEPTH);
 }
