@@ -535,6 +535,8 @@ final class ShellResourceAdapter {
                 result = u3_dungeon_descend(&state)
             case UInt16(UInt8(ascii: "K")):
                 result = u3_dungeon_climb(&state)
+            case UInt16(UInt8(ascii: " ")):
+                result = u3_dungeon_pass(&state)
             default:
                 return false
             }
@@ -563,6 +565,37 @@ final class ShellResourceAdapter {
             return true
         }
         return false
+    }
+
+    func applyDungeonPostTurn(
+        _ session: inout ShellLocationSession,
+        documentData: Data?,
+        encounterRoll: UInt16,
+        monsterRoll: UInt16
+    ) -> u3_dungeon_post_turn_result {
+        guard Self.validDungeonSessionForMovement(session) else {
+            return u3_dungeon_post_turn_result()
+        }
+
+        let counts = dungeonPartyCounts(documentData: documentData)
+        let tile = dungeonTile(session: session, x: session.descriptor.x, y: session.descriptor.y)
+        let input = u3_dungeon_post_turn_input(
+            level: session.descriptor.dungeon_level,
+            current_tile: tile,
+            light: session.descriptor.light,
+            party_size: counts.partySize,
+            living_party_members: counts.livingMembers,
+            encounter_roll: encounterRoll,
+            monster_roll: monsterRoll
+        )
+        let result = u3_dungeon_post_turn(input)
+        if result.handled != 0 {
+            session.descriptor.light = result.light_after
+            if result.light_decremented != 0 {
+                session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
+            }
+        }
+        return result
     }
 
     func refreshLocationSessionFrame(_ session: inout ShellLocationSession) {
@@ -691,6 +724,60 @@ final class ShellResourceAdapter {
         var result = u3_party_ignite_result()
         result.reason = reason
         return result
+    }
+
+    private func dungeonTile(session: ShellLocationSession, x: UInt8, y: UInt8) -> UInt8 {
+        let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+            (Int(y) * Int(U3_DUNGEON_WIDTH)) +
+            Int(x)
+        guard offset >= 0 && offset < session.mapData.count else {
+            return 0
+        }
+        return session.mapData[offset]
+    }
+
+    private func dungeonPartyCounts(documentData: Data?) -> (partySize: UInt8, livingMembers: UInt8) {
+        guard let documentData else {
+            return (0, 0)
+        }
+
+        return documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return (0, 0)
+            }
+
+            var document = u3_save_document()
+            var partyRecord = u3_save_record()
+            var rosterRecord = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                  let party = partyRecord.data,
+                  let roster = rosterRecord.data else {
+                return (0, 0)
+            }
+
+            let partySize = party[1]
+            guard partySize > 0 && partySize <= UInt8(U3_PARTY_ACTIVE_SLOT_COUNT) else {
+                return (partySize, 0)
+            }
+
+            var livingMembers: UInt8 = 0
+            for index in 0..<Int(partySize) {
+                let rosterID = party[6 + index]
+                guard rosterID > 0 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+                    continue
+                }
+                let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
+                let status = record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)]
+                if status == UInt8(ascii: "G") || status == UInt8(ascii: "P") {
+                    livingMembers += 1
+                }
+            }
+            return (partySize, livingMembers)
+        }
     }
 
     private func seedSmokeTorchInventory(documentData: inout Data) -> Bool {

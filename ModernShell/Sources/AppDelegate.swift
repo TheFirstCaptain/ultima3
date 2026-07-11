@@ -504,6 +504,7 @@ final class ShellSmokeState: ObservableObject {
     private let resourceAdapter: ShellResourceAdapter
     private let saveAdapter: ShellSaveAdapter
     private let locationTransitionAdapter: ShellLocationDocumentTransitioning
+    private let dungeonRollProvider: (UInt8) -> (encounter: UInt16, monster: UInt16)
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
     private let partyAssemblyAdapter = ShellPartyAssemblyAdapter()
     private var tickState = u3_tick_state()
@@ -521,7 +522,8 @@ final class ShellSmokeState: ObservableObject {
         locationProvider: ShellLocationProvider = ShellLocationProvider(),
         resourceAdapter: ShellResourceAdapter = ShellResourceAdapter(),
         saveAdapter: ShellSaveAdapter = ShellSaveAdapter(),
-        locationTransitionAdapter: ShellLocationDocumentTransitioning = ShellLocationDocumentTransitionAdapter()
+        locationTransitionAdapter: ShellLocationDocumentTransitioning = ShellLocationDocumentTransitionAdapter(),
+        dungeonRollProvider: @escaping (UInt8) -> (encounter: UInt16, monster: UInt16) = ShellSmokeState.makeDungeonRolls
     ) {
         self.inputAdapter = inputAdapter
         self.audioAdapter = audioAdapter
@@ -529,6 +531,7 @@ final class ShellSmokeState: ObservableObject {
         self.resourceAdapter = resourceAdapter
         self.saveAdapter = saveAdapter
         self.locationTransitionAdapter = locationTransitionAdapter
+        self.dungeonRollProvider = dungeonRollProvider
         u3_tick_state_init(&tickState)
         u3_overworld_state_init(
             &overworldState,
@@ -873,7 +876,16 @@ final class ShellSmokeState: ObservableObject {
             return "Location transition failed"
         }
 
-        let lightChanged = resourceAdapter.decayDungeonLight(&session)
+        var postTurnResult = u3_dungeon_post_turn_result()
+        if !dungeonResult.exited {
+            let rolls = dungeonRollProvider(session.descriptor.dungeon_level)
+            postTurnResult = resourceAdapter.applyDungeonPostTurn(
+                &session,
+                documentData: currentSaveDocument,
+                encounterRoll: rolls.encounter,
+                monsterRoll: rolls.monster
+            )
+        }
         if dungeonResult.blocked {
             _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_BUMP))
         } else if dungeonResult.moved || dungeonResult.turned || dungeonResult.level_changed {
@@ -885,7 +897,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         activeLocationSession = session
-        if dungeonResult.needs_redraw || lightChanged {
+        if dungeonResult.needs_redraw || postTurnResult.light_decremented != 0 {
             renderFrame = session.frame
             let locations = locationProvider.snapshot()
             resourceStatus = Self.describeResourceStatus(
@@ -896,21 +908,21 @@ final class ShellSmokeState: ObservableObject {
         }
 
         if dungeonResult.blocked {
-            return "Dungeon blocked \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+            return "Dungeon blocked \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
         }
         if dungeonResult.invalid {
-            return "Dungeon invalid \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+            return "Dungeon invalid \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
         }
         if dungeonResult.level_changed {
-            return "Dungeon level \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+            return "Dungeon level \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
         }
         if dungeonResult.turned {
-            return "Dungeon turn \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+            return "Dungeon turn \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
         }
         if dungeonResult.moved {
-            return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+            return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
         }
-        return "Dungeon command \(describeDungeonCommand(event.command))\(describeLocationTurnDelta(locationResult))"
+        return "Dungeon command \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
     }
 
     private func consumeIgniteCommand(session: inout ShellLocationSession) -> String {
@@ -1220,6 +1232,8 @@ final class ShellSmokeState: ObservableObject {
             return "Descend"
         case Int32(UInt8(ascii: "K")):
             return "Klimb"
+        case Int32(UInt8(ascii: " ")):
+            return "Pass"
         default:
             return inputAdapter.describeKey(command)
         }
@@ -1227,6 +1241,16 @@ final class ShellSmokeState: ObservableObject {
 
     private func describeDungeonPosition(_ session: ShellLocationSession) -> String {
         "pos \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) level \(session.descriptor.dungeon_level) light \(session.descriptor.light)"
+    }
+
+    private func describeDungeonPostTurn(_ result: u3_dungeon_post_turn_result) -> String {
+        guard result.handled != 0 else {
+            return ""
+        }
+        guard result.encounter_requested != 0 else {
+            return " passive"
+        }
+        return " encounter monster \(result.monster_type) CONS \(result.combat_screen_resource_id) marker \(result.marker_tile)"
     }
 
     private func describeIgniteFailure(_ result: u3_party_ignite_result) -> String {
@@ -1245,6 +1269,15 @@ final class ShellSmokeState: ObservableObject {
             return command - 32
         }
         return command
+    }
+
+    private static func makeDungeonRolls(level: UInt8) -> (encounter: UInt16, monster: UInt16) {
+        let encounterMax = UInt16(0x82 + UInt16(level))
+        let monsterMax = UInt16(level) + 2
+        return (
+            UInt16.random(in: 0...encounterMax),
+            UInt16.random(in: 0...monsterMax)
+        )
     }
 
     private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String, renderStatus: String) -> String {

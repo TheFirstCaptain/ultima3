@@ -188,6 +188,23 @@ static void test_turn_blocks_on_current_high_tile(void)
     ASSERT_EQ_INT(0, state.heading);
 }
 
+static void test_pass_is_handled_without_movement_or_redraw(void)
+{
+    u3_dungeon_result result;
+
+    reset_state();
+
+    result = u3_dungeon_pass(&state);
+
+    assert_clean_effects(result, 23);
+    ASSERT_EQ_INT(0, result.moved);
+    ASSERT_EQ_INT(0, result.turned);
+    ASSERT_EQ_INT(0, result.level_changed);
+    ASSERT_EQ_INT(0, result.needs_redraw);
+    ASSERT_EQ_INT(5, state.x);
+    ASSERT_EQ_INT(5, state.y);
+}
+
 static void test_descend_requires_non_wall_down_ladder(void)
 {
     u3_dungeon_result result;
@@ -300,6 +317,7 @@ int main(void)
     test_retreat_moves_opposite_heading_and_blocks_wall();
     test_turn_right_and_left_wrap_heading();
     test_turn_blocks_on_current_high_tile();
+    test_pass_is_handled_without_movement_or_redraw();
     test_descend_requires_non_wall_down_ladder();
     test_descend_rejects_missing_ladder_and_wall_tiles();
     test_descend_rejects_bottom_level_ladder_to_preserve_core_bounds();

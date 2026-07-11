@@ -13,6 +13,7 @@ TESTS = \
 	$(BUILD_DIR)/autocombat_targeting_tests \
 	$(BUILD_DIR)/dungeon_navigation_tests \
 	$(BUILD_DIR)/dungeon_render_tests \
+	$(BUILD_DIR)/dungeon_post_turn_tests \
 	$(BUILD_DIR)/resource_fixture_tests \
 	$(BUILD_DIR)/save_fixture_tests \
 	$(BUILD_DIR)/render_contract_tests \
@@ -60,6 +61,9 @@ $(BUILD_DIR)/dungeon_navigation_tests: dungeon_navigation_tests.c $(CORE_SRC)/u3
 
 $(BUILD_DIR)/dungeon_render_tests: dungeon_render_tests.c $(CORE_SRC)/u3_dungeon.c $(CORE_INCLUDE)/u3_dungeon.h $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) dungeon_render_tests.c $(CORE_SRC)/u3_dungeon.c $(CORE_SRC)/u3_render.c -o $@
+
+$(BUILD_DIR)/dungeon_post_turn_tests: dungeon_post_turn_tests.c $(CORE_SRC)/u3_dungeon.c $(CORE_INCLUDE)/u3_dungeon.h $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) dungeon_post_turn_tests.c $(CORE_SRC)/u3_dungeon.c $(CORE_SRC)/u3_render.c -o $@
 
 $(BUILD_DIR)/resource_fixture_tests: resource_fixture_tests.c $(CORE_SRC)/u3_resource.c $(CORE_INCLUDE)/u3_resource.h ../Resources/English.lproj/MainResources.rsrc | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) resource_fixture_tests.c $(CORE_SRC)/u3_resource.c -o $@

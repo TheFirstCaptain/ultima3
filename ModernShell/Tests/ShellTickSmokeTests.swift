@@ -8,6 +8,9 @@ final class ShellTickSmokeTests: XCTestCase {
     private let moveNorthCommand: UInt16 = 1
     private let moveWestCommand: UInt16 = 3
     private let moveEastCommand: UInt16 = 4
+    private let noDungeonEncounterRolls: (UInt8) -> (encounter: UInt16, monster: UInt16) = { _ in
+        (encounter: 0, monster: 0)
+    }
     private var temporaryDirectory: URL!
     private var saveDocumentURL: URL!
 
@@ -109,7 +112,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testSaveBackedOverworldMovementPersistsAfterSaveAndReload() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.newGame()
 
         state.submitOverworldCommand(moveEastCommand)
@@ -122,7 +125,7 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertFalse(state.hasUnsavedChanges)
         XCTAssertTrue(state.saveStatus.contains("Game saved |"))
 
-        let reloadedState = ShellSmokeState(locationProvider: locationProvider)
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         reloadedState.loadGame()
         reloadedState.submitOverworldCommand(moveEastCommand)
         reloadedState.runTick()
@@ -132,7 +135,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testGameplayMutationRemainsInMemoryUntilManualSave() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.newGame()
         state.saveGame()
 
@@ -140,7 +143,7 @@ final class ShellTickSmokeTests: XCTestCase {
         state.runTick()
         XCTAssertTrue(state.hasUnsavedChanges)
 
-        let reloadedState = ShellSmokeState(locationProvider: locationProvider)
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         reloadedState.loadGame()
         reloadedState.submitOverworldCommand(moveEastCommand)
         reloadedState.runTick()
@@ -150,7 +153,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testManualSaveRejectsNonSosariaStateAndPreservesPriorSave() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.newGame()
         state.saveGame()
         let savedDocument = try Data(contentsOf: saveDocumentURL)
@@ -176,7 +179,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testSaveBackedBlockedOverworldMovementConsumesTurn() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         var blockedCommand: String?
         state.newGame()
 
@@ -204,7 +207,7 @@ final class ShellTickSmokeTests: XCTestCase {
             .saved
         )
         let savedDocument = try Data(contentsOf: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
 
         state.submitKeyboard(UInt8(ascii: "E"))
@@ -256,7 +259,7 @@ final class ShellTickSmokeTests: XCTestCase {
             ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
             .saved
         )
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -286,7 +289,7 @@ final class ShellTickSmokeTests: XCTestCase {
             .saved
         )
         let savedDocument = try Data(contentsOf: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
 
         state.submitKeyboard(UInt8(ascii: "E"))
@@ -301,7 +304,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 light 0 moves 8 | Audio Sound Step")
+        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 light 0 moves 8 passive | Audio Sound Step")
         state.refreshLocationStatus()
         XCTAssertEqual(state.lastCommand, "Location refreshed")
         XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 2 light 0"))
@@ -321,14 +324,14 @@ final class ShellTickSmokeTests: XCTestCase {
             ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
             .saved
         )
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
 
         state.submitKeyboard(UInt8(ascii: "D"))
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Dungeon invalid Descend pos 1,1 heading 1 level 0 light 0 moves 8")
+        XCTAssertEqual(state.lastCommand, "Dungeon invalid Descend pos 1,1 heading 1 level 0 light 0 moves 8 passive")
 
         var blockedCommand: String?
         for _ in 0..<20 {
@@ -343,6 +346,32 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertNotNil(blockedCommand)
         XCTAssertTrue(blockedCommand?.contains("Audio Sound Bump") == true)
         XCTAssertTrue(blockedCommand?.contains(" moves ") == true)
+    }
+
+    func testDungeonPassRunsPassiveTurnWithoutMovement() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Dungeon command Pass pos 1,1 heading 1 level 0 light 0 moves 8 passive"
+        )
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1 light 0"))
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
     }
 
     func testFailedDungeonExitRetainsDungeonSessionAndDocument() throws {
@@ -389,7 +418,7 @@ final class ShellTickSmokeTests: XCTestCase {
             ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
             .saved
         )
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -410,7 +439,7 @@ final class ShellTickSmokeTests: XCTestCase {
             ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
             .saved
         )
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -423,7 +452,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 light 254 moves 8 | Audio Sound Step")
+        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 light 254 moves 8 passive | Audio Sound Step")
         XCTAssertTrue(state.resourceStatus.contains("light 254"))
 
         state.saveGame()
@@ -450,7 +479,7 @@ final class ShellTickSmokeTests: XCTestCase {
             ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
             .saved
         )
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -481,7 +510,7 @@ final class ShellTickSmokeTests: XCTestCase {
             .saved
         )
         let savedDocument = try Data(contentsOf: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -511,7 +540,7 @@ final class ShellTickSmokeTests: XCTestCase {
             .saved
         )
         let savedDocument = try Data(contentsOf: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -536,7 +565,7 @@ final class ShellTickSmokeTests: XCTestCase {
             ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
             .saved
         )
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -653,7 +682,7 @@ final class ShellTickSmokeTests: XCTestCase {
             ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
             .saved
         )
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.loadGame()
         state.submitKeyboard(UInt8(ascii: "E"))
         state.runTick()
@@ -688,7 +717,7 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.y, 19)
         XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 16)
 
-        let reloadedState = ShellSmokeState(locationProvider: locationProvider)
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         reloadedState.loadGame()
         XCTAssertTrue(reloadedState.resourceStatus.contains("Overworld OK MAPS 419 pos 46,19"))
     }
@@ -761,7 +790,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testAssembledPartyWritesAndLoadsFromSavedDocument() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.newGame()
         state.acceptPartyAssembly([2, 1])
 
@@ -769,7 +798,7 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(state.lastCommand, "Game saved")
         XCTAssertTrue(state.saveStatus.contains("Game saved |"))
 
-        let reloadedState = ShellSmokeState(locationProvider: locationProvider)
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         reloadedState.loadGame()
         reloadedState.inspectPartyRoster()
 
@@ -779,12 +808,12 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testStartupStyleLoadAdoptsSavedAssembledPartyWhenAvailable() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.newGame()
         state.acceptPartyAssembly([2, 1])
         state.saveGame()
 
-        let launchedState = ShellSmokeState(locationProvider: locationProvider)
+        let launchedState = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         launchedState.loadSavedGameIfAvailable()
         launchedState.inspectPartyRoster()
 
@@ -794,7 +823,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testStartupStyleLoadNoOpsWhenSavedDocumentIsMissing() {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
 
         state.loadSavedGameIfAvailable()
 
@@ -804,7 +833,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
     func testLoadGameRejectsDomainInvalidDocumentWithoutReplacingCurrentDocument() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
-        let state = ShellSmokeState(locationProvider: locationProvider)
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
         state.newGame()
 
         let invalidDomainDocument = makeStructurallyValidSaveDocument(payload: [1, 2, 3, 4])

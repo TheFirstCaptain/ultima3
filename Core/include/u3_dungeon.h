@@ -16,9 +16,11 @@
 #define U3_DUNGEON_TILE_UP_LADDER 0x10
 #define U3_DUNGEON_TILE_DOWN_LADDER 0x20
 #define U3_DUNGEON_TILE_CHEST 0x40
+#define U3_DUNGEON_ENCOUNTER_MARKER_TILE 0x40
 
 #define U3_DUNGEON_VIEW_DEPTH 4
 #define U3_DUNGEON_LIGHT_FULL 255
+#define U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID 402
 
 #define U3_DUNGEON_RENDER_VALUE_WALL 1
 #define U3_DUNGEON_RENDER_VALUE_DOOR 2
@@ -47,6 +49,31 @@ typedef struct u3_dungeon_result {
     uint16_t effect_message_id;
 } u3_dungeon_result;
 
+typedef struct u3_dungeon_post_turn_input {
+    uint8_t level;
+    uint8_t current_tile;
+    uint8_t light;
+    uint8_t party_size;
+    uint8_t living_party_members;
+    uint16_t encounter_roll;
+    uint16_t monster_roll;
+} u3_dungeon_post_turn_input;
+
+typedef struct u3_dungeon_post_turn_result {
+    uint8_t handled;
+    uint8_t party_age_requested;
+    uint8_t status_refresh_requested;
+    uint8_t light_before;
+    uint8_t light_after;
+    uint8_t light_decremented;
+    uint8_t current_tile;
+    uint8_t encounter_requested;
+    uint8_t monster_table_value;
+    uint8_t monster_type;
+    uint8_t marker_tile;
+    uint16_t combat_screen_resource_id;
+} u3_dungeon_post_turn_result;
+
 uint8_t u3_dungeon_get_cell(const u3_dungeon_state *state, int16_t x, int16_t y);
 void u3_dungeon_put_cell(u3_dungeon_state *state, uint8_t value, int16_t x, int16_t y);
 
@@ -54,9 +81,11 @@ u3_dungeon_result u3_dungeon_forward(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_retreat(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_turn_right(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_turn_left(u3_dungeon_state *state);
+u3_dungeon_result u3_dungeon_pass(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_descend(u3_dungeon_state *state);
 u3_dungeon_result u3_dungeon_climb(u3_dungeon_state *state);
 uint8_t u3_dungeon_decay_light(uint8_t light);
+u3_dungeon_post_turn_result u3_dungeon_post_turn(u3_dungeon_post_turn_input input);
 u3_render_frame u3_dungeon_make_view_frame(const uint8_t *dungeon,
                                            uint32_t dungeon_length,
                                            int16_t level,

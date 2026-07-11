@@ -351,6 +351,13 @@ u3_dungeon_result u3_dungeon_turn_left(u3_dungeon_state *state)
     return result;
 }
 
+u3_dungeon_result u3_dungeon_pass(u3_dungeon_state *state)
+{
+    (void)state;
+    /* Legacy reference: Sources/UltimaDngn.c dPass, $8DE6. */
+    return u3_dungeon_make_result(23);
+}
+
 u3_dungeon_result u3_dungeon_descend(u3_dungeon_state *state)
 {
     /* Legacy reference: Sources/UltimaDngn.c dDescend, $8F0C. */
@@ -402,6 +409,44 @@ uint8_t u3_dungeon_decay_light(uint8_t light)
     if (light > 0)
         light--;
     return light;
+}
+
+u3_dungeon_post_turn_result u3_dungeon_post_turn(u3_dungeon_post_turn_input input)
+{
+    u3_dungeon_post_turn_result result;
+    uint8_t monster_value;
+
+    memset(&result, 0, sizeof(result));
+    result.handled = 1;
+    result.party_age_requested = 1;
+    result.status_refresh_requested = 1;
+    result.light_before = input.light;
+    result.light_after = u3_dungeon_decay_light(input.light);
+    result.light_decremented = (uint8_t)(result.light_after != result.light_before);
+    result.current_tile = input.current_tile;
+
+    if (input.level >= U3_DUNGEON_LEVEL_COUNT)
+        return result;
+    if (input.party_size == 0 || input.living_party_members == 0)
+        return result;
+    if (input.current_tile != 0)
+        return result;
+
+    /* Legacy reference: Sources/UltimaDngn.c dungeonmech, $8FC2. */
+    if (input.encounter_roll < 128)
+        return result;
+
+    monster_value = (uint8_t)input.monster_roll;
+    if (monster_value > 6)
+        monster_value = 6;
+    monster_value = (uint8_t)(monster_value + 0x18);
+
+    result.encounter_requested = 1;
+    result.monster_table_value = monster_value;
+    result.monster_type = (uint8_t)(monster_value * 2);
+    result.marker_tile = U3_DUNGEON_ENCOUNTER_MARKER_TILE;
+    result.combat_screen_resource_id = U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID;
+    return result;
 }
 
 static u3_render_frame u3_dungeon_make_view_frame_with_depth(const uint8_t *dungeon,

@@ -247,6 +247,58 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertFalse(adapter.moveDungeonSession(&dungeon, command: UInt16(UInt8(ascii: "E")), result: &result))
     }
 
+    func testApplyDungeonPostTurnDecaysLightWithoutEncounter() throws {
+        let adapter = ShellResourceAdapter()
+        let document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(var dungeon) = loadResult else {
+            return XCTFail("Expected dungeon session")
+        }
+        dungeon.descriptor.light = UInt8(U3_DUNGEON_LIGHT_FULL)
+
+        let result = adapter.applyDungeonPostTurn(
+            &dungeon,
+            documentData: document,
+            encounterRoll: 0,
+            monsterRoll: 0
+        )
+
+        XCTAssertEqual(result.light_before, UInt8(U3_DUNGEON_LIGHT_FULL))
+        XCTAssertEqual(result.light_after, UInt8(U3_DUNGEON_LIGHT_FULL - 1))
+        XCTAssertEqual(result.light_decremented, 1)
+        XCTAssertEqual(result.encounter_requested, 0)
+        XCTAssertEqual(dungeon.descriptor.light, UInt8(U3_DUNGEON_LIGHT_FULL - 1))
+    }
+
+    func testApplyDungeonPostTurnReportsEncounterMetadata() throws {
+        let adapter = ShellResourceAdapter()
+        let document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(var dungeon) = loadResult else {
+            return XCTFail("Expected dungeon session")
+        }
+        dungeon = dungeonSessionOnFirstFloorTile(dungeon)
+
+        let result = adapter.applyDungeonPostTurn(
+            &dungeon,
+            documentData: document,
+            encounterRoll: 128,
+            monsterRoll: 2
+        )
+
+        XCTAssertEqual(result.encounter_requested, 1)
+        XCTAssertEqual(result.monster_table_value, 0x1A)
+        XCTAssertEqual(result.monster_type, 0x34)
+        XCTAssertEqual(result.marker_tile, UInt8(U3_DUNGEON_ENCOUNTER_MARKER_TILE))
+        XCTAssertEqual(result.combat_screen_resource_id, UInt16(U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID))
+    }
+
     func testMoveDungeonSessionValidatesShapeAndMapBoundsBeforeNavigation() {
         let adapter = ShellResourceAdapter()
         let loadResult = adapter.loadLocationSession(
@@ -355,5 +407,22 @@ final class ShellResourceAdapterTests: XCTestCase {
                 }
             }
         }
+    }
+
+    private func dungeonSessionOnFirstFloorTile(_ session: ShellLocationSession) -> ShellLocationSession {
+        var session = session
+        for y in UInt8(0)..<UInt8(U3_DUNGEON_HEIGHT) {
+            for x in UInt8(0)..<UInt8(U3_DUNGEON_WIDTH) {
+                let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+                    (Int(y) * Int(U3_DUNGEON_WIDTH)) +
+                    Int(x)
+                if session.mapData[offset] == 0 {
+                    session.descriptor.x = x
+                    session.descriptor.y = y
+                    return session
+                }
+            }
+        }
+        return session
     }
 }
