@@ -207,6 +207,95 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 1")
     }
 
+    func testMoveDungeonSessionMapsCommandsAndRefreshesFrame() {
+        let adapter = ShellResourceAdapter()
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(var dungeon) = loadResult else {
+            return XCTFail("Expected dungeon session")
+        }
+        var result = u3_dungeon_result()
+
+        XCTAssertTrue(adapter.moveDungeonSession(&dungeon, command: 4, result: &result))
+        XCTAssertTrue(result.turned)
+        XCTAssertTrue(result.needs_redraw)
+        XCTAssertEqual(dungeon.descriptor.heading, 2)
+        XCTAssertEqual(dungeon.status, "Dungeon OK MAPS 412 level 0 pos 1,1 heading 2")
+        XCTAssertGreaterThan(dungeon.frame.command_count, 2)
+
+        XCTAssertTrue(adapter.moveDungeonSession(&dungeon, command: UInt16(UInt8(ascii: "D")), result: &result))
+        XCTAssertTrue(result.invalid)
+        XCTAssertEqual(dungeon.descriptor.dungeon_level, 0)
+
+        XCTAssertFalse(adapter.moveDungeonSession(&dungeon, command: UInt16(UInt8(ascii: "E")), result: &result))
+    }
+
+    func testMoveDungeonSessionValidatesShapeAndMapBoundsBeforeNavigation() {
+        let adapter = ShellResourceAdapter()
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(let dungeon) = loadResult else {
+            return XCTFail("Expected dungeon session")
+        }
+        var truncated = ShellLocationSession(
+            descriptor: dungeon.descriptor,
+            mapData: Data(dungeon.mapData.prefix(16)),
+            monsterData: nil,
+            talkData: dungeon.talkData,
+            frame: dungeon.frame
+        )
+        var outOfBounds = dungeon
+        outOfBounds.descriptor.dungeon_level = UInt8(U3_DUNGEON_LEVEL_COUNT)
+        var result = u3_dungeon_result()
+
+        XCTAssertFalse(adapter.moveDungeonSession(&truncated, command: 4, result: &result))
+        XCTAssertFalse(adapter.moveDungeonSession(&outOfBounds, command: 4, result: &result))
+    }
+
+    func testMoveDungeonSessionSupportsValidLevelChangesWithoutExiting() {
+        let adapter = ShellResourceAdapter()
+        var descriptor = u3_location_session()
+        descriptor.active = 1
+        descriptor.destination_kind = UInt8(U3_LOCATION_KIND_DUNGEON)
+        descriptor.location_index = UInt8(U3_LOCATION_DUNGEON_FIXTURE_INDEX)
+        descriptor.resource_id = UInt16(U3_LOCATION_DUNGEON_FIXTURE_RESOURCE_ID)
+        descriptor.map_shape = UInt8(U3_LOCATION_MAP_SHAPE_DUNGEON)
+        descriptor.map_size = UInt16(U3_DUNGEON_WIDTH)
+        descriptor.map_length = UInt32(U3_LOCATION_DUNGEON_MAP_LENGTH)
+        descriptor.talk_length = UInt32(U3_LOCATION_TALK_LENGTH)
+        descriptor.x = 5
+        descriptor.y = 5
+        descriptor.heading = 1
+        descriptor.dungeon_level = 0
+        var mapData = Data(count: Int(U3_LOCATION_DUNGEON_MAP_LENGTH))
+        mapData[(5 * Int(U3_DUNGEON_WIDTH)) + 5] = UInt8(U3_DUNGEON_TILE_DOWN_LADDER)
+        mapData[(Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) + (5 * Int(U3_DUNGEON_WIDTH)) + 5] = UInt8(U3_DUNGEON_TILE_UP_LADDER)
+        var session = ShellLocationSession(
+            descriptor: descriptor,
+            mapData: mapData,
+            monsterData: nil,
+            talkData: Data(count: Int(U3_LOCATION_TALK_LENGTH)),
+            frame: u3_render_make_synthetic_tile_frame()
+        )
+        var result = u3_dungeon_result()
+
+        XCTAssertTrue(adapter.moveDungeonSession(&session, command: UInt16(UInt8(ascii: "D")), result: &result))
+        XCTAssertTrue(result.level_changed)
+        XCTAssertTrue(result.needs_redraw)
+        XCTAssertFalse(result.exited)
+        XCTAssertEqual(session.descriptor.dungeon_level, 1)
+
+        XCTAssertTrue(adapter.moveDungeonSession(&session, command: UInt16(UInt8(ascii: "K")), result: &result))
+        XCTAssertTrue(result.level_changed)
+        XCTAssertTrue(result.needs_redraw)
+        XCTAssertFalse(result.exited)
+        XCTAssertEqual(session.descriptor.dungeon_level, 0)
+    }
+
     func testLoadLocationSessionRejectsInvalidRequestWithoutProducingSession() {
         let adapter = ShellResourceAdapter()
         var request = makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_TOWN), index: 2, x: 1, y: 32, heading: 2)

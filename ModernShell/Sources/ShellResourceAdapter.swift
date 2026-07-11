@@ -460,6 +460,59 @@ final class ShellResourceAdapter {
         return moved
     }
 
+    func moveDungeonSession(
+        _ session: inout ShellLocationSession,
+        command: UInt16,
+        result: inout u3_dungeon_result
+    ) -> Bool {
+        guard Self.validDungeonSessionForMovement(session) else {
+            return false
+        }
+
+        var dungeonBytes = Array(session.mapData)
+        let handled = dungeonBytes.withUnsafeMutableBufferPointer { dungeonBuffer in
+            guard let dungeonBaseAddress = dungeonBuffer.baseAddress else {
+                return false
+            }
+            var state = u3_dungeon_state(
+                dungeon: dungeonBaseAddress,
+                x: Int16(session.descriptor.x),
+                y: Int16(session.descriptor.y),
+                heading: Int16(session.descriptor.heading),
+                level: Int16(session.descriptor.dungeon_level),
+                exit_dungeon: false
+            )
+
+            switch Self.normalizedDungeonCommand(command) {
+            case UInt16(U3_OVERWORLD_COMMAND_NORTH):
+                result = u3_dungeon_forward(&state)
+            case UInt16(U3_OVERWORLD_COMMAND_SOUTH):
+                result = u3_dungeon_retreat(&state)
+            case UInt16(U3_OVERWORLD_COMMAND_WEST):
+                result = u3_dungeon_turn_left(&state)
+            case UInt16(U3_OVERWORLD_COMMAND_EAST):
+                result = u3_dungeon_turn_right(&state)
+            case UInt16(UInt8(ascii: "D")):
+                result = u3_dungeon_descend(&state)
+            case UInt16(UInt8(ascii: "K")):
+                result = u3_dungeon_climb(&state)
+            default:
+                return false
+            }
+
+            session.descriptor.x = UInt8(state.x)
+            session.descriptor.y = UInt8(state.y)
+            session.descriptor.heading = UInt8(state.heading)
+            session.descriptor.dungeon_level = UInt8(state.level)
+            return true
+        }
+
+        if handled && result.needs_redraw {
+            session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
+        }
+        return handled
+    }
+
     func talkLocationSession(
         _ session: ShellLocationSession,
         direction: UInt16,
@@ -555,6 +608,26 @@ final class ShellResourceAdapter {
             }
             return u3_location_make_view_frame(&descriptor, mapBaseAddress, UInt32(mapData.count))
         }
+    }
+
+    private static func normalizedDungeonCommand(_ command: UInt16) -> UInt16 {
+        if command >= UInt16(UInt8(ascii: "a")) && command <= UInt16(UInt8(ascii: "z")) {
+            return command - 32
+        }
+        return command
+    }
+
+    private static func validDungeonSessionForMovement(_ session: ShellLocationSession) -> Bool {
+        session.descriptor.active != 0 &&
+            session.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON &&
+            session.descriptor.map_shape == U3_LOCATION_MAP_SHAPE_DUNGEON &&
+            session.descriptor.map_size == U3_DUNGEON_WIDTH &&
+            session.descriptor.map_length == U3_LOCATION_DUNGEON_MAP_LENGTH &&
+            session.mapData.count == Int(U3_LOCATION_DUNGEON_MAP_LENGTH) &&
+            session.descriptor.x < U3_DUNGEON_WIDTH &&
+            session.descriptor.y < U3_DUNGEON_HEIGHT &&
+            session.descriptor.heading < 4 &&
+            session.descriptor.dungeon_level < U3_DUNGEON_LEVEL_COUNT
     }
 
     private static func hasValidOverworldMapShape(_ mapData: Data) -> Bool {

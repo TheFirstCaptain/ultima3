@@ -215,11 +215,21 @@ uint8_t u3_location_restore_party(
     uint32_t party_length,
     const u3_location_session *session)
 {
+    uint8_t expected_party_mode;
+
     if (party == 0 || party_length <= U3_OVERWORLD_PARTY_Y_OFFSET ||
         session == 0 || session->active == 0 ||
-        session->destination_kind != U3_LOCATION_KIND_TOWN ||
-        session->resource_id != u3_location_resource_id_for_index(session->location_index) ||
-        party[U3_LOCATION_PARTY_MODE_OFFSET] != U3_LOCATION_PARTY_MODE_TOWN)
+        session->resource_id != u3_location_resource_id_for_index(session->location_index))
+        return 0;
+
+    if (session->destination_kind == U3_LOCATION_KIND_TOWN)
+        expected_party_mode = U3_LOCATION_PARTY_MODE_TOWN;
+    else if (session->destination_kind == U3_LOCATION_KIND_DUNGEON)
+        expected_party_mode = U3_LOCATION_PARTY_MODE_DUNGEON;
+    else
+        return 0;
+
+    if (party[U3_LOCATION_PARTY_MODE_OFFSET] != expected_party_mode)
         return 0;
 
     party[U3_LOCATION_PARTY_MODE_OFFSET] = U3_LOCATION_PARTY_MODE_SOSARIA;

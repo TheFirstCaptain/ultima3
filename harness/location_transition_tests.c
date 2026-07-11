@@ -464,6 +464,7 @@ static void test_dungeon_entry_sets_mode_and_turn_without_overwriting_return_pos
     uint8_t party[64] = {0};
     u3_location_transition_result request =
         make_request(U3_LOCATION_KIND_DUNGEON, 12, 1, 1, 1);
+    u3_location_session session;
 
     party[U3_OVERWORLD_PARTY_SIZE_OFFSET] = 4;
     party[U3_OVERWORLD_PARTY_X_OFFSET] = 46;
@@ -475,6 +476,20 @@ static void test_dungeon_entry_sets_mode_and_turn_without_overwriting_return_pos
     ASSERT_EQ_INT(19, party[U3_OVERWORLD_PARTY_Y_OFFSET]);
     ASSERT_TRUE(request.turn_applied);
     ASSERT_EQ_INT(4, (int)request.move_counter_after);
+
+    memset(&session, 0, sizeof(session));
+    session.active = 1;
+    session.destination_kind = U3_LOCATION_KIND_DUNGEON;
+    session.location_index = 12;
+    session.resource_id = 412;
+    session.return_x = 46;
+    session.return_y = 19;
+    ASSERT_TRUE(u3_location_restore_party(party, sizeof(party), &session));
+    ASSERT_EQ_INT(U3_LOCATION_PARTY_MODE_SOSARIA,
+                  party[U3_LOCATION_PARTY_MODE_OFFSET]);
+    ASSERT_EQ_INT(46, party[U3_OVERWORLD_PARTY_X_OFFSET]);
+    ASSERT_EQ_INT(19, party[U3_OVERWORLD_PARTY_Y_OFFSET]);
+    ASSERT_EQ_INT(4, (int)u3_overworld_read_party_move_counter(party, sizeof(party)));
 }
 
 int main(void)

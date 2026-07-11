@@ -5,6 +5,7 @@ import Ultima3Core
 final class ShellTickSmokeTests: XCTestCase {
     private let smokeGridWidth = 11
     private let partyTileValue: UInt16 = 0xff
+    private let moveNorthCommand: UInt16 = 1
     private let moveWestCommand: UInt16 = 3
     private let moveEastCommand: UInt16 = 4
     private var temporaryDirectory: URL!
@@ -300,15 +301,112 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitOverworldCommand(moveEastCommand)
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Location MAPS 412 command East deferred")
+        XCTAssertEqual(state.lastCommand, "Dungeon turn Right pos 1,1 heading 2 level 0 moves 8 | Audio Sound Step")
         state.refreshLocationStatus()
         XCTAssertEqual(state.lastCommand, "Location refreshed")
-        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1"))
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 2"))
 
         state.saveGame()
         XCTAssertEqual(state.lastCommand, "Save rejected")
         XCTAssertEqual(state.saveStatus, "Save unavailable outside Sosaria")
         XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testDungeonCommandsConsumeTurnsAndReportBlockedOrInvalidResults() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "D"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Dungeon invalid Descend pos 1,1 heading 1 level 0 moves 8")
+
+        var blockedCommand: String?
+        for _ in 0..<20 {
+            state.submitOverworldCommand(moveNorthCommand)
+            state.runTick()
+            if state.lastCommand.hasPrefix("Dungeon blocked Forward ") {
+                blockedCommand = state.lastCommand
+                break
+            }
+        }
+
+        XCTAssertNotNil(blockedCommand)
+        XCTAssertTrue(blockedCommand?.contains("Audio Sound Bump") == true)
+        XCTAssertTrue(blockedCommand?.contains(" moves ") == true)
+    }
+
+    func testFailedDungeonExitRetainsDungeonSessionAndDocument() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            locationTransitionAdapter: RejectingLocationTransitionAdapter(rejectExit: true)
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Location transition failed")
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1"))
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+    }
+
+    func testDungeonKlimbRestoresExactSosariaSessionAndCanSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Returned to Sosaria 19,57 moves 8 | Audio Sound Step")
+        XCTAssertTrue(state.resourceStatus.contains("Overworld OK MAPS 419 pos 19,57"))
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertEqual(
+            state.lastCommand,
+            "Entered dungeon index 12 MAPS 412 return 19,57 level 0 start 1,1 heading 1 moves 12"
+        )
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Returned to Sosaria 19,57 moves 16 | Audio Sound Step")
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.location, 0)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.x, 19)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.y, 57)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 16)
     }
 
     func testFailedDungeonEntryRetainsOutdoorDocumentAndFrame() throws {

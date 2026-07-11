@@ -727,6 +727,10 @@ final class ShellSmokeState: ObservableObject {
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
             if var locationSession = activeLocationSession {
+                if locationSession.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON {
+                    return consumeDungeonInput(event, session: &locationSession)
+                }
+
                 if awaitingTalkDirection &&
                     locationSession.descriptor.destination_kind == U3_LOCATION_KIND_TOWN {
                     awaitingTalkDirection = false
@@ -837,6 +841,85 @@ final class ShellSmokeState: ObservableObject {
         }
 
         return inputAdapter.describe(event)
+    }
+
+    private func consumeDungeonInput(_ event: u3_input_event, session: inout ShellLocationSession) -> String {
+        var dungeonResult = u3_dungeon_result()
+        guard resourceAdapter.moveDungeonSession(
+            &session,
+            command: event.command,
+            result: &dungeonResult
+        ) else {
+            return "Dungeon MAPS \(session.descriptor.resource_id) command \(inputAdapter.describeKey(event.command)) deferred"
+        }
+
+        var locationResult = makeLocationResult(session: session, dungeonResult: dungeonResult)
+        guard applyLocationMoveTransaction(
+            session: session,
+            result: &locationResult
+        ) else {
+            return "Location transition failed"
+        }
+
+        if dungeonResult.blocked {
+            _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_BUMP))
+        } else if dungeonResult.moved || dungeonResult.turned || dungeonResult.level_changed {
+            _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_STEP))
+        }
+
+        if dungeonResult.exited {
+            return "Returned to Sosaria \(overworldState.x),\(overworldState.y)\(describeLocationTurnDelta(locationResult))"
+        }
+
+        activeLocationSession = session
+        if dungeonResult.needs_redraw {
+            renderFrame = session.frame
+            let locations = locationProvider.snapshot()
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: session.status
+            )
+        }
+
+        if dungeonResult.blocked {
+            return "Dungeon blocked \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+        }
+        if dungeonResult.invalid {
+            return "Dungeon invalid \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+        }
+        if dungeonResult.level_changed {
+            return "Dungeon level \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+        }
+        if dungeonResult.turned {
+            return "Dungeon turn \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+        }
+        if dungeonResult.moved {
+            return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+        }
+        return "Dungeon command \(describeDungeonCommand(event.command))\(describeLocationTurnDelta(locationResult))"
+    }
+
+    private func makeLocationResult(
+        session: ShellLocationSession,
+        dungeonResult: u3_dungeon_result
+    ) -> u3_location_move_result {
+        var result = u3_location_move_result()
+        result.handled = 1
+        result.moved = dungeonResult.moved ? 1 : 0
+        result.blocked = (dungeonResult.blocked || dungeonResult.invalid) ? 1 : 0
+        result.exit_requested = dungeonResult.exited ? 1 : 0
+        result.x = session.descriptor.x
+        result.y = session.descriptor.y
+        result.redraw = dungeonResult.needs_redraw ? 1 : 0
+        if dungeonResult.exited {
+            result.status = UInt8(U3_LOCATION_MOVE_STATUS_EXIT_REQUESTED)
+        } else if dungeonResult.blocked || dungeonResult.invalid {
+            result.status = UInt8(U3_LOCATION_MOVE_STATUS_BLOCKED)
+        } else {
+            result.status = UInt8(U3_LOCATION_MOVE_STATUS_MOVED)
+        }
+        return result
     }
 
     private func activateLocationSession(request: u3_location_transition_result) -> String {
@@ -1080,6 +1163,36 @@ final class ShellSmokeState: ObservableObject {
         }
 
         return " moves \(result.move_counter_after)"
+    }
+
+    private func describeDungeonCommand(_ command: UInt16) -> String {
+        let normalizedCommand: UInt16
+        if command >= UInt16(UInt8(ascii: "a")) && command <= UInt16(UInt8(ascii: "z")) {
+            normalizedCommand = command - 32
+        } else {
+            normalizedCommand = command
+        }
+
+        switch Int32(normalizedCommand) {
+        case U3_OVERWORLD_COMMAND_NORTH:
+            return "Forward"
+        case U3_OVERWORLD_COMMAND_SOUTH:
+            return "Retreat"
+        case U3_OVERWORLD_COMMAND_WEST:
+            return "Left"
+        case U3_OVERWORLD_COMMAND_EAST:
+            return "Right"
+        case Int32(UInt8(ascii: "D")):
+            return "Descend"
+        case Int32(UInt8(ascii: "K")):
+            return "Klimb"
+        default:
+            return inputAdapter.describeKey(command)
+        }
+    }
+
+    private func describeDungeonPosition(_ session: ShellLocationSession) -> String {
+        "pos \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) level \(session.descriptor.dungeon_level)"
     }
 
     private static func describeResourceStatus(locations: ShellLocationSnapshot, validation: String, renderStatus: String) -> String {
