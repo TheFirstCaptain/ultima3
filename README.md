@@ -75,7 +75,7 @@ The modern shell currently has adapter-backed paths for rendering, input, audio,
 
 The modern smoke new-game builder seeds a small torch count onto active occupied party members when the source template has none, so dungeon light can be manually exercised before shop and equipment flows exist.
 
-The next proposed backlog item is dungeon interactive tile flows. See `F-047` in the feature tracker for the current proposed scope.
+The next proposed backlog item is dungeon interactive tile flows, followed by the first combat-entry and combat-loop suite. See `F-047` through `F-052` in the feature tracker for the current proposed scope.
 
 ## App Shell Boundary
 
