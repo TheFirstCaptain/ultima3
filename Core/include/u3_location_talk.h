@@ -41,5 +41,10 @@ uint8_t u3_location_talk(
     uint32_t talk_record_length,
     uint16_t direction,
     u3_location_talk_result *result);
+uint8_t u3_location_decode_talk_entry(
+    const uint8_t *talk_record,
+    uint32_t talk_record_length,
+    uint8_t talk_index,
+    u3_location_talk_result *result);
 
 #endif

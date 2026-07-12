@@ -556,6 +556,48 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(activeRosterTorchCount(rosterID: 1, in: updatedDocument), activeRosterTorchCount(rosterID: 1, in: savedDocument))
     }
 
+    func testDungeonSpecialGremlinMutationPersistsAfterReturnButTileClearingIsTransient() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        for rosterID in UInt8(1)...UInt8(4) {
+            XCTAssertTrue(setActiveRosterFood(rosterID: rosterID, hundreds: 1, remainder: 50, in: &document))
+        }
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_GREMLINS)))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+
+        XCTAssertTrue(state.lastCommand.contains("special gremlins roster "))
+        XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
+        XCTAssertTrue(state.hasUnsavedChanges)
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_UP_LADDER)))
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        let foodValues = (UInt8(1)...UInt8(4)).compactMap { activeRosterFood(rosterID: $0, in: updatedDocument) }
+        XCTAssertEqual(foodValues.count, 4)
+        XCTAssertTrue(foodValues.contains(50))
+
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        reloadedState.loadGame()
+        reloadedState.submitKeyboard(UInt8(ascii: "E"))
+        reloadedState.runTick()
+        XCTAssertEqual(reloadedState.debugCurrentDungeonTile(), UInt8(U3_DUNGEON_TILE_UP_LADDER))
+    }
+
     func testDungeonKlimbRestoresExactSosariaSessionAndCanSave() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
@@ -976,6 +1018,13 @@ final class ShellTickSmokeTests: XCTestCase {
         setActiveRosterByte(rosterID: rosterID, offset: UInt8(U3_PARTY_ROSTER_STATUS_OFFSET), value: status, in: &documentData)
     }
 
+    private func setActiveRosterFood(rosterID: UInt8, hundreds: UInt8, remainder: UInt8, in documentData: inout Data) -> Bool {
+        guard setActiveRosterByte(rosterID: rosterID, offset: 32, value: hundreds, in: &documentData) else {
+            return false
+        }
+        return setActiveRosterByte(rosterID: rosterID, offset: 33, value: remainder, in: &documentData)
+    }
+
     private func setActiveRosterByte(rosterID: UInt8, offset: UInt8, value: UInt8, in documentData: inout Data) -> Bool {
         guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
             return false
@@ -1019,6 +1068,29 @@ final class ShellTickSmokeTests: XCTestCase {
             }
 
             return roster[(Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH) + Int(U3_PARTY_ROSTER_TORCH_OFFSET)]
+        }
+    }
+
+    private func activeRosterFood(rosterID: UInt8, in documentData: Data) -> UInt16? {
+        guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+            return nil
+        }
+        return documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+
+            var document = u3_save_document()
+            var record = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, 0x524F5354, Int16(U3_SAVE_ID_ROSTER), &record) != 0,
+                  record.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = record.data else {
+                return nil
+            }
+
+            let offset = (Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH)
+            return UInt16(roster[offset + 32]) * 100 + UInt16(roster[offset + 33])
         }
     }
 

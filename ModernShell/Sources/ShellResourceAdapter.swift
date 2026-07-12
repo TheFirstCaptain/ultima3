@@ -14,7 +14,7 @@ struct ShellOverworldSmokeResult {
 
 struct ShellLocationSession {
     var descriptor: u3_location_session
-    let mapData: Data
+    var mapData: Data
     let monsterData: Data?
     let talkData: Data
     var frame: u3_render_frame
@@ -30,6 +30,13 @@ struct ShellLocationSession {
 enum ShellLocationSessionLoadResult {
     case success(ShellLocationSession)
     case failure(String)
+}
+
+struct ShellDungeonSpecialEffectResult {
+    var effect: u3_dungeon_special_effect_result
+    let documentMutated: Bool
+    let sessionMutated: Bool
+    let message: String?
 }
 
 final class ShellResourceAdapter {
@@ -598,6 +605,98 @@ final class ShellResourceAdapter {
         return result
     }
 
+    func applyDungeonSpecialEffect(
+        _ session: inout ShellLocationSession,
+        documentData: inout Data?,
+        disarmRoll: UInt16,
+        gremlinRoll: UInt16,
+        trapDamageRoll: UInt16
+    ) -> ShellDungeonSpecialEffectResult {
+        var effect = u3_dungeon_special_effect_result()
+        guard Self.validDungeonSessionForMovement(session) else {
+            effect.status = UInt8(U3_DUNGEON_SPECIAL_STATUS_INVALID_INPUT)
+            return ShellDungeonSpecialEffectResult(effect: effect, documentMutated: false, sessionMutated: false, message: nil)
+        }
+
+        let tile = dungeonTile(session: session, x: session.descriptor.x, y: session.descriptor.y)
+        let input = u3_dungeon_special_effect_input(
+            current_tile: tile,
+            level: session.descriptor.dungeon_level,
+            light: session.descriptor.light,
+            disarm_roll: disarmRoll,
+            gremlin_roll: gremlinRoll,
+            trap_damage_roll: trapDamageRoll
+        )
+        var documentMutated = false
+        if var currentDocument = documentData {
+            let documentLength = currentDocument.count
+            effect = currentDocument.withUnsafeMutableBytes { documentBuffer in
+                guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    var invalid = u3_dungeon_special_effect_result()
+                    invalid.current_tile = tile
+                    invalid.status = UInt8(U3_DUNGEON_SPECIAL_STATUS_INVALID_INPUT)
+                    return invalid
+                }
+
+                var document = u3_save_document()
+                var partyRecord = u3_save_record()
+                var rosterRecord = u3_save_record()
+                guard u3_save_open(documentBaseAddress, documentLength, &document) != 0,
+                      u3_save_find_record(&document, fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                      u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                      partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                      rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                      let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self),
+                      let roster = UnsafeMutableRawPointer(mutating: rosterRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                    var invalid = u3_dungeon_special_effect_result()
+                    invalid.handled = tile == 0 ? 0 : 1
+                    invalid.current_tile = tile
+                    invalid.status = UInt8(U3_DUNGEON_SPECIAL_STATUS_INVALID_INPUT)
+                    return invalid
+                }
+
+                return u3_dungeon_apply_special_effect(
+                    input,
+                    party,
+                    partyRecord.length,
+                    roster,
+                    rosterRecord.length
+                )
+            }
+            switch Int32(effect.status) {
+            case U3_DUNGEON_SPECIAL_STATUS_TRAP_DAMAGE,
+                 U3_DUNGEON_SPECIAL_STATUS_GREMLINS:
+                documentData = currentDocument
+                documentMutated = true
+            default:
+                break
+            }
+        } else {
+            effect = u3_dungeon_apply_special_effect(input, nil, 0, nil, 0)
+        }
+
+        var sessionMutated = false
+        if effect.handled != 0 {
+            if effect.clear_current_tile != 0 {
+                sessionMutated = clearDungeonTile(session: &session, x: session.descriptor.x, y: session.descriptor.y) || sessionMutated
+            }
+            if effect.light_changed != 0 {
+                session.descriptor.light = effect.light_after
+                sessionMutated = true
+            }
+            if sessionMutated {
+                session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
+            }
+        }
+
+        return ShellDungeonSpecialEffectResult(
+            effect: effect,
+            documentMutated: documentMutated,
+            sessionMutated: sessionMutated,
+            message: dungeonSpecialEffectMessage(session: session, effect: effect)
+        )
+    }
+
     func refreshLocationSessionFrame(_ session: inout ShellLocationSession) {
         session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
     }
@@ -734,6 +833,51 @@ final class ShellResourceAdapter {
             return 0
         }
         return session.mapData[offset]
+    }
+
+    private func clearDungeonTile(session: inout ShellLocationSession, x: UInt8, y: UInt8) -> Bool {
+        let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+            (Int(y) * Int(U3_DUNGEON_WIDTH)) +
+            Int(x)
+        guard offset >= 0 && offset < session.mapData.count else {
+            return false
+        }
+        if session.mapData[offset] == 0 {
+            return false
+        }
+        session.mapData[offset] = 0
+        return true
+    }
+
+    private func dungeonSpecialEffectMessage(
+        session: ShellLocationSession,
+        effect: u3_dungeon_special_effect_result
+    ) -> String? {
+        guard effect.handled != 0 else {
+            return nil
+        }
+
+        switch Int32(effect.status) {
+        case U3_DUNGEON_SPECIAL_STATUS_WRITING:
+            var talkResult = u3_location_talk_result()
+            let decoded = session.talkData.withUnsafeBytes { talkBuffer in
+                guard let talkBaseAddress = talkBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    return false
+                }
+                return u3_location_decode_talk_entry(
+                    talkBaseAddress,
+                    UInt32(session.talkData.count),
+                    session.descriptor.dungeon_level + 1,
+                    &talkResult
+                ) != 0
+            }
+            guard decoded, let text = locationTalkMessage(&talkResult) else {
+                return "Writing: invalid entry \(session.descriptor.dungeon_level + 1)"
+            }
+            return "Writing: \(text)"
+        default:
+            return nil
+        }
     }
 
     private func dungeonPartyCounts(documentData: Data?) -> (partySize: UInt8, livingMembers: UInt8) {

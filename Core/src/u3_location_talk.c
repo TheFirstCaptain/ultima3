@@ -40,7 +40,7 @@ static uint8_t u3_location_talk_target(
     return 1;
 }
 
-static uint8_t u3_location_decode_talk(
+static uint8_t u3_location_decode_talk_entry_unchecked(
     const uint8_t *talk_record,
     uint32_t talk_record_length,
     uint8_t talk_index,
@@ -49,6 +49,7 @@ static uint8_t u3_location_decode_talk(
     uint32_t offset = 0;
     uint8_t entry = 0;
 
+    result->handled = 1;
     while (entry < talk_index) {
         while (offset < talk_record_length && talk_record[offset] != 0)
             offset++;
@@ -94,6 +95,22 @@ static uint8_t u3_location_decode_talk(
 
     result->status = U3_LOCATION_TALK_STATUS_MESSAGE;
     return 1;
+}
+
+uint8_t u3_location_decode_talk_entry(
+    const uint8_t *talk_record,
+    uint32_t talk_record_length,
+    uint8_t talk_index,
+    u3_location_talk_result *result)
+{
+    if (result == 0)
+        return 0;
+    memset(result, 0, sizeof(*result));
+    if (talk_record == 0 || talk_record_length != U3_LOCATION_TALK_LENGTH) {
+        result->status = U3_LOCATION_TALK_STATUS_INVALID_INPUT;
+        return 0;
+    }
+    return u3_location_decode_talk_entry_unchecked(talk_record, talk_record_length, talk_index, result);
 }
 
 uint8_t u3_location_talk(
@@ -142,7 +159,7 @@ uint8_t u3_location_talk(
             result->status = U3_LOCATION_TALK_STATUS_UNSUPPORTED;
             return 1;
         }
-        return u3_location_decode_talk(
+        return u3_location_decode_talk_entry_unchecked(
             talk_record,
             talk_record_length,
             result->talk_index,

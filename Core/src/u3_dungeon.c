@@ -3,6 +3,9 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "u3_audio.h"
+#include "u3_party.h"
+
 static const int8_t u3_dungeon_head_x[4] = {0, 1, 0, -1};
 static const int8_t u3_dungeon_head_y[4] = {-1, 0, 1, 0};
 static const int8_t u3_dungeon_left_x[4] = {-1, 0, 1, 0};
@@ -447,6 +450,253 @@ u3_dungeon_post_turn_result u3_dungeon_post_turn(u3_dungeon_post_turn_input inpu
     result.marker_tile = U3_DUNGEON_ENCOUNTER_MARKER_TILE;
     result.combat_screen_resource_id = U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID;
     return result;
+}
+
+static uint16_t u3_dungeon_read_u16(const uint8_t *bytes, uint32_t offset)
+{
+    return (uint16_t)(((uint16_t)bytes[offset] << 8) | bytes[offset + 1]);
+}
+
+static void u3_dungeon_write_u16(uint8_t *bytes, uint32_t offset, uint16_t value)
+{
+    bytes[offset] = (uint8_t)(value >> 8);
+    bytes[offset + 1] = (uint8_t)(value & 0xff);
+}
+
+static uint8_t u3_dungeon_roster_slot_occupied(const uint8_t *record)
+{
+    return record[0] > 22 ? 1 : 0;
+}
+
+static uint8_t u3_dungeon_roster_slot_living(const uint8_t *record)
+{
+    uint8_t status = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+
+    return (uint8_t)(status == 'G' || status == 'P');
+}
+
+static uint8_t *u3_dungeon_roster_record(uint8_t *roster, uint8_t roster_id)
+{
+    if (roster_id == 0 || roster_id > U3_PARTY_ROSTER_SLOT_COUNT)
+        return 0;
+    return roster + ((roster_id - 1) * U3_PARTY_ROSTER_RECORD_LENGTH);
+}
+
+static uint8_t u3_dungeon_valid_party_roster(uint8_t *party,
+                                             uint32_t party_length,
+                                             uint8_t *roster,
+                                             uint32_t roster_length)
+{
+    return (uint8_t)(party != 0 &&
+                     roster != 0 &&
+                     party_length == U3_SAVE_PARTY_LENGTH &&
+                     roster_length == U3_SAVE_ROSTER_LENGTH &&
+                     party[1] > 0 &&
+                     party[1] <= U3_PARTY_ACTIVE_SLOT_COUNT);
+}
+
+static uint8_t u3_dungeon_find_first_living(uint8_t *party,
+                                            uint8_t *roster,
+                                            uint8_t *active_slot,
+                                            uint8_t *roster_id,
+                                            uint8_t **record)
+{
+    uint8_t index;
+
+    for (index = 0; index < party[1]; index++) {
+        uint8_t candidate_id = party[6 + index];
+        uint8_t *candidate = u3_dungeon_roster_record(roster, candidate_id);
+
+        if (candidate == 0 ||
+            !u3_dungeon_roster_slot_occupied(candidate) ||
+            !u3_dungeon_roster_slot_living(candidate))
+            continue;
+
+        *active_slot = (uint8_t)(index + 1);
+        *roster_id = candidate_id;
+        *record = candidate;
+        return 1;
+    }
+    return 0;
+}
+
+static uint8_t u3_dungeon_find_rolled_living(uint8_t *party,
+                                             uint8_t *roster,
+                                             uint16_t roll,
+                                             uint8_t *active_slot,
+                                             uint8_t *roster_id,
+                                             uint8_t **record)
+{
+    uint8_t living_slots[U3_PARTY_ACTIVE_SLOT_COUNT];
+    uint8_t living_count = 0;
+    uint8_t index;
+    uint8_t selected;
+
+    for (index = 0; index < party[1]; index++) {
+        uint8_t candidate_id = party[6 + index];
+        uint8_t *candidate = u3_dungeon_roster_record(roster, candidate_id);
+
+        if (candidate == 0 ||
+            !u3_dungeon_roster_slot_occupied(candidate) ||
+            !u3_dungeon_roster_slot_living(candidate))
+            continue;
+        living_slots[living_count++] = index;
+    }
+
+    if (living_count == 0)
+        return 0;
+
+    selected = living_slots[roll % living_count];
+    *active_slot = (uint8_t)(selected + 1);
+    *roster_id = party[6 + selected];
+    *record = u3_dungeon_roster_record(roster, *roster_id);
+    return (uint8_t)(*record != 0);
+}
+
+static uint16_t u3_dungeon_food_value(const uint8_t *record)
+{
+    return (uint16_t)((record[32] * 100) + record[33]);
+}
+
+static uint8_t u3_dungeon_disarm_factor(const uint8_t *record)
+{
+    uint16_t factor = record[19];
+    uint8_t class_type = record[23];
+
+    if (class_type == 'T')
+        factor += 0x80;
+    if (class_type == 'B' || class_type == 'I' || class_type == 'R' || class_type == 'A')
+        factor += 0x40;
+    if (factor > 255)
+        factor = 255;
+    return (uint8_t)factor;
+}
+
+static uint8_t u3_dungeon_subtract_hp(uint8_t *record, uint16_t damage)
+{
+    uint16_t hp = u3_dungeon_read_u16(record, 26);
+
+    if (hp <= damage) {
+        record[26] = 0;
+        record[27] = 0;
+        record[U3_PARTY_ROSTER_STATUS_OFFSET] = 'D';
+        return (uint8_t)(hp > 0);
+    }
+    hp = (uint16_t)(hp - damage);
+    u3_dungeon_write_u16(record, 26, hp);
+    return 0;
+}
+
+static void u3_dungeon_apply_trap_damage(uint8_t *party,
+                                         uint8_t *roster,
+                                         uint16_t damage,
+                                         u3_dungeon_special_effect_result *result)
+{
+    uint8_t index;
+
+    for (index = 0; index < party[1]; index++) {
+        uint8_t roster_id = party[6 + index];
+        uint8_t *record = u3_dungeon_roster_record(roster, roster_id);
+
+        if (record == 0 ||
+            !u3_dungeon_roster_slot_occupied(record) ||
+            !u3_dungeon_roster_slot_living(record))
+            continue;
+        result->damaged_living_members++;
+        if (u3_dungeon_subtract_hp(record, damage))
+            result->killed_members++;
+    }
+}
+
+u3_dungeon_special_effect_result u3_dungeon_apply_special_effect(
+    u3_dungeon_special_effect_input input,
+    uint8_t *party,
+    uint32_t party_length,
+    uint8_t *roster,
+    uint32_t roster_length)
+{
+    u3_dungeon_special_effect_result result;
+    uint8_t active_slot = 0;
+    uint8_t roster_id = 0;
+    uint8_t *record = 0;
+
+    memset(&result, 0, sizeof(result));
+    result.current_tile = input.current_tile;
+    result.light_before = input.light;
+    result.light_after = input.light;
+
+    switch (input.current_tile) {
+    case 0:
+        return result;
+    case U3_DUNGEON_TILE_WIND:
+        result.handled = 1;
+        result.status = U3_DUNGEON_SPECIAL_STATUS_WIND;
+        result.light_after = 0;
+        result.light_changed = (uint8_t)(result.light_after != result.light_before);
+        result.message_id = 158;
+        return result;
+    case U3_DUNGEON_TILE_TRAP:
+        result.handled = 1;
+        result.status = U3_DUNGEON_SPECIAL_STATUS_INVALID_INPUT;
+        result.clear_current_tile = 1;
+        result.message_id = 159;
+        result.sound_id = U3_AUDIO_SOUND_STEP;
+        if (!u3_dungeon_valid_party_roster(party, party_length, roster, roster_length))
+            return result;
+        if (!u3_dungeon_find_first_living(party, roster, &active_slot, &roster_id, &record)) {
+            result.status = U3_DUNGEON_SPECIAL_STATUS_NO_ELIGIBLE_CHARACTER;
+            return result;
+        }
+        result.active_slot = active_slot;
+        result.roster_id = roster_id;
+        if ((uint8_t)input.disarm_roll > u3_dungeon_disarm_factor(record)) {
+            result.status = U3_DUNGEON_SPECIAL_STATUS_TRAP_DISARMED;
+            return result;
+        }
+        result.status = U3_DUNGEON_SPECIAL_STATUS_TRAP_DAMAGE;
+        result.message_id = 160;
+        result.sound_id = U3_AUDIO_SOUND_HIT;
+        result.damage_per_living_member = (uint16_t)((input.trap_damage_roll & 0x77) +
+                                                     ((input.level + 1) * 8));
+        u3_dungeon_apply_trap_damage(party, roster, result.damage_per_living_member, &result);
+        return result;
+    case U3_DUNGEON_TILE_GREMLINS:
+        result.handled = 1;
+        result.status = U3_DUNGEON_SPECIAL_STATUS_INVALID_INPUT;
+        result.clear_current_tile = 1;
+        result.message_id = 163;
+        result.sound_id = U3_AUDIO_SOUND_OUCH;
+        if (!u3_dungeon_valid_party_roster(party, party_length, roster, roster_length))
+            return result;
+        if (!u3_dungeon_find_rolled_living(party, roster, input.gremlin_roll, &active_slot, &roster_id, &record)) {
+            result.status = U3_DUNGEON_SPECIAL_STATUS_NO_ELIGIBLE_CHARACTER;
+            return result;
+        }
+        result.status = U3_DUNGEON_SPECIAL_STATUS_GREMLINS;
+        result.active_slot = active_slot;
+        result.roster_id = roster_id;
+        result.food_before = u3_dungeon_food_value(record);
+        if (record[32] > 0)
+            record[32]--;
+        else
+            record[32] = 0;
+        result.food_after = u3_dungeon_food_value(record);
+        return result;
+    case U3_DUNGEON_TILE_WRITING:
+        result.handled = 1;
+        result.status = U3_DUNGEON_SPECIAL_STATUS_WRITING;
+        result.message_id = 164;
+        return result;
+    case 1:
+    case 2:
+    case 5:
+    case 7:
+        result.handled = 1;
+        result.status = U3_DUNGEON_SPECIAL_STATUS_UNSUPPORTED;
+        return result;
+    default:
+        return result;
+    }
 }
 
 static u3_render_frame u3_dungeon_make_view_frame_with_depth(const uint8_t *dungeon,

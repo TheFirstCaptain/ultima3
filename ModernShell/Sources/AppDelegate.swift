@@ -877,6 +877,12 @@ final class ShellSmokeState: ObservableObject {
         }
 
         var postTurnResult = u3_dungeon_post_turn_result()
+        var specialEffectResult = ShellDungeonSpecialEffectResult(
+            effect: u3_dungeon_special_effect_result(),
+            documentMutated: false,
+            sessionMutated: false,
+            message: nil
+        )
         if !dungeonResult.exited {
             let rolls = dungeonRollProvider(session.descriptor.dungeon_level)
             postTurnResult = resourceAdapter.applyDungeonPostTurn(
@@ -885,8 +891,22 @@ final class ShellSmokeState: ObservableObject {
                 encounterRoll: rolls.encounter,
                 monsterRoll: rolls.monster
             )
+            var documentData = currentSaveDocument
+            specialEffectResult = resourceAdapter.applyDungeonSpecialEffect(
+                &session,
+                documentData: &documentData,
+                disarmRoll: UInt16.random(in: 0...255),
+                gremlinRoll: UInt16.random(in: 0...255),
+                trapDamageRoll: UInt16.random(in: 0...255)
+            )
+            if specialEffectResult.documentMutated {
+                currentSaveDocument = documentData
+                hasUnsavedChanges = true
+            }
         }
-        if dungeonResult.blocked {
+        if specialEffectResult.effect.sound_id != 0 {
+            _ = audioAdapter.enqueueSound(Int32(specialEffectResult.effect.sound_id))
+        } else if dungeonResult.blocked {
             _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_BUMP))
         } else if dungeonResult.moved || dungeonResult.turned || dungeonResult.level_changed {
             _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_STEP))
@@ -897,7 +917,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         activeLocationSession = session
-        if dungeonResult.needs_redraw || postTurnResult.light_decremented != 0 {
+        if dungeonResult.needs_redraw || postTurnResult.light_decremented != 0 || specialEffectResult.sessionMutated {
             renderFrame = session.frame
             let locations = locationProvider.snapshot()
             resourceStatus = Self.describeResourceStatus(
@@ -908,21 +928,21 @@ final class ShellSmokeState: ObservableObject {
         }
 
         if dungeonResult.blocked {
-            return "Dungeon blocked \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
+            return "Dungeon blocked \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
         }
         if dungeonResult.invalid {
-            return "Dungeon invalid \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
+            return "Dungeon invalid \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
         }
         if dungeonResult.level_changed {
-            return "Dungeon level \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
+            return "Dungeon level \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
         }
         if dungeonResult.turned {
-            return "Dungeon turn \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
+            return "Dungeon turn \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
         }
         if dungeonResult.moved {
-            return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
+            return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
         }
-        return "Dungeon command \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
+        return "Dungeon command \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
     }
 
     private func consumeIgniteCommand(session: inout ShellLocationSession) -> String {
@@ -1191,6 +1211,40 @@ final class ShellSmokeState: ObservableObject {
         lastCommand = "Party assembly cancelled"
     }
 
+#if DEBUG
+    func debugSetCurrentDungeonTile(_ tile: UInt8) -> Bool {
+        guard var session = activeLocationSession,
+              session.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
+            return false
+        }
+        let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+            (Int(session.descriptor.y) * Int(U3_DUNGEON_WIDTH)) +
+            Int(session.descriptor.x)
+        guard offset >= 0 && offset < session.mapData.count else {
+            return false
+        }
+        session.mapData[offset] = tile
+        resourceAdapter.refreshLocationSessionFrame(&session)
+        activeLocationSession = session
+        renderFrame = session.frame
+        return true
+    }
+
+    func debugCurrentDungeonTile() -> UInt8? {
+        guard let session = activeLocationSession,
+              session.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
+            return nil
+        }
+        let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+            (Int(session.descriptor.y) * Int(U3_DUNGEON_WIDTH)) +
+            Int(session.descriptor.x)
+        guard offset >= 0 && offset < session.mapData.count else {
+            return nil
+        }
+        return session.mapData[offset]
+    }
+#endif
+
     private func describeKey(_ command: UInt16) -> String {
         guard command >= 32 && command <= 126,
               let scalar = UnicodeScalar(Int(command)) else {
@@ -1251,6 +1305,35 @@ final class ShellSmokeState: ObservableObject {
             return " passive"
         }
         return " encounter monster \(result.monster_type) CONS \(result.combat_screen_resource_id) marker \(result.marker_tile)"
+    }
+
+    private func describeDungeonSpecialEffect(_ result: ShellDungeonSpecialEffectResult) -> String {
+        let effect = result.effect
+        guard effect.handled != 0, effect.current_tile != 0 else {
+            return ""
+        }
+
+        switch Int32(effect.status) {
+        case U3_DUNGEON_SPECIAL_STATUS_WIND:
+            return " special wind light \(effect.light_after)"
+        case U3_DUNGEON_SPECIAL_STATUS_TRAP_DISARMED:
+            return " special trap disarmed roster \(effect.roster_id)"
+        case U3_DUNGEON_SPECIAL_STATUS_TRAP_DAMAGE:
+            return " special trap damage \(effect.damage_per_living_member) hit \(effect.damaged_living_members) killed \(effect.killed_members)"
+        case U3_DUNGEON_SPECIAL_STATUS_GREMLINS:
+            return " special gremlins roster \(effect.roster_id) food \(effect.food_after)"
+        case U3_DUNGEON_SPECIAL_STATUS_WRITING:
+            if let message = result.message {
+                return " special \(message)"
+            }
+            return " special writing"
+        case U3_DUNGEON_SPECIAL_STATUS_NO_ELIGIBLE_CHARACTER:
+            return " special no eligible character"
+        case U3_DUNGEON_SPECIAL_STATUS_INVALID_INPUT:
+            return " special invalid"
+        default:
+            return " special unsupported tile \(effect.current_tile)"
+        }
     }
 
     private func describeIgniteFailure(_ result: u3_party_ignite_result) -> String {

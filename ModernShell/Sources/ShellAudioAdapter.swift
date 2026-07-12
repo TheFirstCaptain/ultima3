@@ -140,6 +140,10 @@ final class ShellAudioAdapter {
             return "Bump"
         case U3_AUDIO_SOUND_TORCH_IGNITE:
             return "TorchIgnite"
+        case U3_AUDIO_SOUND_HIT:
+            return "Hit"
+        case U3_AUDIO_SOUND_OUCH:
+            return "Ouch"
         case U3_AUDIO_SOUND_ERROR1:
             fallthrough
         default:

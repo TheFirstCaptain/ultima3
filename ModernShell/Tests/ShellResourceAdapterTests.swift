@@ -299,6 +299,98 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(result.combat_screen_resource_id, UInt16(U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID))
     }
 
+    func testApplyDungeonSpecialWindClearsLightAndRefreshesTransientFrame() throws {
+        let adapter = ShellResourceAdapter()
+        var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        var dungeon = try loadDungeonSession(adapter: adapter)
+        dungeon.descriptor.light = 7
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_WIND), in: &dungeon)
+
+        let result = adapter.applyDungeonSpecialEffect(
+            &dungeon,
+            documentData: &document,
+            disarmRoll: 0,
+            gremlinRoll: 0,
+            trapDamageRoll: 0
+        )
+
+        XCTAssertEqual(result.effect.status, UInt8(U3_DUNGEON_SPECIAL_STATUS_WIND))
+        XCTAssertEqual(dungeon.descriptor.light, 0)
+        XCTAssertTrue(result.sessionMutated)
+        XCTAssertFalse(result.documentMutated)
+        XCTAssertEqual(dungeon.frame.command_count, 2)
+    }
+
+    func testApplyDungeonSpecialTrapClearsTransientTileAndMutatesRosterOnFailure() throws {
+        let adapter = ShellResourceAdapter()
+        var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        var dungeon = try loadDungeonSession(adapter: adapter)
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_TRAP), in: &dungeon)
+
+        let result = adapter.applyDungeonSpecialEffect(
+            &dungeon,
+            documentData: &document,
+            disarmRoll: 0,
+            gremlinRoll: 0,
+            trapDamageRoll: 0x77
+        )
+
+        XCTAssertEqual(result.effect.status, UInt8(U3_DUNGEON_SPECIAL_STATUS_TRAP_DAMAGE))
+        XCTAssertEqual(result.effect.clear_current_tile, 1)
+        XCTAssertTrue(result.sessionMutated)
+        XCTAssertTrue(result.documentMutated)
+        XCTAssertEqual(currentDungeonTile(in: dungeon), 0)
+        let updatedDocument = try XCTUnwrap(document)
+        XCTAssertLessThan(rosterHitPoints(rosterID: 1, in: updatedDocument), 100)
+    }
+
+    func testApplyDungeonSpecialGremlinsMutatesFoodWithoutUnderflow() throws {
+        let adapter = ShellResourceAdapter()
+        var currentDocument = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setRosterFood(rosterID: 1, hundreds: 0, remainder: 50, in: &currentDocument))
+        var document: Data? = currentDocument
+        var dungeon = try loadDungeonSession(adapter: adapter)
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_GREMLINS), in: &dungeon)
+
+        let result = adapter.applyDungeonSpecialEffect(
+            &dungeon,
+            documentData: &document,
+            disarmRoll: 0,
+            gremlinRoll: 0,
+            trapDamageRoll: 0
+        )
+
+        XCTAssertEqual(result.effect.status, UInt8(U3_DUNGEON_SPECIAL_STATUS_GREMLINS))
+        XCTAssertEqual(result.effect.roster_id, 1)
+        XCTAssertEqual(result.effect.food_before, 50)
+        XCTAssertEqual(result.effect.food_after, 50)
+        XCTAssertTrue(result.documentMutated)
+        let updatedDocument = try XCTUnwrap(document)
+        XCTAssertEqual(rosterFood(rosterID: 1, in: updatedDocument), 50)
+        XCTAssertEqual(currentDungeonTile(in: dungeon), 0)
+    }
+
+    func testApplyDungeonSpecialWritingUsesBundledDungeonTalkEntry() throws {
+        let adapter = ShellResourceAdapter()
+        var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        var dungeon = try loadDungeonSession(adapter: adapter)
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_WRITING), in: &dungeon)
+
+        let result = adapter.applyDungeonSpecialEffect(
+            &dungeon,
+            documentData: &document,
+            disarmRoll: 0,
+            gremlinRoll: 0,
+            trapDamageRoll: 0
+        )
+
+        XCTAssertEqual(result.effect.status, UInt8(U3_DUNGEON_SPECIAL_STATUS_WRITING))
+        XCTAssertEqual(result.effect.message_id, 164)
+        XCTAssertTrue(result.message?.hasPrefix("Writing: ") == true)
+        XCTAssertFalse(result.documentMutated)
+        XCTAssertFalse(result.sessionMutated)
+    }
+
     func testMoveDungeonSessionValidatesShapeAndMapBoundsBeforeNavigation() {
         let adapter = ShellResourceAdapter()
         let loadResult = adapter.loadLocationSession(
@@ -395,6 +487,92 @@ final class ShellResourceAdapterTests: XCTestCase {
         request.initial_y = y
         request.initial_heading = heading
         return request
+    }
+
+    private func loadDungeonSession(adapter: ShellResourceAdapter) throws -> ShellLocationSession {
+        let result = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(let dungeon) = result else {
+            throw XCTSkip("Expected dungeon session")
+        }
+        return dungeon
+    }
+
+    private func setDungeonTile(_ tile: UInt8, in session: inout ShellLocationSession) {
+        let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+            (Int(session.descriptor.y) * Int(U3_DUNGEON_WIDTH)) +
+            Int(session.descriptor.x)
+        session.mapData[offset] = tile
+    }
+
+    private func currentDungeonTile(in session: ShellLocationSession) -> UInt8 {
+        let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+            (Int(session.descriptor.y) * Int(U3_DUNGEON_WIDTH)) +
+            Int(session.descriptor.x)
+        return session.mapData[offset]
+    }
+
+    private func rosterHitPoints(rosterID: UInt8, in documentData: Data) -> UInt16 {
+        guard let record = rosterRecord(rosterID: rosterID, in: documentData) else {
+            return 0
+        }
+        return (UInt16(record[26]) << 8) | UInt16(record[27])
+    }
+
+    private func rosterFood(rosterID: UInt8, in documentData: Data) -> UInt16 {
+        guard let record = rosterRecord(rosterID: rosterID, in: documentData) else {
+            return 0
+        }
+        return UInt16(record[32]) * 100 + UInt16(record[33])
+    }
+
+    private func setRosterFood(rosterID: UInt8, hundreds: UInt8, remainder: UInt8, in documentData: inout Data) -> Bool {
+        let offset = rosterPayloadOffset(in: documentData, rosterID: rosterID)
+        guard offset > 0, offset + Int(U3_PARTY_ROSTER_RECORD_LENGTH) <= documentData.count else {
+            return false
+        }
+        documentData[offset + 32] = hundreds
+        documentData[offset + 33] = remainder
+        return true
+    }
+
+    private func rosterRecord(rosterID: UInt8, in documentData: Data) -> [UInt8]? {
+        let offset = rosterPayloadOffset(in: documentData, rosterID: rosterID)
+        guard offset > 0, offset + Int(U3_PARTY_ROSTER_RECORD_LENGTH) <= documentData.count else {
+            return nil
+        }
+        return Array(documentData[offset..<(offset + Int(U3_PARTY_ROSTER_RECORD_LENGTH))])
+    }
+
+    private func rosterPayloadOffset(in documentData: Data, rosterID: UInt8) -> Int {
+        documentData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return 0
+            }
+            var document = u3_save_document()
+            var record = u3_save_record()
+            guard u3_save_open(baseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &record) != 0,
+                  record.length == U3_SAVE_ROSTER_LENGTH,
+                  let recordData = record.data,
+                  rosterID > 0,
+                  rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+                return 0
+            }
+            return baseAddress.distance(to: recordData) + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
+        }
+    }
+
+    private func fourCharacterCode(_ value: String) -> UInt32 {
+        var result: UInt32 = 0
+
+        for byte in value.utf8.prefix(4) {
+            result = (result << 8) | UInt32(byte)
+        }
+
+        return result
     }
 
     private func countCommands(in frame: u3_render_frame, value: Int) -> Int {
