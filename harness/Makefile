@@ -10,6 +10,7 @@ TESTS = \
 	$(BUILD_DIR)/combat_damage_tests \
 	$(BUILD_DIR)/combat_attack_tests \
 	$(BUILD_DIR)/combat_monster_action_tests \
+	$(BUILD_DIR)/combat_render_tests \
 	$(BUILD_DIR)/autocombat_targeting_tests \
 	$(BUILD_DIR)/dungeon_navigation_tests \
 	$(BUILD_DIR)/dungeon_render_tests \
@@ -53,6 +54,9 @@ $(BUILD_DIR)/combat_attack_tests: combat_attack_tests.c $(CORE_SRC)/u3_combat.c 
 
 $(BUILD_DIR)/combat_monster_action_tests: combat_monster_action_tests.c $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) combat_monster_action_tests.c $(CORE_SRC)/u3_combat.c -o $@
+
+$(BUILD_DIR)/combat_render_tests: combat_render_tests.c $(CORE_SRC)/u3_combat_render.c $(CORE_INCLUDE)/u3_combat_render.h $(CORE_SRC)/u3_render.c $(CORE_INCLUDE)/u3_render.h $(CORE_INCLUDE)/u3_combat.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) combat_render_tests.c $(CORE_SRC)/u3_combat_render.c $(CORE_SRC)/u3_render.c -o $@
 
 $(BUILD_DIR)/autocombat_targeting_tests: autocombat_targeting_tests.c $(CORE_SRC)/u3_autocombat.c $(CORE_INCLUDE)/u3_autocombat.h $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h $(CORE_SRC)/u3_map_math.c $(CORE_INCLUDE)/u3_map_math.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) autocombat_targeting_tests.c $(CORE_SRC)/u3_autocombat.c $(CORE_SRC)/u3_combat.c $(CORE_SRC)/u3_map_math.c -o $@

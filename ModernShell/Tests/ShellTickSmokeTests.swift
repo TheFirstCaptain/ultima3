@@ -374,6 +374,117 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(state.lastCommand, "Save rejected")
     }
 
+    func testDungeonEncounterEntersTransientCombatSessionAndRejectsSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Dungeon command Pass pos 1,1 heading 1 level 0 light 0 moves 8 entered combat CONS 402 monster 52 marker 64"
+        )
+        XCTAssertEqual(state.debugActiveCombatStatus(), "Combat OK CONS 402 monster 52 marker 64 party 4 active 1/2/3/4 terrain 121 monsters 1 characters 4 source dungeon MAPS 412")
+        XCTAssertEqual(state.debugActiveCombatSourceDungeonTile(), 0)
+        XCTAssertTrue(state.resourceStatus.contains("Combat OK CONS 402 monster 52 marker 64 party 4 active 1/2/3/4 terrain 121 monsters 1 characters 4 source dungeon MAPS 412"))
+        XCTAssertEqual(state.renderFrame.command_count, UInt16(U3_RENDER_TILE_COUNT + 2 + 1 + 4))
+        XCTAssertEqual(renderCommand(in: state.renderFrame, index: 123).value, UInt16(U3_COMBAT_RENDER_MONSTER_BASE))
+        XCTAssertEqual(renderCommand(in: state.renderFrame, index: 124).value, UInt16(U3_COMBAT_RENDER_PARTY_BASE))
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.submitKeyboard(UInt8(ascii: "A"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Combat CONS 402 command A deferred")
+
+        state.refreshLocationStatus()
+        XCTAssertEqual(state.lastCommand, "Combat refreshed")
+        XCTAssertTrue(state.resourceStatus.contains("Combat OK CONS 402"))
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(state.saveStatus, "Save unavailable outside Sosaria")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testFailedCombatEntryRetainsDungeonSessionAndDocument() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatSessionLoader: { _, _, _, _ in .failure("Injected combat failure") }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Dungeon command Pass pos 1,1 heading 1 level 0 light 0 moves 8 combat entry failed: Injected combat failure"
+        )
+        XCTAssertNil(state.debugActiveCombatStatus())
+        XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1 light 0"))
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testInvalidDungeonGetChestDoesNotConsumeTurnOrEnterCombat() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+
+        state.submitKeyboard(UInt8(ascii: "G"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "interaction invalid")
+        XCTAssertNil(state.debugActiveCombatStatus())
+        XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
+        XCTAssertFalse(state.lastCommand.contains("moves"))
+    }
+
     func testFailedDungeonExitRetainsDungeonSessionAndDocument() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
@@ -596,6 +707,150 @@ final class ShellTickSmokeTests: XCTestCase {
         reloadedState.submitKeyboard(UInt8(ascii: "E"))
         reloadedState.runTick()
         XCTAssertEqual(reloadedState.debugCurrentDungeonTile(), UInt8(U3_DUNGEON_TILE_UP_LADDER))
+    }
+
+    func testDungeonFountainPromptMutatesSelectedCharacterAfterReturnAndSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertTrue(setActiveRosterHitPoints(rosterID: 1, hitPoints: 25, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_FOUNTAIN)))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.lastCommand.contains("interaction Fountain: choose character"))
+
+        state.submitKeyboard(UInt8(ascii: "1"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "interaction fountain heal roster 1 HP 100 | Audio Sound Heal")
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_UP_LADDER)))
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: updatedDocument), 100)
+    }
+
+    func testDungeonChestCommandPromptsClearsTransientTileAndPersistsGoldOnlyAfterReturn() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: noDungeonEncounterRolls,
+            dungeonChestRollProvider: { (trap: 0, gold: 20) }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_CHEST)))
+
+        state.submitKeyboard(UInt8(ascii: "G"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "interaction Chest: choose character")
+
+        state.submitKeyboard(UInt8(ascii: "1"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "interaction chest roster 1 gold 200 added 50 moves 8 passive | Audio Sound Creak")
+        XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_UP_LADDER)))
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertGreaterThan(activeRosterGold(rosterID: 1, in: updatedDocument) ?? 0, 150)
+
+        let reloadedState = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        reloadedState.loadGame()
+        reloadedState.submitKeyboard(UInt8(ascii: "E"))
+        reloadedState.runTick()
+        XCTAssertEqual(reloadedState.debugCurrentDungeonTile(), UInt8(U3_DUNGEON_TILE_UP_LADDER))
+    }
+
+    func testDungeonChestTrapDeferredConsumesTurnAndLeavesChest() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: noDungeonEncounterRolls,
+            dungeonChestRollProvider: { (trap: 200, gold: 20) }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_CHEST)))
+
+        state.submitKeyboard(UInt8(ascii: "G"))
+        state.runTick()
+        state.submitKeyboard(UInt8(ascii: "1"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "interaction chest trap deferred moves 8 passive")
+        XCTAssertEqual(state.debugCurrentDungeonTile(), UInt8(U3_DUNGEON_TILE_CHEST))
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_UP_LADDER)))
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 12)
+        XCTAssertEqual(activeRosterGold(rosterID: 1, in: updatedDocument), 150)
+    }
+
+    func testDungeonInteractionCancelAndTimeLordMessageDoNotMutate() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_FOUNTAIN)))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        state.submitKeyboard(UInt8(ascii: "0"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "interaction cancelled")
+
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_TIME_LORD)))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.lastCommand.contains("interaction Time Lord message 151"))
     }
 
     func testDungeonKlimbRestoresExactSosariaSessionAndCanSave() throws {
@@ -1025,6 +1280,13 @@ final class ShellTickSmokeTests: XCTestCase {
         return setActiveRosterByte(rosterID: rosterID, offset: 33, value: remainder, in: &documentData)
     }
 
+    private func setActiveRosterHitPoints(rosterID: UInt8, hitPoints: UInt16, in documentData: inout Data) -> Bool {
+        guard setActiveRosterByte(rosterID: rosterID, offset: 26, value: UInt8(hitPoints >> 8), in: &documentData) else {
+            return false
+        }
+        return setActiveRosterByte(rosterID: rosterID, offset: 27, value: UInt8(hitPoints & 0xff), in: &documentData)
+    }
+
     private func setActiveRosterByte(rosterID: UInt8, offset: UInt8, value: UInt8, in documentData: inout Data) -> Bool {
         guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
             return false
@@ -1091,6 +1353,37 @@ final class ShellTickSmokeTests: XCTestCase {
 
             let offset = (Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH)
             return UInt16(roster[offset + 32]) * 100 + UInt16(roster[offset + 33])
+        }
+    }
+
+    private func activeRosterHitPoints(rosterID: UInt8, in documentData: Data) -> UInt16? {
+        activeRosterUInt16(rosterID: rosterID, offset: 26, in: documentData)
+    }
+
+    private func activeRosterGold(rosterID: UInt8, in documentData: Data) -> UInt16? {
+        activeRosterUInt16(rosterID: rosterID, offset: 35, in: documentData)
+    }
+
+    private func activeRosterUInt16(rosterID: UInt8, offset: Int, in documentData: Data) -> UInt16? {
+        guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+            return nil
+        }
+        return documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+
+            var document = u3_save_document()
+            var record = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, 0x524F5354, Int16(U3_SAVE_ID_ROSTER), &record) != 0,
+                  record.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = record.data else {
+                return nil
+            }
+
+            let baseOffset = (Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH)
+            return (UInt16(roster[baseOffset + offset]) << 8) | UInt16(roster[baseOffset + offset + 1])
         }
     }
 

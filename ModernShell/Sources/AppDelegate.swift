@@ -505,13 +505,17 @@ final class ShellSmokeState: ObservableObject {
     private let saveAdapter: ShellSaveAdapter
     private let locationTransitionAdapter: ShellLocationDocumentTransitioning
     private let dungeonRollProvider: (UInt8) -> (encounter: UInt16, monster: UInt16)
+    private let dungeonChestRollProvider: () -> (trap: UInt16, gold: UInt16)
+    private let combatSessionLoader: (String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
     private let partyAssemblyAdapter = ShellPartyAssemblyAdapter()
     private var tickState = u3_tick_state()
     private var overworldState = u3_overworld_state()
     private var overworldMapData: Data?
     private var activeLocationSession: ShellLocationSession?
+    private var activeCombatSession: ShellCombatSession?
     private var awaitingTalkDirection = false
+    private var pendingDungeonInteractionCommand: UInt16?
     private var currentSaveDocument: Data?
     @Published private(set) var hasUnsavedChanges = false
     let coreHeadingProbe: Int8 = u3_map_math_get_heading(1)
@@ -523,7 +527,9 @@ final class ShellSmokeState: ObservableObject {
         resourceAdapter: ShellResourceAdapter = ShellResourceAdapter(),
         saveAdapter: ShellSaveAdapter = ShellSaveAdapter(),
         locationTransitionAdapter: ShellLocationDocumentTransitioning = ShellLocationDocumentTransitionAdapter(),
-        dungeonRollProvider: @escaping (UInt8) -> (encounter: UInt16, monster: UInt16) = ShellSmokeState.makeDungeonRolls
+        dungeonRollProvider: @escaping (UInt8) -> (encounter: UInt16, monster: UInt16) = ShellSmokeState.makeDungeonRolls,
+        dungeonChestRollProvider: @escaping () -> (trap: UInt16, gold: UInt16) = ShellSmokeState.makeDungeonChestRolls,
+        combatSessionLoader: ((String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult)? = nil
     ) {
         self.inputAdapter = inputAdapter
         self.audioAdapter = audioAdapter
@@ -532,6 +538,15 @@ final class ShellSmokeState: ObservableObject {
         self.saveAdapter = saveAdapter
         self.locationTransitionAdapter = locationTransitionAdapter
         self.dungeonRollProvider = dungeonRollProvider
+        self.dungeonChestRollProvider = dungeonChestRollProvider
+        self.combatSessionLoader = combatSessionLoader ?? { resourceRootPath, encounter, sourceSession, documentData in
+            resourceAdapter.loadCombatSession(
+                resourceRootPath: resourceRootPath,
+                encounter: encounter,
+                sourceSession: sourceSession,
+                documentData: documentData
+            )
+        }
         u3_tick_state_init(&tickState)
         u3_overworld_state_init(
             &overworldState,
@@ -628,6 +643,17 @@ final class ShellSmokeState: ObservableObject {
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
         awaitingTalkDirection = false
+        pendingDungeonInteractionCommand = nil
+        if let activeCombatSession {
+            renderFrame = activeCombatSession.frame
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: activeCombatSession.status
+            )
+            lastCommand = "Combat refreshed"
+            return
+        }
         if let activeLocationSession {
             renderFrame = activeLocationSession.frame
             resourceStatus = Self.describeResourceStatus(
@@ -729,6 +755,10 @@ final class ShellSmokeState: ObservableObject {
 
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
+            if let combatSession = activeCombatSession {
+                return "Combat CONS \(combatSession.screenResourceID) command \(inputAdapter.describeKey(event.command)) deferred"
+            }
+
             if var locationSession = activeLocationSession {
                 if locationSession.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON {
                     return consumeDungeonInput(event, session: &locationSession)
@@ -855,8 +885,16 @@ final class ShellSmokeState: ObservableObject {
     }
 
     private func consumeDungeonInput(_ event: u3_input_event, session: inout ShellLocationSession) -> String {
+        if let pendingCommand = pendingDungeonInteractionCommand {
+            return consumeDungeonInteractionSelection(event, session: &session, command: pendingCommand)
+        }
+
         if Self.normalizedKeyboardCommand(event.command) == UInt16(UInt8(ascii: "I")) {
             return consumeIgniteCommand(session: &session)
+        }
+
+        if Self.normalizedKeyboardCommand(event.command) == UInt16(UInt8(ascii: "G")) {
+            return beginDungeonInteraction(session: &session, command: event.command)
         }
 
         var dungeonResult = u3_dungeon_result()
@@ -883,6 +921,12 @@ final class ShellSmokeState: ObservableObject {
             sessionMutated: false,
             message: nil
         )
+        var interactionResult = ShellDungeonInteractionResult(
+            interaction: u3_dungeon_interaction_result(),
+            documentMutated: false,
+            sessionMutated: false,
+            message: nil
+        )
         if !dungeonResult.exited {
             let rolls = dungeonRollProvider(session.descriptor.dungeon_level)
             postTurnResult = resourceAdapter.applyDungeonPostTurn(
@@ -891,6 +935,13 @@ final class ShellSmokeState: ObservableObject {
                 encounterRoll: rolls.encounter,
                 monsterRoll: rolls.monster
             )
+            if postTurnResult.encounter_requested != 0 {
+                return activateCombatSession(
+                    encounter: postTurnResult,
+                    sourceSession: session,
+                    prefix: "Dungeon command \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))"
+                )
+            }
             var documentData = currentSaveDocument
             specialEffectResult = resourceAdapter.applyDungeonSpecialEffect(
                 &session,
@@ -903,8 +954,36 @@ final class ShellSmokeState: ObservableObject {
                 currentSaveDocument = documentData
                 hasUnsavedChanges = true
             }
+            if specialEffectResult.effect.status == UInt8(U3_DUNGEON_SPECIAL_STATUS_UNSUPPORTED) {
+                var interactionDocumentData = currentSaveDocument
+                interactionResult = resourceAdapter.applyDungeonInteraction(
+                    &session,
+                    documentData: &interactionDocumentData,
+                    command: 0,
+                    selectedActiveSlot: 0,
+                    chestTrapRoll: 0,
+                    chestGoldRoll: 0
+                )
+                if interactionResult.interaction.requires_selection != 0 {
+                    pendingDungeonInteractionCommand = 0
+                }
+                if interactionResult.documentMutated {
+                    currentSaveDocument = interactionDocumentData
+                    hasUnsavedChanges = true
+                }
+                if interactionResult.interaction.handled != 0 {
+                    specialEffectResult = ShellDungeonSpecialEffectResult(
+                        effect: u3_dungeon_special_effect_result(),
+                        documentMutated: false,
+                        sessionMutated: false,
+                        message: nil
+                    )
+                }
+            }
         }
-        if specialEffectResult.effect.sound_id != 0 {
+        if interactionResult.interaction.sound_id != 0 {
+            _ = audioAdapter.enqueueSound(Int32(interactionResult.interaction.sound_id))
+        } else if specialEffectResult.effect.sound_id != 0 {
             _ = audioAdapter.enqueueSound(Int32(specialEffectResult.effect.sound_id))
         } else if dungeonResult.blocked {
             _ = audioAdapter.enqueueSound(Int32(U3_AUDIO_SOUND_BUMP))
@@ -917,7 +996,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         activeLocationSession = session
-        if dungeonResult.needs_redraw || postTurnResult.light_decremented != 0 || specialEffectResult.sessionMutated {
+        if dungeonResult.needs_redraw || postTurnResult.light_decremented != 0 || specialEffectResult.sessionMutated || interactionResult.sessionMutated {
             renderFrame = session.frame
             let locations = locationProvider.snapshot()
             resourceStatus = Self.describeResourceStatus(
@@ -927,22 +1006,153 @@ final class ShellSmokeState: ObservableObject {
             )
         }
 
+        let interactionDescription = describeDungeonInteraction(interactionResult)
+
         if dungeonResult.blocked {
-            return "Dungeon blocked \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
+            return "Dungeon blocked \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))\(interactionDescription)"
         }
         if dungeonResult.invalid {
-            return "Dungeon invalid \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
+            return "Dungeon invalid \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))\(interactionDescription)"
         }
         if dungeonResult.level_changed {
-            return "Dungeon level \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
+            return "Dungeon level \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))\(interactionDescription)"
         }
         if dungeonResult.turned {
-            return "Dungeon turn \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
+            return "Dungeon turn \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))\(interactionDescription)"
         }
         if dungeonResult.moved {
-            return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
+            return "Dungeon move \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))\(interactionDescription)"
         }
-        return "Dungeon command \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))"
+        return "Dungeon command \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))\(interactionDescription)"
+    }
+
+    private func beginDungeonInteraction(session: inout ShellLocationSession, command: UInt16) -> String {
+        var documentData = currentSaveDocument
+        let result = resourceAdapter.applyDungeonInteraction(
+            &session,
+            documentData: &documentData,
+            command: command,
+            selectedActiveSlot: 0,
+            chestTrapRoll: 0,
+            chestGoldRoll: 0
+        )
+        if result.interaction.requires_selection != 0 {
+            pendingDungeonInteractionCommand = command
+        }
+        let turnDescription = applyDungeonInteractionTurnIfNeeded(
+            command: command,
+            session: &session,
+            documentData: documentData,
+            result: result
+        )
+        if activeCombatSession == nil {
+            activeLocationSession = session
+        }
+        return "\(describeDungeonInteraction(result))\(turnDescription ?? "")"
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    private func consumeDungeonInteractionSelection(
+        _ event: u3_input_event,
+        session: inout ShellLocationSession,
+        command: UInt16
+    ) -> String {
+        let selectedSlot = Self.dungeonInteractionSelection(from: event.command)
+        let chestRolls = dungeonChestRollProvider()
+        var documentData = currentSaveDocument
+        let result = resourceAdapter.applyDungeonInteraction(
+            &session,
+            documentData: &documentData,
+            command: command,
+            selectedActiveSlot: selectedSlot,
+            chestTrapRoll: chestRolls.trap,
+            chestGoldRoll: chestRolls.gold
+        )
+
+        if result.interaction.requires_selection != 0 {
+            activeLocationSession = session
+            return "Dungeon interaction: choose character"
+        }
+
+        pendingDungeonInteractionCommand = nil
+        if result.sessionMutated {
+            renderFrame = session.frame
+            let locations = locationProvider.snapshot()
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: session.status
+            )
+        }
+        if result.interaction.sound_id != 0 {
+            _ = audioAdapter.enqueueSound(Int32(result.interaction.sound_id))
+        }
+        let turnDescription = applyDungeonInteractionTurnIfNeeded(
+            command: command,
+            session: &session,
+            documentData: documentData,
+            result: result
+        )
+        if result.documentMutated, turnDescription == nil {
+            currentSaveDocument = documentData
+            hasUnsavedChanges = true
+        }
+        if activeCombatSession == nil {
+            activeLocationSession = session
+        }
+        return "\(describeDungeonInteraction(result))\(turnDescription ?? "")"
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    private func applyDungeonInteractionTurnIfNeeded(
+        command: UInt16,
+        session: inout ShellLocationSession,
+        documentData: Data?,
+        result: ShellDungeonInteractionResult
+    ) -> String? {
+        guard Self.normalizedKeyboardCommand(command) == UInt16(UInt8(ascii: "G")),
+              Self.dungeonInteractionConsumesTurn(result),
+              result.interaction.requires_selection == 0 else {
+            return nil
+        }
+
+        if result.documentMutated, let documentData {
+            currentSaveDocument = documentData
+        }
+
+        var locationResult = u3_location_move_result()
+        locationResult.handled = 1
+        locationResult.x = session.descriptor.x
+        locationResult.y = session.descriptor.y
+        locationResult.status = UInt8(U3_LOCATION_MOVE_STATUS_MOVED)
+        guard applyLocationMoveTransaction(session: session, result: &locationResult) else {
+            return " turn failed"
+        }
+
+        let rolls = dungeonRollProvider(session.descriptor.dungeon_level)
+        let postTurnResult = resourceAdapter.applyDungeonPostTurn(
+            &session,
+            documentData: currentSaveDocument,
+            encounterRoll: rolls.encounter,
+            monsterRoll: rolls.monster
+        )
+        if postTurnResult.light_decremented != 0 {
+            renderFrame = session.frame
+            let locations = locationProvider.snapshot()
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: session.status
+            )
+        }
+        if postTurnResult.encounter_requested != 0 {
+            return activateCombatSession(
+                encounter: postTurnResult,
+                sourceSession: session,
+                prefix: describeLocationTurnDelta(locationResult)
+            )
+        }
+        return "\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))"
     }
 
     private func consumeIgniteCommand(session: inout ShellLocationSession) -> String {
@@ -1011,6 +1221,7 @@ final class ShellSmokeState: ObservableObject {
             currentSaveDocument = documentData
             hasUnsavedChanges = true
             activeLocationSession = session
+            activeCombatSession = nil
             renderFrame = session.frame
             resourceStatus = Self.describeResourceStatus(
                 locations: locations,
@@ -1023,6 +1234,38 @@ final class ShellSmokeState: ObservableObject {
             return "Entered town index \(session.descriptor.location_index) MAPS \(session.descriptor.resource_id) return \(session.descriptor.return_x),\(session.descriptor.return_y) start \(session.descriptor.x),\(session.descriptor.y) heading \(session.descriptor.heading) moves \(appliedRequest.move_counter_after)"
         case .failure(let status):
             return status
+        }
+    }
+
+    private func activateCombatSession(
+        encounter: u3_dungeon_post_turn_result,
+        sourceSession: ShellLocationSession,
+        prefix: String
+    ) -> String {
+        let locations = locationProvider.snapshot()
+        switch combatSessionLoader(locations.resourceRootPath, encounter, sourceSession, currentSaveDocument) {
+        case .success(let session):
+            activeCombatSession = session
+            activeLocationSession = nil
+            pendingDungeonInteractionCommand = nil
+            awaitingTalkDirection = false
+            renderFrame = session.frame
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: session.status
+            )
+            return "\(prefix) entered combat CONS \(session.screenResourceID) monster \(session.monsterType) marker \(session.markerTile)"
+        case .failure(let status):
+            activeCombatSession = nil
+            activeLocationSession = sourceSession
+            renderFrame = sourceSession.frame
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: sourceSession.status
+            )
+            return "\(prefix) combat entry failed: \(status)"
         }
     }
 
@@ -1148,7 +1391,9 @@ final class ShellSmokeState: ObservableObject {
 
     private func applyCurrentSaveDocument(_ document: Data, locations: ShellLocationSnapshot, statusPrefix: String) {
         activeLocationSession = nil
+        activeCombatSession = nil
         awaitingTalkDirection = false
+        pendingDungeonInteractionCommand = nil
         currentSaveDocument = document
         saveStatus = resourceAdapter.describeSaveDomain(document, prefix: statusPrefix)
         let overworldSmoke = resourceAdapter.buildOverworldSmoke(documentData: document, state: &overworldState)
@@ -1233,6 +1478,23 @@ final class ShellSmokeState: ObservableObject {
     func debugCurrentDungeonTile() -> UInt8? {
         guard let session = activeLocationSession,
               session.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
+            return nil
+        }
+        let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
+            (Int(session.descriptor.y) * Int(U3_DUNGEON_WIDTH)) +
+            Int(session.descriptor.x)
+        guard offset >= 0 && offset < session.mapData.count else {
+            return nil
+        }
+        return session.mapData[offset]
+    }
+
+    func debugActiveCombatStatus() -> String? {
+        activeCombatSession?.status
+    }
+
+    func debugActiveCombatSourceDungeonTile() -> UInt8? {
+        guard let session = activeCombatSession?.sourceLocationSession else {
             return nil
         }
         let offset = (Int(session.descriptor.dungeon_level) * Int(U3_DUNGEON_WIDTH) * Int(U3_DUNGEON_HEIGHT)) +
@@ -1336,6 +1598,52 @@ final class ShellSmokeState: ObservableObject {
         }
     }
 
+    private func describeDungeonInteraction(_ result: ShellDungeonInteractionResult) -> String {
+        let interaction = result.interaction
+        guard interaction.handled != 0 else {
+            return ""
+        }
+
+        switch Int32(interaction.status) {
+        case U3_DUNGEON_INTERACTION_STATUS_TIME_LORD:
+            return " interaction \(result.message ?? "Time Lord")"
+        case U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED:
+            return " interaction \(result.message ?? "choose character")"
+        case U3_DUNGEON_INTERACTION_STATUS_CANCELLED:
+            return " interaction cancelled"
+        case U3_DUNGEON_INTERACTION_STATUS_INVALID_CHARACTER:
+            return " interaction invalid character"
+        case U3_DUNGEON_INTERACTION_STATUS_INCAPACITATED:
+            return " interaction incapacitated slot \(interaction.active_slot)"
+        case U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_POISON:
+            return " interaction fountain poison roster \(interaction.roster_id) status \(characterCode(interaction.status_after))"
+        case U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_HEAL:
+            return " interaction fountain heal roster \(interaction.roster_id) HP \(interaction.hit_points_after)"
+        case U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_DAMAGE:
+            return " interaction fountain damage roster \(interaction.roster_id) HP \(interaction.hit_points_after)"
+        case U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_CURE:
+            return " interaction fountain cure roster \(interaction.roster_id) status \(characterCode(interaction.status_after))"
+        case U3_DUNGEON_INTERACTION_STATUS_MARK:
+            return " interaction mark roster \(interaction.roster_id) marks \(interaction.mark_after) HP \(interaction.hit_points_after)"
+        case U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED:
+            return " interaction chest roster \(interaction.roster_id) gold \(interaction.gold_after) added \(interaction.gold_added)"
+        case U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED:
+            return " interaction chest trap deferred"
+        case U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT:
+            return " interaction invalid"
+        default:
+            return " interaction unsupported tile \(interaction.current_tile)"
+        }
+    }
+
+    private func characterCode(_ value: UInt8) -> String {
+        guard value >= 32 && value <= 126,
+              let scalar = UnicodeScalar(Int(value)) else {
+            return "#\(value)"
+        }
+        return String(Character(scalar))
+    }
+
     private func describeIgniteFailure(_ result: u3_party_ignite_result) -> String {
         switch Int32(result.reason) {
         case U3_PARTY_IGNITE_NO_TORCH:
@@ -1354,12 +1662,43 @@ final class ShellSmokeState: ObservableObject {
         return command
     }
 
+    private static func dungeonInteractionSelection(from command: UInt16) -> UInt8 {
+        if command >= UInt16(UInt8(ascii: "1")) && command <= UInt16(UInt8(ascii: "4")) {
+            return UInt8(command - UInt16(UInt8(ascii: "0")))
+        }
+        if command == UInt16(UInt8(ascii: "0")) || command == 27 {
+            return UInt8(U3_PARTY_ACTIVE_SLOT_COUNT + 1)
+        }
+        return 0
+    }
+
+    private static func dungeonInteractionConsumesTurn(_ result: ShellDungeonInteractionResult) -> Bool {
+        guard result.interaction.handled != 0 else {
+            return false
+        }
+
+        switch Int32(result.interaction.status) {
+        case U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED,
+             U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED:
+            return true
+        default:
+            return false
+        }
+    }
+
     private static func makeDungeonRolls(level: UInt8) -> (encounter: UInt16, monster: UInt16) {
         let encounterMax = UInt16(0x82 + UInt16(level))
         let monsterMax = UInt16(level) + 2
         return (
             UInt16.random(in: 0...encounterMax),
             UInt16.random(in: 0...monsterMax)
+        )
+    }
+
+    private static func makeDungeonChestRolls() -> (trap: UInt16, gold: UInt16) {
+        (
+            UInt16.random(in: 0...255),
+            UInt16.random(in: 0...100)
         )
     }
 

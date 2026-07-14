@@ -299,6 +299,117 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(result.combat_screen_resource_id, UInt16(U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID))
     }
 
+    func testLoadCombatSessionCopiesScreenAndSourceDungeonSnapshot() throws {
+        let adapter = ShellResourceAdapter()
+        let document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(var dungeon) = loadResult else {
+            return XCTFail("Expected dungeon session")
+        }
+        dungeon = dungeonSessionOnFirstFloorTile(dungeon)
+        dungeon.descriptor.light = 9
+
+        let encounter = adapter.applyDungeonPostTurn(
+            &dungeon,
+            documentData: document,
+            encounterRoll: 128,
+            monsterRoll: 2
+        )
+        let result = adapter.loadCombatSession(
+            resourceRootPath: resourceRootPath,
+            encounter: encounter,
+            sourceSession: dungeon,
+            documentData: document
+        )
+
+        guard case .success(let combat) = result else {
+            return XCTFail("Expected combat session")
+        }
+        XCTAssertEqual(combat.screenResourceID, UInt16(U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID))
+        XCTAssertGreaterThanOrEqual(combat.screenData.count, renderTileCount)
+        XCTAssertEqual(combat.monsterTableValue, 0x1A)
+        XCTAssertEqual(combat.monsterType, 0x34)
+        XCTAssertEqual(combat.markerTile, UInt8(U3_DUNGEON_ENCOUNTER_MARKER_TILE))
+        XCTAssertEqual(combat.partySize, 4)
+        XCTAssertEqual(combat.activeRosterIDs.0, 1)
+        XCTAssertEqual(combat.activeRosterIDs.1, 2)
+        XCTAssertEqual(combat.activeRosterIDs.2, 3)
+        XCTAssertEqual(combat.activeRosterIDs.3, 4)
+        XCTAssertEqual(combat.screenInit.status, UInt8(U3_COMBAT_SCREEN_STATUS_OK))
+        XCTAssertEqual(combat.renderResult.terrain_commands, UInt8(U3_RENDER_TILE_COUNT))
+        XCTAssertEqual(combat.renderResult.monster_commands, 1)
+        XCTAssertEqual(combat.renderResult.party_commands, 4)
+        XCTAssertEqual(combat.frame.command_count, UInt16(U3_RENDER_TILE_COUNT + 2 + 1 + 4))
+        XCTAssertEqual(renderCommand(in: combat.frame, index: 123).value, UInt16(U3_COMBAT_RENDER_MONSTER_BASE))
+        XCTAssertEqual(renderCommand(in: combat.frame, index: 124).value, UInt16(U3_COMBAT_RENDER_PARTY_BASE))
+        XCTAssertEqual(combat.sourceLocationSession.descriptor.resource_id, dungeon.descriptor.resource_id)
+        XCTAssertEqual(combat.sourceLocationSession.descriptor.x, dungeon.descriptor.x)
+        XCTAssertEqual(combat.sourceLocationSession.descriptor.y, dungeon.descriptor.y)
+        XCTAssertEqual(combat.sourceLocationSession.descriptor.heading, dungeon.descriptor.heading)
+        XCTAssertEqual(combat.sourceLocationSession.descriptor.light, dungeon.descriptor.light)
+        XCTAssertEqual(combat.sourceLocationSession.mapData, dungeon.mapData)
+        XCTAssertEqual(combat.status, "Combat OK CONS 402 monster 52 marker 64 party 4 active 1/2/3/4 terrain 121 monsters 1 characters 4 source dungeon MAPS 412")
+    }
+
+    func testLoadCombatSessionRejectsMissingRequestAndResources() throws {
+        let adapter = ShellResourceAdapter()
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(let dungeon) = loadResult else {
+            return XCTFail("Expected dungeon session")
+        }
+
+        XCTAssertEqual(
+            failureMessage(adapter.loadCombatSession(
+                resourceRootPath: resourceRootPath,
+                encounter: u3_dungeon_post_turn_result(),
+                sourceSession: dungeon,
+                documentData: nil
+            )),
+            "Combat request missing"
+        )
+
+        var encounter = u3_dungeon_post_turn_result()
+        encounter.encounter_requested = 1
+        encounter.combat_screen_resource_id = UInt16(U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID)
+        XCTAssertEqual(
+            failureMessage(adapter.loadCombatSession(
+                resourceRootPath: nil,
+                encounter: encounter,
+                sourceSession: dungeon,
+                documentData: nil
+            )),
+            "Combat resource root missing"
+        )
+
+        encounter.combat_screen_resource_id = 999
+        XCTAssertEqual(
+            failureMessage(adapter.loadCombatSession(
+                resourceRootPath: resourceRootPath,
+                encounter: encounter,
+                sourceSession: dungeon,
+                documentData: nil
+            )),
+            "Combat CONS 999 missing"
+        )
+
+        encounter.combat_screen_resource_id = 410
+        XCTAssertEqual(
+            failureMessage(adapter.loadCombatSession(
+                resourceRootPath: resourceRootPath,
+                encounter: encounter,
+                sourceSession: dungeon,
+                documentData: nil
+            )),
+            "Combat CONS 410 invalid"
+        )
+    }
+
     func testApplyDungeonSpecialWindClearsLightAndRefreshesTransientFrame() throws {
         let adapter = ShellResourceAdapter()
         var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
@@ -389,6 +500,109 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertTrue(result.message?.hasPrefix("Writing: ") == true)
         XCTAssertFalse(result.documentMutated)
         XCTAssertFalse(result.sessionMutated)
+    }
+
+    func testApplyDungeonInteractionFountainMutatesSelectedRoster() throws {
+        let adapter = ShellResourceAdapter()
+        var currentDocument = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setRosterHitPoints(rosterID: 2, hitPoints: 25, in: &currentDocument))
+        var document: Data? = currentDocument
+        var dungeon = try loadDungeonSession(adapter: adapter)
+        dungeon.descriptor.x = 1
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_FOUNTAIN), in: &dungeon)
+
+        let prompt = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: 0,
+            selectedActiveSlot: 0,
+            chestTrapRoll: 0,
+            chestGoldRoll: 0
+        )
+        XCTAssertEqual(prompt.interaction.status, UInt8(U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED))
+        XCTAssertFalse(prompt.documentMutated)
+
+        let result = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: 0,
+            selectedActiveSlot: 2,
+            chestTrapRoll: 0,
+            chestGoldRoll: 0
+        )
+
+        XCTAssertEqual(result.interaction.status, UInt8(U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_HEAL))
+        XCTAssertTrue(result.documentMutated)
+        XCTAssertFalse(result.sessionMutated)
+        let updatedDocument = try XCTUnwrap(document)
+        XCTAssertEqual(rosterHitPoints(rosterID: 2, in: updatedDocument), 100)
+    }
+
+    func testApplyDungeonInteractionMarkAndChestMutations() throws {
+        let adapter = ShellResourceAdapter()
+        var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        var dungeon = try loadDungeonSession(adapter: adapter)
+        dungeon.descriptor.x = 2
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_MARK), in: &dungeon)
+
+        let mark = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: 0,
+            selectedActiveSlot: 1,
+            chestTrapRoll: 0,
+            chestGoldRoll: 0
+        )
+        XCTAssertEqual(mark.interaction.status, UInt8(U3_DUNGEON_INTERACTION_STATUS_MARK))
+        XCTAssertEqual(mark.interaction.mark_after & 64, 64)
+        XCTAssertTrue(mark.documentMutated)
+
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_CHEST), in: &dungeon)
+        let chest = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: UInt16(UInt8(ascii: "G")),
+            selectedActiveSlot: 1,
+            chestTrapRoll: 0,
+            chestGoldRoll: 20
+        )
+
+        XCTAssertEqual(chest.interaction.status, UInt8(U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED))
+        XCTAssertEqual(chest.interaction.gold_added, 50)
+        XCTAssertTrue(chest.documentMutated)
+        XCTAssertTrue(chest.sessionMutated)
+        XCTAssertEqual(currentDungeonTile(in: dungeon), 0)
+    }
+
+    func testApplyDungeonInteractionTimeLordAndCancelDoNotMutate() throws {
+        let adapter = ShellResourceAdapter()
+        var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        var dungeon = try loadDungeonSession(adapter: adapter)
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_TIME_LORD), in: &dungeon)
+
+        let timeLord = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: 0,
+            selectedActiveSlot: 0,
+            chestTrapRoll: 0,
+            chestGoldRoll: 0
+        )
+        XCTAssertEqual(timeLord.interaction.status, UInt8(U3_DUNGEON_INTERACTION_STATUS_TIME_LORD))
+        XCTAssertEqual(timeLord.message, "Time Lord message 151")
+        XCTAssertFalse(timeLord.documentMutated)
+
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_FOUNTAIN), in: &dungeon)
+        let cancelled = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: 0,
+            selectedActiveSlot: UInt8(U3_PARTY_ACTIVE_SLOT_COUNT + 1),
+            chestTrapRoll: 0,
+            chestGoldRoll: 0
+        )
+        XCTAssertEqual(cancelled.interaction.status, UInt8(U3_DUNGEON_INTERACTION_STATUS_CANCELLED))
+        XCTAssertFalse(cancelled.documentMutated)
     }
 
     func testMoveDungeonSessionValidatesShapeAndMapBoundsBeforeNavigation() {
@@ -538,6 +752,16 @@ final class ShellResourceAdapterTests: XCTestCase {
         return true
     }
 
+    private func setRosterHitPoints(rosterID: UInt8, hitPoints: UInt16, in documentData: inout Data) -> Bool {
+        let offset = rosterPayloadOffset(in: documentData, rosterID: rosterID)
+        guard offset > 0, offset + Int(U3_PARTY_ROSTER_RECORD_LENGTH) <= documentData.count else {
+            return false
+        }
+        documentData[offset + 26] = UInt8(hitPoints >> 8)
+        documentData[offset + 27] = UInt8(hitPoints & 0xff)
+        return true
+    }
+
     private func rosterRecord(rosterID: UInt8, in documentData: Data) -> [UInt8]? {
         let offset = rosterPayloadOffset(in: documentData, rosterID: rosterID)
         guard offset > 0, offset + Int(U3_PARTY_ROSTER_RECORD_LENGTH) <= documentData.count else {
@@ -585,6 +809,22 @@ final class ShellResourceAdapterTests: XCTestCase {
                 }
             }
         }
+    }
+
+    private func renderCommand(in frame: u3_render_frame, index: Int) -> u3_render_command {
+        var frame = frame
+        return withUnsafePointer(to: &frame.commands) { pointer in
+            pointer.withMemoryRebound(to: u3_render_command.self, capacity: Int(U3_RENDER_MAX_COMMANDS)) { commands in
+                commands[index]
+            }
+        }
+    }
+
+    private func failureMessage(_ result: ShellCombatSessionLoadResult) -> String? {
+        if case .failure(let message) = result {
+            return message
+        }
+        return nil
     }
 
     private func dungeonSessionOnFirstFloorTile(_ session: ShellLocationSession) -> ShellLocationSession {

@@ -553,9 +553,52 @@ static uint8_t u3_dungeon_find_rolled_living(uint8_t *party,
     return (uint8_t)(*record != 0);
 }
 
+static uint8_t u3_dungeon_find_selected_character(uint8_t *party,
+                                                  uint8_t *roster,
+                                                  uint8_t selected_active_slot,
+                                                  uint8_t *roster_id,
+                                                  uint8_t **record)
+{
+    uint8_t candidate_id;
+    uint8_t *candidate;
+
+    if (selected_active_slot < 1 || selected_active_slot > party[1])
+        return 0;
+
+    candidate_id = party[6 + (selected_active_slot - 1)];
+    candidate = u3_dungeon_roster_record(roster, candidate_id);
+    if (candidate == 0 || !u3_dungeon_roster_slot_occupied(candidate))
+        return 0;
+
+    *roster_id = candidate_id;
+    *record = candidate;
+    return 1;
+}
+
 static uint16_t u3_dungeon_food_value(const uint8_t *record)
 {
     return (uint16_t)((record[32] * 100) + record[33]);
+}
+
+static uint16_t u3_dungeon_gold_value(const uint8_t *record)
+{
+    return u3_dungeon_read_u16(record, 35);
+}
+
+static uint8_t u3_dungeon_add_gold(uint8_t *record,
+                                   uint16_t amount,
+                                   u3_dungeon_interaction_result *result)
+{
+    uint16_t gold = u3_dungeon_gold_value(record);
+    uint32_t total = (uint32_t)gold + amount;
+
+    result->gold_before = gold;
+    result->gold_added = amount;
+    if (total > 9999)
+        total = 9999;
+    u3_dungeon_write_u16(record, 35, (uint16_t)total);
+    result->gold_after = (uint16_t)total;
+    return (uint8_t)(total != gold);
 }
 
 static uint8_t u3_dungeon_disarm_factor(const uint8_t *record)
@@ -695,6 +738,189 @@ u3_dungeon_special_effect_result u3_dungeon_apply_special_effect(
         result.status = U3_DUNGEON_SPECIAL_STATUS_UNSUPPORTED;
         return result;
     default:
+        return result;
+    }
+}
+
+static u3_dungeon_interaction_result u3_dungeon_make_interaction_result(
+    u3_dungeon_interaction_input input)
+{
+    u3_dungeon_interaction_result result;
+
+    memset(&result, 0, sizeof(result));
+    result.current_tile = input.current_tile;
+    result.fountain_variant = (uint8_t)(input.x & 0x03);
+
+    if (input.current_tile == U3_DUNGEON_TILE_TIME_LORD) {
+        result.handled = 1;
+        result.kind = U3_DUNGEON_INTERACTION_KIND_TIME_LORD;
+        result.status = U3_DUNGEON_INTERACTION_STATUS_TIME_LORD;
+        result.message_id = 151;
+        return result;
+    }
+
+    if (input.current_tile == U3_DUNGEON_TILE_INTERACTIVE_MESSAGE) {
+        result.handled = 1;
+        result.kind = U3_DUNGEON_INTERACTION_KIND_TIME_LORD;
+        result.status = U3_DUNGEON_INTERACTION_STATUS_TIME_LORD;
+        result.message_id = 151;
+        return result;
+    }
+
+    if (input.current_tile == U3_DUNGEON_TILE_FOUNTAIN) {
+        result.handled = 1;
+        result.requires_selection = 1;
+        result.kind = U3_DUNGEON_INTERACTION_KIND_FOUNTAIN;
+        result.status = U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED;
+        result.message_id = 152;
+        return result;
+    }
+
+    if (input.current_tile == U3_DUNGEON_TILE_MARK) {
+        result.handled = 1;
+        result.requires_selection = 1;
+        result.kind = U3_DUNGEON_INTERACTION_KIND_MARK;
+        result.status = U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED;
+        result.message_id = 161;
+        return result;
+    }
+
+    if (input.command == U3_DUNGEON_COMMAND_GET_CHEST) {
+        result.handled = 1;
+        result.kind = U3_DUNGEON_INTERACTION_KIND_CHEST;
+        if ((input.current_tile & U3_DUNGEON_TILE_CHEST) == 0) {
+            result.status = U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT;
+            return result;
+        }
+        result.requires_selection = 1;
+        result.status = U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED;
+        result.message_id = 40;
+        return result;
+    }
+
+    return result;
+}
+
+u3_dungeon_interaction_result u3_dungeon_apply_interaction(
+    u3_dungeon_interaction_input input,
+    uint8_t *party,
+    uint32_t party_length,
+    uint8_t *roster,
+    uint32_t roster_length)
+{
+    u3_dungeon_interaction_result result;
+    uint8_t roster_id = 0;
+    uint8_t *record = 0;
+
+    result = u3_dungeon_make_interaction_result(input);
+    if (!result.handled)
+        return result;
+    if (!result.requires_selection)
+        return result;
+
+    if (input.selected_active_slot == 0)
+        return result;
+    if (input.selected_active_slot > U3_PARTY_ACTIVE_SLOT_COUNT) {
+        result.status = U3_DUNGEON_INTERACTION_STATUS_CANCELLED;
+        result.requires_selection = 0;
+        return result;
+    }
+
+    result.requires_selection = 0;
+    if (!u3_dungeon_valid_party_roster(party, party_length, roster, roster_length)) {
+        result.status = U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT;
+        return result;
+    }
+    if (!u3_dungeon_find_selected_character(party,
+                                            roster,
+                                            input.selected_active_slot,
+                                            &roster_id,
+                                            &record)) {
+        result.status = U3_DUNGEON_INTERACTION_STATUS_INVALID_CHARACTER;
+        result.active_slot = input.selected_active_slot;
+        return result;
+    }
+
+    result.active_slot = input.selected_active_slot;
+    result.roster_id = roster_id;
+    result.status_before = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+    result.status_after = result.status_before;
+    result.hit_points_before = u3_dungeon_read_u16(record, 26);
+    result.hit_points_after = result.hit_points_before;
+    result.max_hit_points = u3_dungeon_read_u16(record, 28);
+    result.mark_before = record[14];
+    result.mark_after = result.mark_before;
+
+    if (!u3_dungeon_roster_slot_living(record)) {
+        result.status = U3_DUNGEON_INTERACTION_STATUS_INCAPACITATED;
+        return result;
+    }
+
+    switch (result.kind) {
+    case U3_DUNGEON_INTERACTION_KIND_FOUNTAIN:
+        switch (result.fountain_variant) {
+        case 0:
+            record[U3_PARTY_ROSTER_STATUS_OFFSET] = 'P';
+            result.status = U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_POISON;
+            result.status_after = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+            result.message_id = 154;
+            result.sound_id = U3_AUDIO_SOUND_HIT;
+            return result;
+        case 1:
+            u3_dungeon_write_u16(record, 26, result.max_hit_points);
+            result.status = U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_HEAL;
+            result.hit_points_after = result.max_hit_points;
+            result.message_id = 155;
+            result.sound_id = U3_AUDIO_SOUND_HEAL;
+            return result;
+        case 2:
+            (void)u3_dungeon_subtract_hp(record, 25);
+            result.status = U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_DAMAGE;
+            result.status_after = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+            result.hit_points_after = u3_dungeon_read_u16(record, 26);
+            result.message_id = 156;
+            result.sound_id = U3_AUDIO_SOUND_HIT;
+            return result;
+        default:
+            if (record[U3_PARTY_ROSTER_STATUS_OFFSET] == 'P')
+                record[U3_PARTY_ROSTER_STATUS_OFFSET] = 'G';
+            result.status = U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_CURE;
+            result.status_after = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+            result.message_id = 157;
+            result.sound_id = U3_AUDIO_SOUND_HEAL;
+            return result;
+        }
+    case U3_DUNGEON_INTERACTION_KIND_MARK:
+        record[14] = (uint8_t)(record[14] | (1 << ((input.x & 0x03) + 4)));
+        (void)u3_dungeon_subtract_hp(record, 50);
+        result.status = U3_DUNGEON_INTERACTION_STATUS_MARK;
+        result.status_after = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+        result.hit_points_after = u3_dungeon_read_u16(record, 26);
+        result.mark_after = record[14];
+        result.message_id = 162;
+        result.sound_id = U3_AUDIO_SOUND_HIT;
+        return result;
+    case U3_DUNGEON_INTERACTION_KIND_CHEST: {
+        uint16_t gold;
+
+        if (input.chest_trap_roll > 127) {
+            result.status = U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED;
+            result.message_id = 42;
+            return result;
+        }
+
+        gold = (uint16_t)(input.chest_gold_roll % 101);
+        if (gold < 30)
+            gold = (uint16_t)(gold + 30);
+        (void)u3_dungeon_add_gold(record, gold, &result);
+        result.status = U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED;
+        result.clear_current_tile = 1;
+        result.message_id = 47;
+        result.sound_id = U3_AUDIO_SOUND_CREAK;
+        return result;
+    }
+    default:
+        result.status = U3_DUNGEON_INTERACTION_STATUS_UNSUPPORTED;
         return result;
     }
 }

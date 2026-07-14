@@ -196,6 +196,119 @@ static void test_invalid_party_still_reports_tile_handling_for_clearing_hazards(
     ASSERT_TRUE(result.clear_current_tile);
 }
 
+static void test_fountain_variants_mutate_selected_living_character(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_FOUNTAIN;
+    input.selected_active_slot = 1;
+
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_POISON, result.status);
+    ASSERT_EQ_INT('P', roster[U3_PARTY_ROSTER_STATUS_OFFSET]);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_HIT, result.sound_id);
+
+    input.x = 1;
+    write_u16(roster, 26, 25);
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_HEAL, result.status);
+    ASSERT_EQ_INT(100, read_u16(roster, 26));
+
+    input.x = 2;
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_DAMAGE, result.status);
+    ASSERT_EQ_INT(75, read_u16(roster, 26));
+
+    input.x = 3;
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_CURE, result.status);
+    ASSERT_EQ_INT('G', roster[U3_PARTY_ROSTER_STATUS_OFFSET]);
+}
+
+static void test_mark_sets_position_bit_and_charges_hp(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_MARK;
+    input.x = 2;
+    input.selected_active_slot = 2;
+
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_MARK, result.status);
+    ASSERT_EQ_INT(2, result.roster_id);
+    ASSERT_EQ_INT(64, roster[U3_PARTY_ROSTER_RECORD_LENGTH + 14]);
+    ASSERT_EQ_INT(50, read_u16(roster + U3_PARTY_ROSTER_RECORD_LENGTH, 26));
+}
+
+static void test_chest_opens_current_tile_and_adds_bounded_gold(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_CHEST;
+    input.command = U3_DUNGEON_COMMAND_GET_CHEST;
+    input.selected_active_slot = 1;
+    input.chest_trap_roll = 0;
+    input.chest_gold_roll = 20;
+
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED, result.status);
+    ASSERT_TRUE(result.clear_current_tile);
+    ASSERT_EQ_INT(50, result.gold_added);
+    ASSERT_EQ_INT(50, result.gold_after);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_CREAK, result.sound_id);
+
+    input.chest_trap_roll = 200;
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED, result.status);
+    ASSERT_FALSE(result.clear_current_tile);
+}
+
+static void test_prompt_cancel_invalid_and_time_lord_paths(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_TIME_LORD;
+    result = u3_dungeon_apply_interaction(input, 0, 0, 0, 0);
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_TIME_LORD, result.status);
+    ASSERT_EQ_INT(151, result.message_id);
+
+    input.current_tile = U3_DUNGEON_TILE_FOUNTAIN;
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_TRUE(result.requires_selection);
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED, result.status);
+
+    input.selected_active_slot = 5;
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_CANCELLED, result.status);
+
+    input.selected_active_slot = 1;
+    roster[U3_PARTY_ROSTER_STATUS_OFFSET] = 'D';
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_INCAPACITATED, result.status);
+}
+
 int main(void)
 {
     test_wind_extinguishes_light_without_party();
@@ -204,6 +317,10 @@ int main(void)
     test_gremlins_choose_living_member_and_decrement_food_without_underflow();
     test_writing_and_unsupported_tiles_report_without_mutation_requirements();
     test_invalid_party_still_reports_tile_handling_for_clearing_hazards();
+    test_fountain_variants_mutate_selected_living_character();
+    test_mark_sets_position_bit_and_charges_hp();
+    test_chest_opens_current_tile_and_adds_bounded_gold();
+    test_prompt_cancel_invalid_and_time_lord_paths();
 
     puts("dungeon special tile tests passed");
     return 0;

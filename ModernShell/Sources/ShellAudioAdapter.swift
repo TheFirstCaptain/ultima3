@@ -144,6 +144,10 @@ final class ShellAudioAdapter {
             return "Hit"
         case U3_AUDIO_SOUND_OUCH:
             return "Ouch"
+        case U3_AUDIO_SOUND_CREAK:
+            return "Creak"
+        case U3_AUDIO_SOUND_HEAL:
+            return "Heal"
         case U3_AUDIO_SOUND_ERROR1:
             fallthrough
         default:

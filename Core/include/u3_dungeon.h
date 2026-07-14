@@ -23,9 +23,13 @@
 #define U3_DUNGEON_LIGHT_FULL 255
 #define U3_DUNGEON_COMBAT_SCREEN_RESOURCE_ID 402
 
+#define U3_DUNGEON_TILE_TIME_LORD 1
+#define U3_DUNGEON_TILE_FOUNTAIN 2
 #define U3_DUNGEON_TILE_WIND 3
 #define U3_DUNGEON_TILE_TRAP 4
+#define U3_DUNGEON_TILE_MARK 5
 #define U3_DUNGEON_TILE_GREMLINS 6
+#define U3_DUNGEON_TILE_INTERACTIVE_MESSAGE 7
 #define U3_DUNGEON_TILE_WRITING 8
 
 #define U3_DUNGEON_SPECIAL_STATUS_NONE 0
@@ -37,6 +41,30 @@
 #define U3_DUNGEON_SPECIAL_STATUS_UNSUPPORTED 6
 #define U3_DUNGEON_SPECIAL_STATUS_INVALID_INPUT 7
 #define U3_DUNGEON_SPECIAL_STATUS_NO_ELIGIBLE_CHARACTER 8
+
+#define U3_DUNGEON_INTERACTION_KIND_NONE 0
+#define U3_DUNGEON_INTERACTION_KIND_TIME_LORD 1
+#define U3_DUNGEON_INTERACTION_KIND_FOUNTAIN 2
+#define U3_DUNGEON_INTERACTION_KIND_MARK 3
+#define U3_DUNGEON_INTERACTION_KIND_CHEST 4
+
+#define U3_DUNGEON_INTERACTION_STATUS_NONE 0
+#define U3_DUNGEON_INTERACTION_STATUS_TIME_LORD 1
+#define U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED 2
+#define U3_DUNGEON_INTERACTION_STATUS_CANCELLED 3
+#define U3_DUNGEON_INTERACTION_STATUS_INVALID_CHARACTER 4
+#define U3_DUNGEON_INTERACTION_STATUS_INCAPACITATED 5
+#define U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_POISON 6
+#define U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_HEAL 7
+#define U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_DAMAGE 8
+#define U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_CURE 9
+#define U3_DUNGEON_INTERACTION_STATUS_MARK 10
+#define U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED 11
+#define U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED 12
+#define U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT 13
+#define U3_DUNGEON_INTERACTION_STATUS_UNSUPPORTED 14
+
+#define U3_DUNGEON_COMMAND_GET_CHEST 'G'
 
 #define U3_DUNGEON_RENDER_VALUE_WALL 1
 #define U3_DUNGEON_RENDER_VALUE_DOOR 2
@@ -118,6 +146,39 @@ typedef struct u3_dungeon_special_effect_result {
     uint16_t sound_id;
 } u3_dungeon_special_effect_result;
 
+typedef struct u3_dungeon_interaction_input {
+    uint8_t current_tile;
+    uint8_t x;
+    uint16_t command;
+    uint8_t selected_active_slot;
+    uint16_t chest_trap_roll;
+    uint16_t chest_gold_roll;
+} u3_dungeon_interaction_input;
+
+typedef struct u3_dungeon_interaction_result {
+    uint8_t handled;
+    uint8_t requires_selection;
+    uint8_t status;
+    uint8_t kind;
+    uint8_t current_tile;
+    uint8_t clear_current_tile;
+    uint8_t fountain_variant;
+    uint8_t active_slot;
+    uint8_t roster_id;
+    uint8_t status_before;
+    uint8_t status_after;
+    uint8_t mark_before;
+    uint8_t mark_after;
+    uint16_t hit_points_before;
+    uint16_t hit_points_after;
+    uint16_t max_hit_points;
+    uint16_t gold_before;
+    uint16_t gold_after;
+    uint16_t gold_added;
+    uint16_t message_id;
+    uint16_t sound_id;
+} u3_dungeon_interaction_result;
+
 uint8_t u3_dungeon_get_cell(const u3_dungeon_state *state, int16_t x, int16_t y);
 void u3_dungeon_put_cell(u3_dungeon_state *state, uint8_t value, int16_t x, int16_t y);
 
@@ -132,6 +193,12 @@ uint8_t u3_dungeon_decay_light(uint8_t light);
 u3_dungeon_post_turn_result u3_dungeon_post_turn(u3_dungeon_post_turn_input input);
 u3_dungeon_special_effect_result u3_dungeon_apply_special_effect(
     u3_dungeon_special_effect_input input,
+    uint8_t *party,
+    uint32_t party_length,
+    uint8_t *roster,
+    uint32_t roster_length);
+u3_dungeon_interaction_result u3_dungeon_apply_interaction(
+    u3_dungeon_interaction_input input,
     uint8_t *party,
     uint32_t party_length,
     uint8_t *roster,

@@ -32,8 +32,39 @@ enum ShellLocationSessionLoadResult {
     case failure(String)
 }
 
+struct ShellCombatSession {
+    let sourceLocationSession: ShellLocationSession
+    let screenResourceID: UInt16
+    let screenData: Data
+    var combatState: u3_combat_state
+    var frame: u3_render_frame
+    let screenInit: u3_combat_screen_init_result
+    let renderResult: u3_combat_render_result
+    let partySize: UInt8
+    let activeRosterIDs: (UInt8, UInt8, UInt8, UInt8)
+    let monsterTableValue: UInt8
+    let monsterType: UInt8
+    let markerTile: UInt8
+
+    var status: String {
+        "Combat OK CONS \(screenResourceID) monster \(monsterType) marker \(markerTile) party \(partySize) active \(activeRosterIDs.0)/\(activeRosterIDs.1)/\(activeRosterIDs.2)/\(activeRosterIDs.3) terrain \(renderResult.terrain_commands) monsters \(renderResult.monster_commands) characters \(renderResult.party_commands) source dungeon MAPS \(sourceLocationSession.descriptor.resource_id)"
+    }
+}
+
+enum ShellCombatSessionLoadResult {
+    case success(ShellCombatSession)
+    case failure(String)
+}
+
 struct ShellDungeonSpecialEffectResult {
     var effect: u3_dungeon_special_effect_result
+    let documentMutated: Bool
+    let sessionMutated: Bool
+    let message: String?
+}
+
+struct ShellDungeonInteractionResult {
+    var interaction: u3_dungeon_interaction_result
     let documentMutated: Bool
     let sessionMutated: Bool
     let message: String?
@@ -482,6 +513,79 @@ final class ShellResourceAdapter {
         }
     }
 
+    func loadCombatSession(
+        resourceRootPath: String?,
+        encounter: u3_dungeon_post_turn_result,
+        sourceSession: ShellLocationSession,
+        documentData: Data?
+    ) -> ShellCombatSessionLoadResult {
+        guard encounter.encounter_requested != 0 else {
+            return .failure("Combat request missing")
+        }
+        guard Self.validDungeonSessionForMovement(sourceSession) else {
+            return .failure("Combat source dungeon invalid")
+        }
+        guard let resourceRootPath else {
+            return .failure("Combat resource root missing")
+        }
+
+        let resourceURL = mainResourcesURL(resourceRootPath: resourceRootPath)
+        guard FileManager.default.fileExists(atPath: resourceURL.path),
+              let resourceData = try? Data(contentsOf: resourceURL) else {
+            return .failure("Combat resources missing")
+        }
+
+        return resourceData.withUnsafeBytes { resourceBuffer in
+            guard let resourceBaseAddress = resourceBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return .failure("Combat resources empty")
+            }
+
+            var resourceFile = u3_resource_file()
+            guard u3_resource_open(resourceBaseAddress, resourceData.count, &resourceFile) != 0 else {
+                return .failure("Combat resources invalid")
+            }
+
+            let resourceID = Int16(bitPattern: encounter.combat_screen_resource_id)
+            guard let screenRecord = findResource(resourceFile: &resourceFile, type: fourCharacterCode("CONS"), id: resourceID),
+                  let screenPointer = screenRecord.data else {
+                return .failure("Combat CONS \(encounter.combat_screen_resource_id) missing")
+            }
+            guard screenRecord.length >= U3_RENDER_TILE_COUNT else {
+                return .failure("Combat CONS \(encounter.combat_screen_resource_id) invalid")
+            }
+
+            let partySlots = combatPartySlots(documentData: documentData)
+            var combatState = u3_combat_state()
+            let screenInit = u3_combat_state_init_from_screen(
+                &combatState,
+                screenPointer,
+                screenRecord.length,
+                encounter.monster_type,
+                1,
+                partySlots.partySize
+            )
+            guard screenInit.status == UInt8(U3_COMBAT_SCREEN_STATUS_OK) else {
+                return .failure("Combat CONS \(encounter.combat_screen_resource_id) invalid")
+            }
+            var renderResult = u3_combat_render_result()
+            let frame = u3_combat_make_frame(&combatState, &renderResult)
+            return .success(ShellCombatSession(
+                sourceLocationSession: sourceSession,
+                screenResourceID: encounter.combat_screen_resource_id,
+                screenData: Data(bytes: screenPointer, count: Int(screenRecord.length)),
+                combatState: combatState,
+                frame: frame,
+                screenInit: screenInit,
+                renderResult: renderResult,
+                partySize: partySlots.partySize,
+                activeRosterIDs: partySlots.activeRosterIDs,
+                monsterTableValue: encounter.monster_table_value,
+                monsterType: encounter.monster_type,
+                markerTile: encounter.marker_tile
+            ))
+        }
+    }
+
     func moveLocationSession(
         _ session: inout ShellLocationSession,
         command: UInt16,
@@ -697,6 +801,98 @@ final class ShellResourceAdapter {
         )
     }
 
+    func applyDungeonInteraction(
+        _ session: inout ShellLocationSession,
+        documentData: inout Data?,
+        command: UInt16,
+        selectedActiveSlot: UInt8,
+        chestTrapRoll: UInt16,
+        chestGoldRoll: UInt16
+    ) -> ShellDungeonInteractionResult {
+        var interaction = u3_dungeon_interaction_result()
+        guard Self.validDungeonSessionForMovement(session) else {
+            interaction.status = UInt8(U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT)
+            return ShellDungeonInteractionResult(interaction: interaction, documentMutated: false, sessionMutated: false, message: nil)
+        }
+
+        let tile = dungeonTile(session: session, x: session.descriptor.x, y: session.descriptor.y)
+        let input = u3_dungeon_interaction_input(
+            current_tile: tile,
+            x: session.descriptor.x,
+            command: UInt16(Self.normalizedDungeonCommand(command)),
+            selected_active_slot: selectedActiveSlot,
+            chest_trap_roll: chestTrapRoll,
+            chest_gold_roll: chestGoldRoll
+        )
+
+        var documentMutated = false
+        if var currentDocument = documentData {
+            let documentLength = currentDocument.count
+            interaction = currentDocument.withUnsafeMutableBytes { documentBuffer in
+                guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    var invalid = u3_dungeon_interaction_result()
+                    invalid.current_tile = tile
+                    invalid.status = UInt8(U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT)
+                    return invalid
+                }
+
+                var document = u3_save_document()
+                var partyRecord = u3_save_record()
+                var rosterRecord = u3_save_record()
+                guard u3_save_open(documentBaseAddress, documentLength, &document) != 0,
+                      u3_save_find_record(&document, fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                      u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                      partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                      rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                      let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self),
+                      let roster = UnsafeMutableRawPointer(mutating: rosterRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                    var invalid = u3_dungeon_interaction_result()
+                    invalid.handled = tile == 0 ? 0 : 1
+                    invalid.current_tile = tile
+                    invalid.status = UInt8(U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT)
+                    return invalid
+                }
+
+                return u3_dungeon_apply_interaction(
+                    input,
+                    party,
+                    partyRecord.length,
+                    roster,
+                    rosterRecord.length
+                )
+            }
+            switch Int32(interaction.status) {
+            case U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_POISON,
+                 U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_HEAL,
+                 U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_DAMAGE,
+                 U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_CURE,
+                 U3_DUNGEON_INTERACTION_STATUS_MARK,
+                 U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED:
+                documentData = currentDocument
+                documentMutated = true
+            default:
+                break
+            }
+        } else {
+            interaction = u3_dungeon_apply_interaction(input, nil, 0, nil, 0)
+        }
+
+        var sessionMutated = false
+        if interaction.handled != 0 && interaction.clear_current_tile != 0 {
+            sessionMutated = clearDungeonTile(session: &session, x: session.descriptor.x, y: session.descriptor.y)
+            if sessionMutated {
+                session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
+            }
+        }
+
+        return ShellDungeonInteractionResult(
+            interaction: interaction,
+            documentMutated: documentMutated,
+            sessionMutated: sessionMutated,
+            message: dungeonInteractionMessage(session: session, interaction: interaction)
+        )
+    }
+
     func refreshLocationSessionFrame(_ session: inout ShellLocationSession) {
         session.frame = makeLocationFrame(descriptor: session.descriptor, mapData: session.mapData)
     }
@@ -880,6 +1076,35 @@ final class ShellResourceAdapter {
         }
     }
 
+    private func dungeonInteractionMessage(
+        session: ShellLocationSession,
+        interaction: u3_dungeon_interaction_result
+    ) -> String? {
+        guard interaction.handled != 0 else {
+            return nil
+        }
+
+        switch Int32(interaction.status) {
+        case U3_DUNGEON_INTERACTION_STATUS_TIME_LORD:
+            return "Time Lord message \(interaction.message_id)"
+        case U3_DUNGEON_INTERACTION_STATUS_SELECTION_REQUIRED:
+            switch Int32(interaction.kind) {
+            case U3_DUNGEON_INTERACTION_KIND_FOUNTAIN:
+                return "Fountain: choose character"
+            case U3_DUNGEON_INTERACTION_KIND_MARK:
+                return "Mark: choose character"
+            case U3_DUNGEON_INTERACTION_KIND_CHEST:
+                return "Chest: choose character"
+            default:
+                return "Interaction: choose character"
+            }
+        case U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED:
+            return "Chest trap deferred"
+        default:
+            return nil
+        }
+    }
+
     private func dungeonPartyCounts(documentData: Data?) -> (partySize: UInt8, livingMembers: UInt8) {
         guard let documentData else {
             return (0, 0)
@@ -921,6 +1146,31 @@ final class ShellResourceAdapter {
                 }
             }
             return (partySize, livingMembers)
+        }
+    }
+
+    private func combatPartySlots(documentData: Data?) -> (partySize: UInt8, activeRosterIDs: (UInt8, UInt8, UInt8, UInt8)) {
+        guard let documentData else {
+            return (0, (0, 0, 0, 0))
+        }
+
+        switch loadSaveDomain(documentData) {
+        case .success(var state):
+            var summary = u3_party_summary()
+            guard u3_party_load_summary(&state, &summary) != 0 else {
+                return (0, (0, 0, 0, 0))
+            }
+            return (
+                summary.party_size,
+                (
+                    summary.active_roster_ids.0,
+                    summary.active_roster_ids.1,
+                    summary.active_roster_ids.2,
+                    summary.active_roster_ids.3
+                )
+            )
+        case .failure:
+            return (0, (0, 0, 0, 0))
         }
     }
 
