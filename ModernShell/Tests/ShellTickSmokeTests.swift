@@ -439,6 +439,112 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
     }
 
+    func testCombatPassRunsDeterministicMonsterMovementTurn() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatMonsterRollProvider: {
+                (
+                    shootChoice: 255,
+                    magicChoice: 0,
+                    magicTarget: 0,
+                    projectileHit: 0,
+                    poison: 255,
+                    pilferBranch: 0,
+                    pilferItem: 0,
+                    armourHit: 0,
+                    damage: 4,
+                    exodusDamage: 0
+                )
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.debugConfigureActiveCombat(
+            monsterX: 2,
+            monsterY: 2,
+            monsterHP: 0x20,
+            characterX: 6,
+            characterY: 6,
+            characterHP: 100
+        ))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Combat character 1 pass | Monster 1 move 3,3")
+        XCTAssertTrue(state.resourceStatus.contains("Combat OK CONS 402"))
+    }
+
+    func testCombatMonsterHitMutatesCurrentRosterButSaveRemainsRejected() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatMonsterRollProvider: {
+                (
+                    shootChoice: 255,
+                    magicChoice: 0,
+                    magicTarget: 0,
+                    projectileHit: 0,
+                    poison: 0,
+                    pilferBranch: 0,
+                    pilferItem: 0,
+                    armourHit: 0,
+                    damage: 4,
+                    exodusDamage: 0
+                )
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.debugConfigureActiveCombat(
+            monsterX: 4,
+            monsterY: 4,
+            monsterHP: 0x20,
+            characterX: 4,
+            characterY: 5,
+            characterHP: 5
+        ))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Combat character 1 pass | Monster 1 hit character 1 damage 5 defeated | Audio Sound Hit")
+        let currentDocument = try XCTUnwrap(state.debugCurrentSaveDocument())
+        XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: currentDocument), 0)
+        XCTAssertEqual(activeRosterStatus(rosterID: 1, in: currentDocument), UInt8(ascii: "D"))
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
     func testFailedCombatEntryRetainsDungeonSessionAndDocument() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
@@ -1350,6 +1456,10 @@ final class ShellTickSmokeTests: XCTestCase {
         }
     }
 
+    private func activeRosterStatus(rosterID: UInt8, in documentData: Data) -> UInt8? {
+        activeRosterByte(rosterID: rosterID, offset: Int(U3_PARTY_ROSTER_STATUS_OFFSET), in: documentData)
+    }
+
     private func activeRosterFood(rosterID: UInt8, in documentData: Data) -> UInt16? {
         guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
             return nil
@@ -1401,6 +1511,29 @@ final class ShellTickSmokeTests: XCTestCase {
 
             let baseOffset = (Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH)
             return (UInt16(roster[baseOffset + offset]) << 8) | UInt16(roster[baseOffset + offset + 1])
+        }
+    }
+
+    private func activeRosterByte(rosterID: UInt8, offset: Int, in documentData: Data) -> UInt8? {
+        guard rosterID >= 1 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+            return nil
+        }
+        return documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return nil
+            }
+
+            var document = u3_save_document()
+            var record = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, 0x524F5354, Int16(U3_SAVE_ID_ROSTER), &record) != 0,
+                  record.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = record.data else {
+                return nil
+            }
+
+            let baseOffset = (Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH)
+            return roster[baseOffset + offset]
         }
     }
 

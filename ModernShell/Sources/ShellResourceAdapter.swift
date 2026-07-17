@@ -46,6 +46,7 @@ struct ShellCombatSession {
     let monsterType: UInt8
     let markerTile: UInt8
     var activeCharacter: UInt8 = 0
+    var nextMonster: UInt8 = 0
 
     var status: String {
         "Combat OK CONS \(screenResourceID) monster \(monsterType) marker \(markerTile) party \(partySize) active \(activeRosterIDs.0)/\(activeRosterIDs.1)/\(activeRosterIDs.2)/\(activeRosterIDs.3) terrain \(renderResult.terrain_commands) monsters \(renderResult.monster_commands) characters \(renderResult.party_commands) source dungeon MAPS \(sourceLocationSession.descriptor.resource_id)"
@@ -597,6 +598,54 @@ final class ShellResourceAdapter {
         var renderResult = u3_combat_render_result()
         session.frame = u3_combat_make_frame(&session.combatState, &renderResult)
         session.renderResult = renderResult
+    }
+
+    func applyCombatPartyState(_ session: ShellCombatSession, documentData: inout Data) -> Bool {
+        let activeIDs = [
+            session.activeRosterIDs.0,
+            session.activeRosterIDs.1,
+            session.activeRosterIDs.2,
+            session.activeRosterIDs.3
+        ]
+        let documentLength = documentData.count
+
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            var rosterRecord = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0,
+                  u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                  rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = UnsafeMutableRawPointer(mutating: rosterRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            let cappedPartySize = min(Int(session.partySize), Int(U3_COMBAT_CHARACTER_COUNT))
+            for index in 0..<cappedPartySize {
+                let rosterID = activeIDs[index]
+                guard rosterID > 0 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+                    continue
+                }
+
+                let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
+                let hp = combatCharacterHitPoints(session.combatState, index: index)
+                record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)] = combatCharacterStatus(session.combatState, index: index)
+                record[26] = UInt8((hp >> 8) & 0xFF)
+                record[27] = UInt8(hp & 0xFF)
+                record[40] = combatCharacterArmour(session.combatState, index: index)
+                record[48] = combatCharacterWeapon(session.combatState, index: index)
+                for item in 1..<8 {
+                    record[40 + item] = combatCharacterArmourInventory(session.combatState, character: index, item: item)
+                }
+                for item in 1..<16 {
+                    record[48 + item] = combatCharacterWeaponInventory(session.combatState, character: index, item: item)
+                }
+            }
+            return true
+        }
     }
 
     func moveLocationSession(
@@ -1227,9 +1276,16 @@ final class ShellResourceAdapter {
                 let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
                 let status = record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)]
                 setCombatCharacterStatus(&combatState, index: index, value: status)
+                setCombatCharacterArmour(&combatState, index: index, value: record[40])
                 setCombatCharacterWeapon(&combatState, index: index, value: record[48])
                 setCombatCharacterHitPoints(&combatState, index: index, value: (UInt16(record[26]) << 8) | UInt16(record[27]))
                 setCombatCharacterExperience(&combatState, index: index, value: (UInt16(record[28]) << 8) | UInt16(record[29]))
+                for item in 1..<8 {
+                    setCombatCharacterArmourInventory(&combatState, character: index, item: item, value: record[40 + item])
+                }
+                for item in 1..<16 {
+                    setCombatCharacterWeaponInventory(&combatState, character: index, item: item, value: record[48 + item])
+                }
                 if status != UInt8(ascii: "G") && status != UInt8(ascii: "P") {
                     setCombatCharacterX(&combatState, index: index, value: 0xFF)
                     setCombatCharacterY(&combatState, index: index, value: 0xFF)
@@ -1314,6 +1370,21 @@ final class ShellResourceAdapter {
         }
     }
 
+    private func setCombatCharacterArmour(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_armour.0 = value
+        case 1:
+            state.character_armour.1 = value
+        case 2:
+            state.character_armour.2 = value
+        case 3:
+            state.character_armour.3 = value
+        default:
+            break
+        }
+    }
+
     private func setCombatCharacterHitPoints(_ state: inout u3_combat_state, index: Int, value: UInt16) {
         switch index {
         case 0:
@@ -1341,6 +1412,100 @@ final class ShellResourceAdapter {
             state.character_experience.3 = value
         default:
             break
+        }
+    }
+
+    private func setCombatCharacterArmourInventory(_ state: inout u3_combat_state, character: Int, item: Int, value: UInt8) {
+        guard character >= 0 && character < Int(U3_COMBAT_CHARACTER_COUNT),
+              item >= 0 && item < 8 else {
+            return
+        }
+
+        withUnsafeMutableBytes(of: &state.character_armour_inventory) { buffer in
+            buffer[(character * 8) + item] = value
+        }
+    }
+
+    private func setCombatCharacterWeaponInventory(_ state: inout u3_combat_state, character: Int, item: Int, value: UInt8) {
+        guard character >= 0 && character < Int(U3_COMBAT_CHARACTER_COUNT),
+              item >= 0 && item < 16 else {
+            return
+        }
+
+        withUnsafeMutableBytes(of: &state.character_weapon_inventory) { buffer in
+            buffer[(character * 16) + item] = value
+        }
+    }
+
+    private func combatCharacterStatus(_ state: u3_combat_state, index: Int) -> UInt8 {
+        switch index {
+        case 0:
+            return state.character_status.0
+        case 1:
+            return state.character_status.1
+        case 2:
+            return state.character_status.2
+        case 3:
+            return state.character_status.3
+        default:
+            return 0
+        }
+    }
+
+    private func combatCharacterArmour(_ state: u3_combat_state, index: Int) -> UInt8 {
+        switch index {
+        case 0:
+            return state.character_armour.0
+        case 1:
+            return state.character_armour.1
+        case 2:
+            return state.character_armour.2
+        case 3:
+            return state.character_armour.3
+        default:
+            return 0
+        }
+    }
+
+    private func combatCharacterWeapon(_ state: u3_combat_state, index: Int) -> UInt8 {
+        switch index {
+        case 0:
+            return state.character_weapon.0
+        case 1:
+            return state.character_weapon.1
+        case 2:
+            return state.character_weapon.2
+        case 3:
+            return state.character_weapon.3
+        default:
+            return 0
+        }
+    }
+
+    private func combatCharacterHitPoints(_ state: u3_combat_state, index: Int) -> UInt16 {
+        switch index {
+        case 0:
+            return state.character_hp.0
+        case 1:
+            return state.character_hp.1
+        case 2:
+            return state.character_hp.2
+        case 3:
+            return state.character_hp.3
+        default:
+            return 0
+        }
+    }
+
+    private func combatCharacterArmourInventory(_ state: u3_combat_state, character: Int, item: Int) -> UInt8 {
+        withUnsafeBytes(of: state.character_armour_inventory) { buffer in
+            buffer[(character * 8) + item]
+        }
+    }
+
+    private func combatCharacterWeaponInventory(_ state: u3_combat_state, character: Int, item: Int) -> UInt8 {
+        withUnsafeBytes(of: state.character_weapon_inventory) { buffer in
+            buffer[(character * 16) + item]
         }
     }
 

@@ -492,6 +492,19 @@ final class ShellLocationDocumentTransitionAdapter: ShellLocationDocumentTransit
 }
 
 final class ShellSmokeState: ObservableObject {
+    typealias CombatMonsterRolls = (
+        shootChoice: UInt8,
+        magicChoice: UInt8,
+        magicTarget: UInt8,
+        projectileHit: UInt8,
+        poison: UInt8,
+        pilferBranch: UInt8,
+        pilferItem: UInt8,
+        armourHit: UInt8,
+        damage: UInt8,
+        exodusDamage: UInt8
+    )
+
     @Published private(set) var lastCommand = "Ready"
     @Published private(set) var resourceStatus: String
     @Published private(set) var saveStatus: String
@@ -506,6 +519,7 @@ final class ShellSmokeState: ObservableObject {
     private let locationTransitionAdapter: ShellLocationDocumentTransitioning
     private let dungeonRollProvider: (UInt8) -> (encounter: UInt16, monster: UInt16)
     private let dungeonChestRollProvider: () -> (trap: UInt16, gold: UInt16)
+    private let combatMonsterRollProvider: () -> CombatMonsterRolls
     private let combatSessionLoader: (String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
     private let partyAssemblyAdapter = ShellPartyAssemblyAdapter()
@@ -530,6 +544,7 @@ final class ShellSmokeState: ObservableObject {
         locationTransitionAdapter: ShellLocationDocumentTransitioning = ShellLocationDocumentTransitionAdapter(),
         dungeonRollProvider: @escaping (UInt8) -> (encounter: UInt16, monster: UInt16) = ShellSmokeState.makeDungeonRolls,
         dungeonChestRollProvider: @escaping () -> (trap: UInt16, gold: UInt16) = ShellSmokeState.makeDungeonChestRolls,
+        combatMonsterRollProvider: @escaping () -> CombatMonsterRolls = ShellSmokeState.makeCombatMonsterRolls,
         combatSessionLoader: ((String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult)? = nil
     ) {
         self.inputAdapter = inputAdapter
@@ -540,6 +555,7 @@ final class ShellSmokeState: ObservableObject {
         self.locationTransitionAdapter = locationTransitionAdapter
         self.dungeonRollProvider = dungeonRollProvider
         self.dungeonChestRollProvider = dungeonChestRollProvider
+        self.combatMonsterRollProvider = combatMonsterRollProvider
         self.combatSessionLoader = combatSessionLoader ?? { resourceRootPath, encounter, sourceSession, documentData in
             resourceAdapter.loadCombatSession(
                 resourceRootPath: resourceRootPath,
@@ -940,12 +956,13 @@ final class ShellSmokeState: ObservableObject {
             _ = audioAdapter.enqueueSound(Int32(result.sound_id))
         }
 
-        let description = describeCombatPlayerCommand(result, session: session)
+        var description = describeCombatPlayerCommand(result, session: session)
         if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_MOVED) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_PASSED) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED) {
             advanceCombatCharacter(&session)
+            description += runCombatMonsterTurn(session: &session)
         }
         activeCombatSession = session
         return description
@@ -1030,6 +1047,61 @@ final class ShellSmokeState: ObservableObject {
         session.activeCharacter = playableCombatCharacter(in: session, startingAt: nextCharacter) ?? session.activeCharacter
     }
 
+    private func runCombatMonsterTurn(session: inout ShellCombatSession) -> String {
+        var input = makeCombatMonsterTurnInput(session: session)
+        let result = u3_combat_monster_turn(&session.combatState, &input)
+        session.nextMonster = result.next_starting_monster
+
+        if result.redraw != 0 {
+            resourceAdapter.refreshCombatSessionFrame(&session)
+            renderFrame = session.frame
+            let locations = locationProvider.snapshot()
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: session.status
+            )
+        }
+        if result.sound_id != 0 {
+            _ = audioAdapter.enqueueSound(Int32(result.sound_id))
+        }
+        if combatMonsterTurnMutatedParty(result),
+           var documentData = currentSaveDocument,
+           resourceAdapter.applyCombatPartyState(session, documentData: &documentData) {
+            currentSaveDocument = documentData
+            hasUnsavedChanges = true
+        }
+
+        return " | \(describeCombatMonsterTurn(result))"
+    }
+
+    private func makeCombatMonsterTurnInput(session: ShellCombatSession) -> u3_combat_monster_turn_input {
+        let rolls = combatMonsterRollProvider()
+        let cappedPartySize = max(UInt8(1), min(session.partySize, UInt8(U3_COMBAT_CHARACTER_COUNT)))
+        return u3_combat_monster_turn_input(
+            party_size: session.partySize,
+            starting_monster: session.nextMonster,
+            shoot_choice_roll: rolls.shootChoice,
+            magic_choice_roll: rolls.magicChoice,
+            magic_target_character: rolls.magicTarget % cappedPartySize,
+            projectile_hit_character: rolls.projectileHit % cappedPartySize,
+            poison_roll: rolls.poison,
+            pilfer_branch_roll: rolls.pilferBranch,
+            pilfer_item_roll: rolls.pilferItem,
+            exodus_castle_active: 0,
+            exodus_damage_flags: rolls.exodusDamage,
+            armour_hit_roll: rolls.armourHit,
+            damage_roll: rolls.damage
+        )
+    }
+
+    private func combatMonsterTurnMutatedParty(_ result: u3_combat_monster_turn_result) -> Bool {
+        result.action_result.hit != 0 ||
+            result.action_result.poisoned != 0 ||
+            result.action_result.pilfered != 0 ||
+            result.action_result.character_died != 0
+    }
+
     private func playableCombatCharacter(in session: ShellCombatSession, startingAt start: UInt8) -> UInt8? {
         let cappedPartySize = min(session.partySize, UInt8(U3_COMBAT_CHARACTER_COUNT))
         guard cappedPartySize > 0 else {
@@ -1101,6 +1173,40 @@ final class ShellSmokeState: ObservableObject {
             return "Combat CONS \(session.screenResourceID) command deferred"
         default:
             return "Combat CONS \(session.screenResourceID) command deferred"
+        }
+    }
+
+    private func describeCombatMonsterTurn(_ result: u3_combat_monster_turn_result) -> String {
+        let monster = result.monster == UInt8(U3_COMBAT_NO_SLOT) ? 0 : result.monster + 1
+        let target = result.target_character == UInt8(U3_COMBAT_NO_SLOT) ? 0 : result.target_character + 1
+
+        switch Int32(result.status) {
+        case U3_COMBAT_MONSTER_TURN_STATUS_MOVED:
+            return "Monster \(monster) move \(result.action_result.moved_to_x),\(result.action_result.moved_to_y)"
+        case U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_MISSED:
+            return "Monster \(monster) missed character \(target)"
+        case U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_HIT:
+            if result.action_result.character_died != 0 {
+                return "Monster \(monster) hit character \(target) damage \(result.action_result.damage_amount) defeated"
+            }
+            if result.action_result.poisoned != 0 {
+                return "Monster \(monster) hit character \(target) damage \(result.action_result.damage_amount) poisoned"
+            }
+            if result.action_result.pilfered != 0 {
+                return "Monster \(monster) hit character \(target) damage \(result.action_result.damage_amount) pilfered"
+            }
+            return "Monster \(monster) hit character \(target) damage \(result.action_result.damage_amount)"
+        case U3_COMBAT_MONSTER_TURN_STATUS_SHOT:
+            if result.action_result.projectile_missed != 0 {
+                return "Monster \(monster) shot missed"
+            }
+            return "Monster \(monster) shot character \(target) damage \(result.action_result.damage_amount)"
+        case U3_COMBAT_MONSTER_TURN_STATUS_SPELL_DEFERRED:
+            return "Monster \(monster) spell deferred character \(target)"
+        case U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION:
+            fallthrough
+        default:
+            return "Monster no action"
         }
     }
 
@@ -1728,6 +1834,47 @@ final class ShellSmokeState: ObservableObject {
         }
         return session.mapData[offset]
     }
+
+    func debugCurrentSaveDocument() -> Data? {
+        currentSaveDocument
+    }
+
+    func debugConfigureActiveCombat(
+        monsterX: UInt8,
+        monsterY: UInt8,
+        monsterHP: UInt8,
+        characterX: UInt8,
+        characterY: UInt8,
+        characterHP: UInt16
+    ) -> Bool {
+        guard var session = activeCombatSession else {
+            return false
+        }
+
+        session.combatState.monster_x.0 = monsterX
+        session.combatState.monster_y.0 = monsterY
+        session.combatState.monster_hp.0 = monsterHP
+        session.combatState.monster_tile.0 = 0
+        session.combatState.character_x.0 = characterX
+        session.combatState.character_y.0 = characterY
+        session.combatState.character_hp.0 = characterHP
+        session.combatState.character_status.0 = UInt8(ascii: "G")
+        session.combatState.character_shape.0 = 0x80
+        session.combatState.character_tile.0 = 0
+        withUnsafeMutableBytes(of: &session.combatState.tile_array) { buffer in
+            for index in 0..<Int(U3_RENDER_TILE_COUNT) {
+                buffer[index] = 0
+            }
+            buffer[(Int(monsterY) * 11) + Int(monsterX)] = session.monsterType
+            buffer[(Int(characterY) * 11) + Int(characterX)] = session.combatState.character_shape.0
+        }
+        session.activeCharacter = 0
+        session.nextMonster = 0
+        resourceAdapter.refreshCombatSessionFrame(&session)
+        activeCombatSession = session
+        renderFrame = session.frame
+        return true
+    }
 #endif
 
     private func describeKey(_ command: UInt16) -> String {
@@ -1937,6 +2084,21 @@ final class ShellSmokeState: ObservableObject {
         (
             UInt16.random(in: 0...255),
             UInt16.random(in: 0...100)
+        )
+    }
+
+    private static func makeCombatMonsterRolls() -> CombatMonsterRolls {
+        (
+            shootChoice: UInt8.random(in: 0...255),
+            magicChoice: UInt8.random(in: 0...255),
+            magicTarget: UInt8.random(in: 0..<UInt8(U3_COMBAT_CHARACTER_COUNT)),
+            projectileHit: UInt8.random(in: 0..<UInt8(U3_COMBAT_CHARACTER_COUNT)),
+            poison: UInt8.random(in: 0...255),
+            pilferBranch: UInt8.random(in: 0...255),
+            pilferItem: UInt8.random(in: 0...255),
+            armourHit: UInt8.random(in: 0...15),
+            damage: UInt8.random(in: 0...255),
+            exodusDamage: UInt8.random(in: 0...3)
         )
     }
 

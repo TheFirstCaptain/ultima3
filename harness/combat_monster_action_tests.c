@@ -396,6 +396,162 @@ static void test_exotic_armour_in_exodus_still_uses_armour_roll(void)
     ASSERT_EQ_INT(50, state.character_hp[0]);
 }
 
+static u3_combat_monster_turn_input base_turn(void)
+{
+    u3_combat_monster_turn_input input;
+
+    memset(&input, 0, sizeof(input));
+    input.party_size = 4;
+    input.starting_monster = 0;
+    input.projectile_hit_character = U3_COMBAT_NO_SLOT;
+    input.magic_target_character = 0;
+    input.poison_roll = 0xFF;
+    input.armour_hit_roll = 0;
+    input.damage_roll = 4;
+    return input;
+}
+
+static void test_monster_turn_moves_first_live_monster_toward_nearest_character(void)
+{
+    u3_combat_monster_turn_input input;
+    u3_combat_monster_turn_result result;
+
+    reset_state();
+    state.monster_x[3] = 2;
+    state.monster_y[3] = 2;
+    state.monster_tile[3] = 0x02;
+    state.monster_hp[3] = 20;
+    state.tile_array[(2 * 11) + 2] = (uint8_t)state.monster_type;
+    place_live_character(0);
+    input = base_turn();
+    input.party_size = 1;
+
+    result = u3_combat_monster_turn(&state, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(3, result.monster);
+    ASSERT_EQ_INT(4, result.next_starting_monster);
+    ASSERT_EQ_INT(0, result.target_character);
+    ASSERT_EQ_INT(U3_COMBAT_MONSTER_TURN_STATUS_MOVED, result.status);
+    ASSERT_EQ_INT(3, state.monster_x[3]);
+    ASSERT_EQ_INT(3, state.monster_y[3]);
+    ASSERT_EQ_INT(1, result.redraw);
+}
+
+static void test_monster_turn_uses_manhattan_target_after_adjacent_check(void)
+{
+    u3_combat_monster_turn_input input;
+    u3_combat_monster_turn_result result;
+
+    reset_state();
+    state.monster_x[0] = 1;
+    state.monster_y[0] = 1;
+    state.monster_tile[0] = 0x02;
+    state.monster_hp[0] = 20;
+    state.tile_array[(1 * 11) + 1] = (uint8_t)state.monster_type;
+    place_live_character(0);
+    state.character_x[0] = 5;
+    state.character_y[0] = 5;
+    state.character_shape[0] = 0x80;
+    state.tile_array[(5 * 11) + 5] = state.character_shape[0];
+    place_live_character(1);
+    state.character_x[1] = 7;
+    state.character_y[1] = 1;
+    state.character_shape[1] = 0x81;
+    state.tile_array[(1 * 11) + 7] = state.character_shape[1];
+    input = base_turn();
+    input.party_size = 2;
+
+    result = u3_combat_monster_turn(&state, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.target_character);
+    ASSERT_EQ_INT(U3_COMBAT_MONSTER_TURN_STATUS_MOVED, result.status);
+    ASSERT_EQ_INT(2, state.monster_x[0]);
+    ASSERT_EQ_INT(1, state.monster_y[0]);
+}
+
+static void test_monster_turn_attacks_and_mutates_character_state(void)
+{
+    u3_combat_monster_turn_input input;
+    u3_combat_monster_turn_result result;
+
+    reset_state();
+    state.monster_type = 0x38;
+    place_live_monster();
+    state.monster_hp[1] = 0x20;
+    place_live_character(0);
+    state.character_hp[0] = 5;
+    input = base_turn();
+    input.party_size = 1;
+    input.starting_monster = 1;
+    input.poison_roll = 0;
+
+    result = u3_combat_monster_turn(&state, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.monster);
+    ASSERT_EQ_INT(U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_HIT, result.status);
+    ASSERT_EQ_INT(1, result.action_result.poisoned);
+    ASSERT_EQ_INT(1, result.action_result.character_died);
+    ASSERT_EQ_INT(0, state.character_hp[0]);
+    ASSERT_EQ_INT(U3_COMBAT_STATUS_DEAD, state.character_status[0]);
+}
+
+static void test_monster_turn_reports_no_action_when_blocked_from_nonadjacent_target(void)
+{
+    u3_combat_monster_turn_input input;
+    u3_combat_monster_turn_result result;
+
+    reset_state();
+    state.monster_x[0] = 1;
+    state.monster_y[0] = 1;
+    state.monster_tile[0] = 0x02;
+    state.monster_hp[0] = 20;
+    state.tile_array[(1 * 11) + 1] = (uint8_t)state.monster_type;
+    place_live_character(0);
+    state.character_x[0] = 4;
+    state.character_y[0] = 4;
+    state.character_shape[0] = 0x80;
+    state.tile_array[(4 * 11) + 4] = state.character_shape[0];
+    state.tile_array[(2 * 11) + 2] = 2;
+    state.tile_array[(1 * 11) + 2] = 2;
+    state.tile_array[(2 * 11) + 1] = 2;
+    input = base_turn();
+    input.party_size = 1;
+
+    result = u3_combat_monster_turn(&state, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.no_action);
+    ASSERT_EQ_INT(U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION, result.status);
+    ASSERT_EQ_INT(1, state.monster_x[0]);
+    ASSERT_EQ_INT(1, state.monster_y[0]);
+}
+
+static void test_monster_turn_suppresses_action_without_live_targets(void)
+{
+    u3_combat_monster_turn_input input;
+    u3_combat_monster_turn_result result;
+
+    reset_state();
+    place_live_monster();
+    place_live_character(0);
+    state.character_status[0] = U3_COMBAT_STATUS_DEAD;
+    state.character_x[0] = 0xFF;
+    state.character_y[0] = 0xFF;
+    input = base_turn();
+    input.party_size = 1;
+    input.starting_monster = 1;
+
+    result = u3_combat_monster_turn(&state, &input);
+
+    ASSERT_EQ_INT(0, result.handled);
+    ASSERT_EQ_INT(1, result.no_action);
+    ASSERT_EQ_INT(U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION, result.status);
+    ASSERT_EQ_INT(10, state.monster_hp[1]);
+}
+
 int main(void)
 {
     test_dead_monster_has_no_action();
@@ -412,6 +568,11 @@ int main(void)
     test_exodus_castle_auto_hits_non_exotic_armour_and_adds_damage();
     test_poison_and_lethal_hit_preserve_separate_messages();
     test_exotic_armour_in_exodus_still_uses_armour_roll();
+    test_monster_turn_moves_first_live_monster_toward_nearest_character();
+    test_monster_turn_uses_manhattan_target_after_adjacent_check();
+    test_monster_turn_attacks_and_mutates_character_state();
+    test_monster_turn_reports_no_action_when_blocked_from_nonadjacent_target();
+    test_monster_turn_suppresses_action_without_live_targets();
 
     puts("combat monster action characterization passed");
     return 0;

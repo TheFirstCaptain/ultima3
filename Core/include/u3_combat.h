@@ -44,6 +44,14 @@
 #define U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED 8
 #define U3_COMBAT_PLAYER_STATUS_UNSUPPORTED 9
 
+#define U3_COMBAT_MONSTER_TURN_STATUS_NONE 0
+#define U3_COMBAT_MONSTER_TURN_STATUS_MOVED 1
+#define U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_MISSED 2
+#define U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_HIT 3
+#define U3_COMBAT_MONSTER_TURN_STATUS_SHOT 4
+#define U3_COMBAT_MONSTER_TURN_STATUS_SPELL_DEFERRED 5
+#define U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION 6
+
 typedef struct u3_combat_state {
     int16_t monster_type;
     uint8_t character_x[U3_COMBAT_CHARACTER_COUNT];
@@ -217,6 +225,34 @@ typedef struct u3_combat_monster_action_result {
     uint8_t moved_to_y;
 } u3_combat_monster_action_result;
 
+typedef struct u3_combat_monster_turn_input {
+    uint8_t party_size;
+    uint8_t starting_monster;
+    uint8_t shoot_choice_roll;
+    uint8_t magic_choice_roll;
+    uint8_t magic_target_character;
+    uint8_t projectile_hit_character;
+    uint8_t poison_roll;
+    uint8_t pilfer_branch_roll;
+    uint8_t pilfer_item_roll;
+    uint8_t exodus_castle_active;
+    uint8_t exodus_damage_flags;
+    uint8_t armour_hit_roll;
+    uint8_t damage_roll;
+} u3_combat_monster_turn_input;
+
+typedef struct u3_combat_monster_turn_result {
+    uint8_t handled;
+    uint8_t no_action;
+    uint8_t monster;
+    uint8_t next_starting_monster;
+    uint8_t target_character;
+    uint8_t redraw;
+    uint16_t sound_id;
+    uint8_t status;
+    u3_combat_monster_action_result action_result;
+} u3_combat_monster_turn_result;
+
 uint8_t u3_combat_valid_move(const u3_combat_state *state, int16_t tile);
 uint8_t u3_combat_monster_here(const u3_combat_state *state, int16_t x, int16_t y);
 uint8_t u3_combat_character_here(const u3_combat_state *state, int16_t x, int16_t y);
@@ -233,5 +269,7 @@ u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
                                                           const u3_combat_player_command_input *input);
 u3_combat_monster_action_result u3_combat_monster_action(u3_combat_state *state,
                                                           const u3_combat_monster_action_input *input);
+u3_combat_monster_turn_result u3_combat_monster_turn(u3_combat_state *state,
+                                                      const u3_combat_monster_turn_input *input);
 
 #endif

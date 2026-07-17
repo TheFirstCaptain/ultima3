@@ -127,6 +127,11 @@ static uint8_t u3_combat_is_poison_monster(uint8_t monster_type)
     return monster_type == 0x1C || monster_type == 0x3C || monster_type == 0x38;
 }
 
+static uint8_t u3_combat_abs_delta(uint8_t a, uint8_t b)
+{
+    return a > b ? (uint8_t)(a - b) : (uint8_t)(b - a);
+}
+
 static uint8_t u3_combat_subtract_character_hp(u3_combat_state *state, uint8_t character, uint16_t amount)
 {
     if (state->character_hp[character] < amount + 1) {
@@ -380,6 +385,185 @@ u3_combat_monster_action_result u3_combat_monster_action(u3_combat_state *state,
     }
 
     u3_combat_apply_monster_hit(state, input, &result, target, hit_tile, 1);
+    return result;
+}
+
+static uint8_t u3_combat_find_live_monster(const u3_combat_state *state, uint8_t starting_monster)
+{
+    uint8_t offset;
+
+    for (offset = 0; offset < U3_COMBAT_MONSTER_COUNT; offset++) {
+        uint8_t monster = (uint8_t)((starting_monster + offset) % U3_COMBAT_MONSTER_COUNT);
+        if (state->monster_hp[monster] != 0)
+            return monster;
+    }
+    return U3_COMBAT_NO_SLOT;
+}
+
+static uint8_t u3_combat_find_nearest_character(const u3_combat_state *state,
+                                                uint8_t party_size,
+                                                uint8_t monster,
+                                                uint8_t *distance)
+{
+    uint8_t character;
+    uint8_t capped_party_size = party_size < U3_COMBAT_CHARACTER_COUNT ? party_size : U3_COMBAT_CHARACTER_COUNT;
+    uint8_t best_character = U3_COMBAT_NO_SLOT;
+    uint8_t best_distance = 0xFF;
+
+    for (character = 0; character < capped_party_size; character++) {
+        uint8_t dx;
+        uint8_t dy;
+        uint8_t candidate_distance;
+
+        if (!u3_combat_character_can_act(state, character))
+            continue;
+
+        dx = u3_combat_abs_delta(state->monster_x[monster], state->character_x[character]);
+        dy = u3_combat_abs_delta(state->monster_y[monster], state->character_y[character]);
+        candidate_distance = (dx <= 1 && dy <= 1) ? 0 : (uint8_t)(dx + dy);
+        if (candidate_distance < best_distance) {
+            best_distance = candidate_distance;
+            best_character = character;
+        }
+    }
+
+    *distance = best_distance;
+    return best_character;
+}
+
+static uint8_t u3_combat_choose_monster_move(const u3_combat_state *state,
+                                             uint8_t monster,
+                                             uint8_t target,
+                                             uint8_t *move_x,
+                                             uint8_t *move_y)
+{
+    int16_t monster_x = state->monster_x[monster];
+    int16_t monster_y = state->monster_y[monster];
+    int16_t target_x = state->character_x[target];
+    int16_t target_y = state->character_y[target];
+    int16_t dx = target_x > monster_x ? 1 : (target_x < monster_x ? -1 : 0);
+    int16_t dy = target_y > monster_y ? 1 : (target_y < monster_y ? -1 : 0);
+    int16_t candidates[3][2];
+    int16_t candidate;
+
+    candidates[0][0] = monster_x + dx;
+    candidates[0][1] = monster_y + dy;
+    candidates[1][0] = monster_x + dx;
+    candidates[1][1] = monster_y;
+    candidates[2][0] = monster_x;
+    candidates[2][1] = monster_y + dy;
+
+    *move_x = (uint8_t)monster_x;
+    *move_y = (uint8_t)monster_y;
+    for (candidate = 0; candidate < 3; candidate++) {
+        int16_t x = candidates[candidate][0];
+        int16_t y = candidates[candidate][1];
+
+        if (x < 0 || x > 10 || y < 0 || y > 10)
+            continue;
+        if (u3_combat_character_here(state, x, y) != U3_COMBAT_NO_SLOT)
+            continue;
+        if (u3_combat_monster_here(state, x, y) != U3_COMBAT_NO_SLOT)
+            continue;
+        if (!u3_combat_valid_move(state, u3_combat_get_tile(state, x, y)))
+            continue;
+        *move_x = (uint8_t)x;
+        *move_y = (uint8_t)y;
+        return 1;
+    }
+    return 0;
+}
+
+u3_combat_monster_turn_result u3_combat_monster_turn(u3_combat_state *state,
+                                                      const u3_combat_monster_turn_input *input)
+{
+    u3_combat_monster_turn_result result = {0};
+    u3_combat_monster_action_input action_input;
+    uint8_t monster;
+    uint8_t target;
+    uint8_t distance;
+
+    result.monster = U3_COMBAT_NO_SLOT;
+    result.target_character = U3_COMBAT_NO_SLOT;
+    result.next_starting_monster = 0;
+
+    if (state == 0 || input == 0) {
+        result.no_action = 1;
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION;
+        return result;
+    }
+
+    monster = u3_combat_find_live_monster(state, (uint8_t)(input->starting_monster % U3_COMBAT_MONSTER_COUNT));
+    if (monster == U3_COMBAT_NO_SLOT) {
+        result.no_action = 1;
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION;
+        return result;
+    }
+
+    result.monster = monster;
+    result.next_starting_monster = (uint8_t)((monster + 1) % U3_COMBAT_MONSTER_COUNT);
+    target = u3_combat_find_nearest_character(state, input->party_size, monster, &distance);
+    if (target == U3_COMBAT_NO_SLOT) {
+        result.no_action = 1;
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION;
+        return result;
+    }
+    result.target_character = target;
+
+    action_input.monster = monster;
+    action_input.party_size = input->party_size;
+    action_input.target_character = target;
+    action_input.target_distance = distance <= 1 ? 0 : distance;
+    action_input.move_x = state->monster_x[monster];
+    action_input.move_y = state->monster_y[monster];
+    action_input.shoot_delta_x = 0;
+    action_input.shoot_delta_y = 0;
+    action_input.shoot_choice_roll = input->shoot_choice_roll;
+    action_input.magic_choice_roll = input->magic_choice_roll;
+    action_input.magic_target_character = input->magic_target_character;
+    action_input.projectile_hit_character = input->projectile_hit_character;
+    action_input.monster_hp_start = state->monster_hp[monster];
+    action_input.monster_tile_value = 0;
+    action_input.poison_roll = input->poison_roll;
+    action_input.pilfer_branch_roll = input->pilfer_branch_roll;
+    action_input.pilfer_item_roll = input->pilfer_item_roll;
+    action_input.exodus_castle_active = input->exodus_castle_active;
+    action_input.exodus_damage_flags = input->exodus_damage_flags;
+    action_input.armour_hit_roll = input->armour_hit_roll;
+    action_input.damage_roll = input->damage_roll;
+
+    if (distance != 0 &&
+        !u3_combat_choose_monster_move(state, monster, target, &action_input.move_x, &action_input.move_y))
+        action_input.target_distance = 0x80;
+
+    result.handled = 1;
+    result.action_result = u3_combat_monster_action(state, &action_input);
+    result.redraw = result.action_result.redraw_tiles;
+    if (result.action_result.play_hit_sound || result.action_result.play_ouch_sound) {
+        result.sound_id = U3_AUDIO_SOUND_HIT;
+    } else if (result.action_result.play_shoot_sound) {
+        result.sound_id = U3_AUDIO_SOUND_SHOOT;
+    } else if (result.action_result.play_monster_spell_sound) {
+        result.sound_id = U3_AUDIO_SOUND_MONSTER_SPELL;
+    } else if (result.action_result.play_attack_sound) {
+        result.sound_id = U3_AUDIO_SOUND_ATTACK;
+    }
+
+    if (result.action_result.moved) {
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_MOVED;
+    } else if (result.action_result.shot) {
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_SHOT;
+    } else if (result.action_result.cast_spell) {
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_SPELL_DEFERRED;
+    } else if (result.action_result.hit) {
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_HIT;
+    } else if (result.action_result.miss) {
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_MISSED;
+    } else {
+        result.no_action = 1;
+        result.status = U3_COMBAT_MONSTER_TURN_STATUS_NO_ACTION;
+    }
+
     return result;
 }
 

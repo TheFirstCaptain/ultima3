@@ -98,5 +98,11 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-048 | Combat Session Entry From Encounter Requests | Complete | Done | [F-048.md](./F-048.md) | 2026-07-13 | Dungeon encounter requests now initialize a validated transient combat session while preserving the source dungeon session and leaving the full combat loop deferred. |
 | F-049 | Combat Arena Render and Occupant State | Complete | Done | [F-049.md](./F-049.md) | 2026-07-13 | Active combat sessions now render resource-backed terrain with deterministic party and monster occupant overlays. |
 | F-050 | First Player Combat Command Slice | Complete | Done | [F-050.md](./F-050.md) | 2026-07-17 | Basic combat movement/pass, non-blocking attack direction prompt, melee hit/miss, and explicit projectile/deferred paths complete. |
-| F-051 | First Monster Combat Turn Slice | Proposed | Proposed | [F-051.md](./F-051.md) | 2026-07-12 | Run deterministic bounded monster actions after handled player combat commands. |
+| F-051 | First Monster Combat Turn Slice | Complete | Done | [F-051.md](./F-051.md) | 2026-07-17 | Deterministic one-monster turn wrapper, shell sequencing, roster mutation write-back, and validation complete. |
 | F-052 | Combat Victory and Return Flow | Proposed | Proposed | [F-052.md](./F-052.md) | 2026-07-12 | Detect first combat victory, apply bounded rewards/cleanup, and restore the preserved source session. |
+| F-053 | Player Ranged Combat Attack Slice | Proposed | Proposed | [F-053.md](./F-053.md) | 2026-07-17 | Add first projectile and thrown-dagger player attack paths with bounded inventory write-back. |
+| F-054 | First Combat Spell Command Slice | Proposed | Proposed | [F-054.md](./F-054.md) | 2026-07-17 | Add the first bounded player combat spell command path and mutation/status handling. |
+| F-055 | Combat Flee and Defeat Flow | Proposed | Proposed | [F-055.md](./F-055.md) | 2026-07-17 | Add bounded flee attempts and all-party-defeated handling. |
+| F-056 | Dungeon Chest Trap and Equipment Rewards | Proposed | Proposed | [F-056.md](./F-056.md) | 2026-07-17 | Expand dungeon chest outcomes beyond gold to traps and first equipment rewards. |
+| F-057 | First Town Service Slice | Proposed | Proposed | [F-057.md](./F-057.md) | 2026-07-17 | Add one bounded useful town service with prompt and save-domain mutation handling. |
+| F-058 | Combat Presentation and Turn Feedback Pass | Proposed | Proposed | [F-058.md](./F-058.md) | 2026-07-17 | Improve visible combat feedback through bounded presentation events without changing rules. |
