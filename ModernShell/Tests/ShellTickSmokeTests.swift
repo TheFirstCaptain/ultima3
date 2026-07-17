@@ -410,7 +410,24 @@ final class ShellTickSmokeTests: XCTestCase {
 
         state.submitKeyboard(UInt8(ascii: "A"))
         state.runTick()
-        XCTAssertEqual(state.lastCommand, "Combat CONS 402 command A deferred")
+        XCTAssertEqual(state.lastCommand, "Combat character 1 attack: choose direction")
+
+        state.submitKeyboard(UInt8(ascii: "6"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Combat character 1 attack deferred")
+
+        state.submitKeyboard(UInt8(ascii: "A"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Combat character 1 attack: choose direction")
+
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertNotEqual(state.lastCommand, "Combat attack cancelled")
+        XCTAssertTrue(
+            state.lastCommand == "Combat character 1 attack deferred" ||
+                state.lastCommand == "Combat character 1 attack missed" ||
+                state.lastCommand.hasPrefix("Combat character 1 hit monster ")
+        )
 
         state.refreshLocationStatus()
         XCTAssertEqual(state.lastCommand, "Combat refreshed")

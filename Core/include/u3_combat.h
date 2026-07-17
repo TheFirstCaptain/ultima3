@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "u3_audio.h"
+
 #define U3_COMBAT_CHARACTER_COUNT 4
 #define U3_COMBAT_MONSTER_COUNT 8
 #define U3_COMBAT_NO_SLOT 255
@@ -23,6 +25,24 @@
 #define U3_COMBAT_STATUS_DEAD 'D'
 #define U3_COMBAT_STATUS_ASH 'A'
 #define U3_COMBAT_STATUS_POISONED 'P'
+
+#define U3_COMBAT_COMMAND_NORTH 1
+#define U3_COMBAT_COMMAND_SOUTH 2
+#define U3_COMBAT_COMMAND_WEST 3
+#define U3_COMBAT_COMMAND_EAST 4
+#define U3_COMBAT_COMMAND_PASS 32
+#define U3_COMBAT_COMMAND_ATTACK 65
+
+#define U3_COMBAT_PLAYER_STATUS_NONE 0
+#define U3_COMBAT_PLAYER_STATUS_MOVED 1
+#define U3_COMBAT_PLAYER_STATUS_BLOCKED 2
+#define U3_COMBAT_PLAYER_STATUS_PASSED 3
+#define U3_COMBAT_PLAYER_STATUS_ATTACK_DIRECTION_REQUIRED 4
+#define U3_COMBAT_PLAYER_STATUS_ATTACK_CANCELLED 5
+#define U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED 6
+#define U3_COMBAT_PLAYER_STATUS_ATTACK_HIT 7
+#define U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED 8
+#define U3_COMBAT_PLAYER_STATUS_UNSUPPORTED 9
 
 typedef struct u3_combat_state {
     int16_t monster_type;
@@ -98,6 +118,42 @@ typedef struct u3_combat_attack_result {
     u3_combat_damage_result damage_result;
 } u3_combat_attack_result;
 
+typedef struct u3_combat_player_command_input {
+    uint16_t command;
+    uint8_t character;
+    int8_t attack_direction_x;
+    int8_t attack_direction_y;
+    uint8_t weapon;
+    uint8_t weapon_quantity;
+    uint8_t strength;
+    uint8_t dexterity;
+    uint8_t projectile_monster;
+    uint8_t exodus_castle_result;
+    uint8_t hit_chance_roll;
+    uint8_t hit_dexterity_roll;
+    uint8_t damage_roll;
+} u3_combat_player_command_input;
+
+typedef struct u3_combat_player_command_result {
+    uint8_t handled;
+    uint8_t moved;
+    uint8_t blocked;
+    uint8_t passed;
+    uint8_t attack_direction_required;
+    uint8_t attacked;
+    uint8_t unsupported;
+    uint8_t redraw;
+    uint16_t sound_id;
+    uint8_t status;
+    uint8_t character;
+    uint8_t x;
+    uint8_t y;
+    uint8_t target_x;
+    uint8_t target_y;
+    uint8_t target_tile;
+    u3_combat_attack_result attack_result;
+} u3_combat_player_command_result;
+
 typedef struct u3_combat_monster_action_input {
     uint8_t monster;
     uint8_t party_size;
@@ -172,6 +228,9 @@ u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
 u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
                                           const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
                                           const u3_combat_attack_input *input);
+u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
+                                                          const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
+                                                          const u3_combat_player_command_input *input);
 u3_combat_monster_action_result u3_combat_monster_action(u3_combat_state *state,
                                                           const u3_combat_monster_action_input *input);
 

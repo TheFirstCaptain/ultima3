@@ -515,6 +515,7 @@ final class ShellSmokeState: ObservableObject {
     private var activeLocationSession: ShellLocationSession?
     private var activeCombatSession: ShellCombatSession?
     private var awaitingTalkDirection = false
+    private var pendingCombatAttackCharacter: UInt8?
     private var pendingDungeonInteractionCommand: UInt16?
     private var currentSaveDocument: Data?
     @Published private(set) var hasUnsavedChanges = false
@@ -643,6 +644,7 @@ final class ShellSmokeState: ObservableObject {
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
         awaitingTalkDirection = false
+        pendingCombatAttackCharacter = nil
         pendingDungeonInteractionCommand = nil
         if let activeCombatSession {
             renderFrame = activeCombatSession.frame
@@ -755,8 +757,8 @@ final class ShellSmokeState: ObservableObject {
 
     private func consumeInputEvent(_ event: u3_input_event) -> String {
         if Int32(event.kind) == U3_INPUT_EVENT_KEYBOARD {
-            if let combatSession = activeCombatSession {
-                return "Combat CONS \(combatSession.screenResourceID) command \(inputAdapter.describeKey(event.command)) deferred"
+            if var combatSession = activeCombatSession {
+                return consumeCombatInput(event, session: &combatSession)
             }
 
             if var locationSession = activeLocationSession {
@@ -882,6 +884,224 @@ final class ShellSmokeState: ObservableObject {
         }
 
         return inputAdapter.describe(event)
+    }
+
+    private func consumeCombatInput(_ event: u3_input_event, session: inout ShellCombatSession) -> String {
+        if pendingCombatAttackCharacter == nil,
+           let activeCharacter = playableCombatCharacter(in: session, startingAt: session.activeCharacter) {
+            session.activeCharacter = activeCharacter
+        } else if pendingCombatAttackCharacter == nil {
+            activeCombatSession = session
+            return "Combat has no active characters"
+        }
+
+        var input = makeCombatCommandInput(command: Self.normalizedKeyboardCommand(event.command), session: session)
+
+        if let pendingCharacter = pendingCombatAttackCharacter {
+            guard let direction = Self.combatDirection(for: event.command) else {
+                pendingCombatAttackCharacter = nil
+                activeCombatSession = session
+                return "Combat attack cancelled"
+            }
+            input.command = UInt16(U3_COMBAT_COMMAND_ATTACK)
+            input.character = pendingCharacter
+            input.attack_direction_x = direction.dx
+            input.attack_direction_y = direction.dy
+        }
+
+        let experience = [UInt8](repeating: 0, count: Int(U3_COMBAT_EXPERIENCE_COUNT))
+        let result = experience.withUnsafeBufferPointer { buffer in
+            u3_combat_player_command(&session.combatState, buffer.baseAddress, &input)
+        }
+
+        guard result.handled != 0 else {
+            activeCombatSession = session
+            return "Combat CONS \(session.screenResourceID) command \(inputAdapter.describeKey(event.command)) deferred"
+        }
+
+        if result.attack_direction_required != 0 {
+            pendingCombatAttackCharacter = input.character
+            activeCombatSession = session
+            return "Combat character \(input.character + 1) attack: choose direction"
+        }
+
+        pendingCombatAttackCharacter = nil
+        if result.redraw != 0 {
+            resourceAdapter.refreshCombatSessionFrame(&session)
+            renderFrame = session.frame
+            let locations = locationProvider.snapshot()
+            resourceStatus = Self.describeResourceStatus(
+                locations: locations,
+                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+                renderStatus: session.status
+            )
+        }
+        if result.sound_id != 0 {
+            _ = audioAdapter.enqueueSound(Int32(result.sound_id))
+        }
+
+        let description = describeCombatPlayerCommand(result, session: session)
+        if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_MOVED) ||
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_PASSED) ||
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT) ||
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED) {
+            advanceCombatCharacter(&session)
+        }
+        activeCombatSession = session
+        return description
+    }
+
+    private func makeCombatCommandInput(command: UInt16, session: ShellCombatSession) -> u3_combat_player_command_input {
+        let character = session.activeCharacter
+        let roster = combatRosterSnapshot(character: character, session: session)
+        return u3_combat_player_command_input(
+            command: command,
+            character: character,
+            attack_direction_x: 0,
+            attack_direction_y: 0,
+            weapon: roster.weapon,
+            weapon_quantity: roster.weaponQuantity,
+            strength: roster.strength,
+            dexterity: roster.dexterity,
+            projectile_monster: UInt8(U3_COMBAT_NO_SLOT),
+            exodus_castle_result: 0xFF,
+            hit_chance_roll: UInt8.random(in: 0...255),
+            hit_dexterity_roll: UInt8.random(in: 0...99),
+            damage_roll: UInt8.random(in: 0...(roster.strength | 1))
+        )
+    }
+
+    private func combatRosterSnapshot(
+        character: UInt8,
+        session: ShellCombatSession
+    ) -> (strength: UInt8, dexterity: UInt8, weapon: UInt8, weaponQuantity: UInt8) {
+        let rosterID = combatRosterID(character: character, session: session)
+        guard rosterID > 0,
+              let currentSaveDocument else {
+            return (10, 10, 0, 0)
+        }
+
+        return currentSaveDocument.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return (10, 10, 0, 0)
+            }
+
+            var document = u3_save_document()
+            var rosterRecord = u3_save_record()
+            guard u3_save_open(documentBaseAddress, currentSaveDocument.count, &document) != 0,
+                  u3_save_find_record(&document, Self.fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                  rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = rosterRecord.data else {
+                return (10, 10, 0, 0)
+            }
+
+            let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
+            return (
+                record[18],
+                record[19],
+                record[48],
+                record[49]
+            )
+        }
+    }
+
+    private func combatRosterID(character: UInt8, session: ShellCombatSession) -> UInt8 {
+        switch character {
+        case 0:
+            return session.activeRosterIDs.0
+        case 1:
+            return session.activeRosterIDs.1
+        case 2:
+            return session.activeRosterIDs.2
+        case 3:
+            return session.activeRosterIDs.3
+        default:
+            return 0
+        }
+    }
+
+    private func advanceCombatCharacter(_ session: inout ShellCombatSession) {
+        guard session.partySize > 0 else {
+            session.activeCharacter = 0
+            return
+        }
+        let cappedPartySize = min(session.partySize, UInt8(U3_COMBAT_CHARACTER_COUNT))
+        let nextCharacter = (session.activeCharacter + 1) % cappedPartySize
+        session.activeCharacter = playableCombatCharacter(in: session, startingAt: nextCharacter) ?? session.activeCharacter
+    }
+
+    private func playableCombatCharacter(in session: ShellCombatSession, startingAt start: UInt8) -> UInt8? {
+        let cappedPartySize = min(session.partySize, UInt8(U3_COMBAT_CHARACTER_COUNT))
+        guard cappedPartySize > 0 else {
+            return nil
+        }
+
+        for offset in 0..<cappedPartySize {
+            let candidate = (start + offset) % cappedPartySize
+            if combatCharacterCanAct(candidate, in: session) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    private func combatCharacterCanAct(_ character: UInt8, in session: ShellCombatSession) -> Bool {
+        let status: UInt8
+        let x: UInt8
+        let y: UInt8
+        switch character {
+        case 0:
+            status = session.combatState.character_status.0
+            x = session.combatState.character_x.0
+            y = session.combatState.character_y.0
+        case 1:
+            status = session.combatState.character_status.1
+            x = session.combatState.character_x.1
+            y = session.combatState.character_y.1
+        case 2:
+            status = session.combatState.character_status.2
+            x = session.combatState.character_x.2
+            y = session.combatState.character_y.2
+        case 3:
+            status = session.combatState.character_status.3
+            x = session.combatState.character_x.3
+            y = session.combatState.character_y.3
+        default:
+            return false
+        }
+
+        if status == UInt8(ascii: "D") || status == UInt8(ascii: "A") {
+            return false
+        }
+        return x <= 10 && y <= 10
+    }
+
+    private func describeCombatPlayerCommand(
+        _ result: u3_combat_player_command_result,
+        session: ShellCombatSession
+    ) -> String {
+        let character = result.character + 1
+        switch Int32(result.status) {
+        case U3_COMBAT_PLAYER_STATUS_MOVED:
+            return "Combat character \(character) move \(result.x),\(result.y)"
+        case U3_COMBAT_PLAYER_STATUS_BLOCKED:
+            return "Combat character \(character) blocked \(result.target_x),\(result.target_y) tile \(result.target_tile)"
+        case U3_COMBAT_PLAYER_STATUS_PASSED:
+            return "Combat character \(character) pass"
+        case U3_COMBAT_PLAYER_STATUS_ATTACK_HIT:
+            if result.attack_result.damage_result.defeated != 0 {
+                return "Combat character \(character) hit monster \(result.attack_result.target_monster) defeated damage \(result.attack_result.damage_amount)"
+            }
+            return "Combat character \(character) hit monster \(result.attack_result.target_monster) damage \(result.attack_result.damage_amount)"
+        case U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED:
+            return "Combat character \(character) attack missed"
+        case U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED:
+            return "Combat character \(character) attack deferred"
+        case U3_COMBAT_PLAYER_STATUS_UNSUPPORTED:
+            return "Combat CONS \(session.screenResourceID) command deferred"
+        default:
+            return "Combat CONS \(session.screenResourceID) command deferred"
+        }
     }
 
     private func consumeDungeonInput(_ event: u3_input_event, session: inout ShellLocationSession) -> String {
@@ -1244,9 +1464,11 @@ final class ShellSmokeState: ObservableObject {
     ) -> String {
         let locations = locationProvider.snapshot()
         switch combatSessionLoader(locations.resourceRootPath, encounter, sourceSession, currentSaveDocument) {
-        case .success(let session):
+        case .success(var session):
+            session.activeCharacter = playableCombatCharacter(in: session, startingAt: 0) ?? 0
             activeCombatSession = session
             activeLocationSession = nil
+            pendingCombatAttackCharacter = nil
             pendingDungeonInteractionCommand = nil
             awaitingTalkDirection = false
             renderFrame = session.frame
@@ -1393,6 +1615,7 @@ final class ShellSmokeState: ObservableObject {
         activeLocationSession = nil
         activeCombatSession = nil
         awaitingTalkDirection = false
+        pendingCombatAttackCharacter = nil
         pendingDungeonInteractionCommand = nil
         currentSaveDocument = document
         saveStatus = resourceAdapter.describeSaveDomain(document, prefix: statusPrefix)
@@ -1660,6 +1883,21 @@ final class ShellSmokeState: ObservableObject {
             return command - 32
         }
         return command
+    }
+
+    private static func combatDirection(for command: UInt16) -> (dx: Int8, dy: Int8)? {
+        switch normalizedKeyboardCommand(command) {
+        case UInt16(U3_COMBAT_COMMAND_NORTH), UInt16(UInt8(ascii: "N")):
+            return (0, -1)
+        case UInt16(U3_COMBAT_COMMAND_SOUTH), UInt16(UInt8(ascii: "S")):
+            return (0, 1)
+        case UInt16(U3_COMBAT_COMMAND_WEST), UInt16(UInt8(ascii: "W")):
+            return (-1, 0)
+        case UInt16(U3_COMBAT_COMMAND_EAST), UInt16(UInt8(ascii: "E")):
+            return (1, 0)
+        default:
+            return nil
+        }
     }
 
     private static func dungeonInteractionSelection(from command: UInt16) -> UInt8 {

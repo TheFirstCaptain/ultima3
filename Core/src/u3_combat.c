@@ -68,6 +68,43 @@ static uint8_t u3_combat_is_projectile_weapon(uint8_t weapon)
     return weapon == 3 || weapon == 5 || weapon == 9 || weapon == 13;
 }
 
+static uint8_t u3_combat_character_can_act(const u3_combat_state *state, uint8_t character)
+{
+    if (state->character_status[character] == U3_COMBAT_STATUS_DEAD ||
+        state->character_status[character] == U3_COMBAT_STATUS_ASH)
+        return 0;
+    if (state->character_x[character] > 10 || state->character_y[character] > 10)
+        return 0;
+    return 1;
+}
+
+static uint8_t u3_combat_is_player_passable_tile(uint8_t tile)
+{
+    return tile == 2 || tile == 4 || tile == 6 || tile == 0x10;
+}
+
+static uint8_t u3_combat_command_delta(uint16_t command, int8_t *dx, int8_t *dy)
+{
+    *dx = 0;
+    *dy = 0;
+    switch (command) {
+    case U3_COMBAT_COMMAND_NORTH:
+        *dy = -1;
+        return 1;
+    case U3_COMBAT_COMMAND_SOUTH:
+        *dy = 1;
+        return 1;
+    case U3_COMBAT_COMMAND_WEST:
+        *dx = -1;
+        return 1;
+    case U3_COMBAT_COMMAND_EAST:
+        *dx = 1;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void u3_combat_set_attack_miss(u3_combat_attack_result *result)
 {
     result->miss = 1;
@@ -431,5 +468,134 @@ u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
                                                      result.damage_amount,
                                                      input->character + 1);
 
+    return result;
+}
+
+u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
+                                                          const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
+                                                          const u3_combat_player_command_input *input)
+{
+    /* Legacy references: Sources/UltimaSpellCombat.c Combat player loop and HandleMove. */
+    u3_combat_player_command_result result = {0};
+    int8_t dx;
+    int8_t dy;
+    int16_t target_x;
+    int16_t target_y;
+
+    if (state == 0 || input == 0)
+        return result;
+
+    result.character = input->character;
+    if (input->character >= U3_COMBAT_CHARACTER_COUNT) {
+        result.handled = 1;
+        result.unsupported = 1;
+        result.status = U3_COMBAT_PLAYER_STATUS_UNSUPPORTED;
+        return result;
+    }
+
+    result.x = state->character_x[input->character];
+    result.y = state->character_y[input->character];
+    if (!u3_combat_character_can_act(state, input->character)) {
+        result.handled = 1;
+        result.unsupported = 1;
+        result.status = U3_COMBAT_PLAYER_STATUS_UNSUPPORTED;
+        return result;
+    }
+
+    if (input->command == U3_COMBAT_COMMAND_PASS) {
+        result.handled = 1;
+        result.passed = 1;
+        result.status = U3_COMBAT_PLAYER_STATUS_PASSED;
+        return result;
+    }
+
+    if (input->command == U3_COMBAT_COMMAND_ATTACK) {
+        u3_combat_attack_input attack;
+
+        result.handled = 1;
+        if (input->attack_direction_x == 0 && input->attack_direction_y == 0) {
+            result.attack_direction_required = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_DIRECTION_REQUIRED;
+            return result;
+        }
+
+        if (u3_combat_is_projectile_weapon(input->weapon)) {
+            result.unsupported = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED;
+            return result;
+        }
+
+        if (input->weapon == 1 &&
+            u3_combat_monster_here(state,
+                                   state->character_x[input->character] + input->attack_direction_x,
+                                   state->character_y[input->character] + input->attack_direction_y) == U3_COMBAT_NO_SLOT) {
+            result.unsupported = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED;
+            return result;
+        }
+
+        attack.character = input->character;
+        attack.direction_x = input->attack_direction_x;
+        attack.direction_y = input->attack_direction_y;
+        attack.weapon = input->weapon;
+        attack.weapon_quantity = input->weapon_quantity;
+        attack.strength = input->strength;
+        attack.dexterity = input->dexterity;
+        attack.projectile_monster = input->projectile_monster;
+        attack.exodus_castle_result = input->exodus_castle_result;
+        attack.hit_chance_roll = input->hit_chance_roll;
+        attack.hit_dexterity_roll = input->hit_dexterity_roll;
+        attack.damage_roll = input->damage_roll;
+
+        result.attack_result = u3_combat_attack(state, experience, &attack);
+        result.attacked = 1;
+        result.redraw = result.attack_result.redraw_tiles;
+        if (result.attack_result.play_hit_sound)
+            result.sound_id = U3_AUDIO_SOUND_HIT;
+        if (result.attack_result.hit) {
+            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_HIT;
+        } else if (result.attack_result.cancelled) {
+            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_CANCELLED;
+        } else {
+            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED;
+        }
+        return result;
+    }
+
+    if (!u3_combat_command_delta(input->command, &dx, &dy)) {
+        result.handled = 1;
+        result.unsupported = 1;
+        result.status = U3_COMBAT_PLAYER_STATUS_UNSUPPORTED;
+        return result;
+    }
+
+    result.handled = 1;
+    target_x = (int16_t)state->character_x[input->character] + dx;
+    target_y = (int16_t)state->character_y[input->character] + dy;
+    result.target_x = (uint8_t)target_x;
+    result.target_y = (uint8_t)target_y;
+
+    if (target_x < 0 || target_x > 10 || target_y < 0 || target_y > 10 ||
+        !u3_combat_is_player_passable_tile(u3_combat_get_tile(state, target_x, target_y)) ||
+        u3_combat_monster_here(state, target_x, target_y) != U3_COMBAT_NO_SLOT ||
+        u3_combat_character_here(state, target_x, target_y) != U3_COMBAT_NO_SLOT) {
+        result.blocked = 1;
+        result.status = U3_COMBAT_PLAYER_STATUS_BLOCKED;
+        result.sound_id = U3_AUDIO_SOUND_BUMP;
+        if (target_x >= 0 && target_x <= 10 && target_y >= 0 && target_y <= 10)
+            result.target_tile = u3_combat_get_tile(state, target_x, target_y);
+        return result;
+    }
+
+    result.target_tile = u3_combat_get_tile(state, target_x, target_y);
+    state->character_x[input->character] = (uint8_t)target_x;
+    state->character_y[input->character] = (uint8_t)target_y;
+    state->character_tile[input->character] = result.target_tile;
+    result.moved = 1;
+    result.redraw = 1;
+    result.sound_id = U3_AUDIO_SOUND_STEP;
+    result.status = U3_COMBAT_PLAYER_STATUS_MOVED;
+    result.x = state->character_x[input->character];
+    result.y = state->character_y[input->character];
     return result;
 }

@@ -39,12 +39,13 @@ struct ShellCombatSession {
     var combatState: u3_combat_state
     var frame: u3_render_frame
     let screenInit: u3_combat_screen_init_result
-    let renderResult: u3_combat_render_result
+    var renderResult: u3_combat_render_result
     let partySize: UInt8
     let activeRosterIDs: (UInt8, UInt8, UInt8, UInt8)
     let monsterTableValue: UInt8
     let monsterType: UInt8
     let markerTile: UInt8
+    var activeCharacter: UInt8 = 0
 
     var status: String {
         "Combat OK CONS \(screenResourceID) monster \(monsterType) marker \(markerTile) party \(partySize) active \(activeRosterIDs.0)/\(activeRosterIDs.1)/\(activeRosterIDs.2)/\(activeRosterIDs.3) terrain \(renderResult.terrain_commands) monsters \(renderResult.monster_commands) characters \(renderResult.party_commands) source dungeon MAPS \(sourceLocationSession.descriptor.resource_id)"
@@ -567,6 +568,12 @@ final class ShellResourceAdapter {
             guard screenInit.status == UInt8(U3_COMBAT_SCREEN_STATUS_OK) else {
                 return .failure("Combat CONS \(encounter.combat_screen_resource_id) invalid")
             }
+            populateCombatPartyState(
+                &combatState,
+                documentData: documentData,
+                partySize: partySlots.partySize,
+                activeRosterIDs: partySlots.activeRosterIDs
+            )
             var renderResult = u3_combat_render_result()
             let frame = u3_combat_make_frame(&combatState, &renderResult)
             return .success(ShellCombatSession(
@@ -584,6 +591,12 @@ final class ShellResourceAdapter {
                 markerTile: encounter.marker_tile
             ))
         }
+    }
+
+    func refreshCombatSessionFrame(_ session: inout ShellCombatSession) {
+        var renderResult = u3_combat_render_result()
+        session.frame = u3_combat_make_frame(&session.combatState, &renderResult)
+        session.renderResult = renderResult
     }
 
     func moveLocationSession(
@@ -1171,6 +1184,163 @@ final class ShellResourceAdapter {
             )
         case .failure:
             return (0, (0, 0, 0, 0))
+        }
+    }
+
+    private func populateCombatPartyState(
+        _ combatState: inout u3_combat_state,
+        documentData: Data?,
+        partySize: UInt8,
+        activeRosterIDs: (UInt8, UInt8, UInt8, UInt8)
+    ) {
+        guard let documentData else {
+            return
+        }
+
+        let activeIDs = [
+            activeRosterIDs.0,
+            activeRosterIDs.1,
+            activeRosterIDs.2,
+            activeRosterIDs.3
+        ]
+
+        documentData.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return
+            }
+
+            var document = u3_save_document()
+            var rosterRecord = u3_save_record()
+            guard u3_save_open(documentBaseAddress, documentData.count, &document) != 0,
+                  u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                  rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                  let roster = rosterRecord.data else {
+                return
+            }
+
+            let cappedPartySize = min(Int(partySize), Int(U3_COMBAT_CHARACTER_COUNT))
+            for index in 0..<cappedPartySize {
+                let rosterID = activeIDs[index]
+                guard rosterID > 0 && rosterID <= UInt8(U3_PARTY_ROSTER_SLOT_COUNT) else {
+                    continue
+                }
+                let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
+                let status = record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)]
+                setCombatCharacterStatus(&combatState, index: index, value: status)
+                setCombatCharacterWeapon(&combatState, index: index, value: record[48])
+                setCombatCharacterHitPoints(&combatState, index: index, value: (UInt16(record[26]) << 8) | UInt16(record[27]))
+                setCombatCharacterExperience(&combatState, index: index, value: (UInt16(record[28]) << 8) | UInt16(record[29]))
+                if status != UInt8(ascii: "G") && status != UInt8(ascii: "P") {
+                    setCombatCharacterX(&combatState, index: index, value: 0xFF)
+                    setCombatCharacterY(&combatState, index: index, value: 0xFF)
+                    setCombatCharacterShape(&combatState, index: index, value: 0)
+                }
+            }
+        }
+    }
+
+    private func setCombatCharacterX(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_x.0 = value
+        case 1:
+            state.character_x.1 = value
+        case 2:
+            state.character_x.2 = value
+        case 3:
+            state.character_x.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterY(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_y.0 = value
+        case 1:
+            state.character_y.1 = value
+        case 2:
+            state.character_y.2 = value
+        case 3:
+            state.character_y.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterShape(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_shape.0 = value
+        case 1:
+            state.character_shape.1 = value
+        case 2:
+            state.character_shape.2 = value
+        case 3:
+            state.character_shape.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterStatus(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_status.0 = value
+        case 1:
+            state.character_status.1 = value
+        case 2:
+            state.character_status.2 = value
+        case 3:
+            state.character_status.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterWeapon(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_weapon.0 = value
+        case 1:
+            state.character_weapon.1 = value
+        case 2:
+            state.character_weapon.2 = value
+        case 3:
+            state.character_weapon.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterHitPoints(_ state: inout u3_combat_state, index: Int, value: UInt16) {
+        switch index {
+        case 0:
+            state.character_hp.0 = value
+        case 1:
+            state.character_hp.1 = value
+        case 2:
+            state.character_hp.2 = value
+        case 3:
+            state.character_hp.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterExperience(_ state: inout u3_combat_state, index: Int, value: UInt16) {
+        switch index {
+        case 0:
+            state.character_experience.0 = value
+        case 1:
+            state.character_experience.1 = value
+        case 2:
+            state.character_experience.2 = value
+        case 3:
+            state.character_experience.3 = value
+        default:
+            break
         }
     }
 

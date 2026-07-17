@@ -354,6 +354,51 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(combat.status, "Combat OK CONS 402 monster 52 marker 64 party 4 active 1/2/3/4 terrain 121 monsters 1 characters 4 source dungeon MAPS 412")
     }
 
+    func testLoadCombatSessionHidesIncapacitatedPartyMembers() throws {
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        let deadOffset = rosterPayloadOffset(in: document, rosterID: 1)
+        let ashOffset = rosterPayloadOffset(in: document, rosterID: 2)
+        XCTAssertGreaterThan(deadOffset, 0)
+        XCTAssertGreaterThan(ashOffset, 0)
+        document[deadOffset + Int(U3_PARTY_ROSTER_STATUS_OFFSET)] = UInt8(ascii: "D")
+        document[ashOffset + Int(U3_PARTY_ROSTER_STATUS_OFFSET)] = UInt8(ascii: "A")
+
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_DUNGEON), index: 12, x: 1, y: 1, heading: 1)
+        )
+        guard case .success(var dungeon) = loadResult else {
+            return XCTFail("Expected dungeon session")
+        }
+        dungeon = dungeonSessionOnFirstFloorTile(dungeon)
+
+        let encounter = adapter.applyDungeonPostTurn(
+            &dungeon,
+            documentData: document,
+            encounterRoll: 128,
+            monsterRoll: 2
+        )
+        let result = adapter.loadCombatSession(
+            resourceRootPath: resourceRootPath,
+            encounter: encounter,
+            sourceSession: dungeon,
+            documentData: document
+        )
+
+        guard case .success(let combat) = result else {
+            return XCTFail("Expected combat session")
+        }
+        XCTAssertEqual(combat.renderResult.party_commands, 2)
+        XCTAssertEqual(combat.frame.command_count, UInt16(U3_RENDER_TILE_COUNT + 2 + 1 + 2))
+        XCTAssertEqual(combat.combatState.character_x.0, 0xFF)
+        XCTAssertEqual(combat.combatState.character_y.0, 0xFF)
+        XCTAssertEqual(combat.combatState.character_shape.0, 0)
+        XCTAssertEqual(combat.combatState.character_x.1, 0xFF)
+        XCTAssertEqual(combat.combatState.character_y.1, 0xFF)
+        XCTAssertEqual(combat.combatState.character_shape.1, 0)
+    }
+
     func testLoadCombatSessionRejectsMissingRequestAndResources() throws {
         let adapter = ShellResourceAdapter()
         let loadResult = adapter.loadLocationSession(

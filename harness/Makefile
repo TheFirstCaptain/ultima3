@@ -9,6 +9,7 @@ TESTS = \
 	$(BUILD_DIR)/combat_predicates_tests \
 	$(BUILD_DIR)/combat_damage_tests \
 	$(BUILD_DIR)/combat_attack_tests \
+	$(BUILD_DIR)/combat_player_command_tests \
 	$(BUILD_DIR)/combat_monster_action_tests \
 	$(BUILD_DIR)/combat_render_tests \
 	$(BUILD_DIR)/autocombat_targeting_tests \
@@ -51,6 +52,9 @@ $(BUILD_DIR)/combat_damage_tests: combat_damage_tests.c $(CORE_SRC)/u3_combat.c 
 
 $(BUILD_DIR)/combat_attack_tests: combat_attack_tests.c $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) combat_attack_tests.c $(CORE_SRC)/u3_combat.c -o $@
+
+$(BUILD_DIR)/combat_player_command_tests: combat_player_command_tests.c $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h $(CORE_INCLUDE)/u3_audio.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) combat_player_command_tests.c $(CORE_SRC)/u3_combat.c -o $@
 
 $(BUILD_DIR)/combat_monster_action_tests: combat_monster_action_tests.c $(CORE_SRC)/u3_combat.c $(CORE_INCLUDE)/u3_combat.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) combat_monster_action_tests.c $(CORE_SRC)/u3_combat.c -o $@
