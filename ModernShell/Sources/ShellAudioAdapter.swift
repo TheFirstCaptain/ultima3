@@ -154,6 +154,10 @@ final class ShellAudioAdapter {
             return "Shoot"
         case U3_AUDIO_SOUND_MONSTER_SPELL:
             return "MonsterSpell"
+        case U3_AUDIO_SOUND_IMMOLATE:
+            return "Immolate"
+        case U3_AUDIO_SOUND_FAILED_SPELL:
+            return "FailedSpell"
         case U3_AUDIO_SOUND_ERROR1:
             fallthrough
         default:

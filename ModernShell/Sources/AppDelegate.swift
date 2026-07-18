@@ -536,6 +536,7 @@ final class ShellSmokeState: ObservableObject {
     private var activeCombatSession: ShellCombatSession?
     private var awaitingTalkDirection = false
     private var pendingCombatAttackCharacter: UInt8?
+    private var pendingCombatSpellCharacter: UInt8?
     private var pendingDungeonInteractionCommand: UInt16?
     private var currentSaveDocument: Data?
     @Published private(set) var hasUnsavedChanges = false
@@ -669,6 +670,7 @@ final class ShellSmokeState: ObservableObject {
         let locations = locationProvider.snapshot()
         awaitingTalkDirection = false
         pendingCombatAttackCharacter = nil
+        pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
         if let activeCombatSession {
             renderFrame = activeCombatSession.frame
@@ -911,10 +913,10 @@ final class ShellSmokeState: ObservableObject {
     }
 
     private func consumeCombatInput(_ event: u3_input_event, session: inout ShellCombatSession) -> String {
-        if pendingCombatAttackCharacter == nil,
+        if pendingCombatAttackCharacter == nil && pendingCombatSpellCharacter == nil,
            let activeCharacter = playableCombatCharacter(in: session, startingAt: session.activeCharacter) {
             session.activeCharacter = activeCharacter
-        } else if pendingCombatAttackCharacter == nil {
+        } else if pendingCombatAttackCharacter == nil && pendingCombatSpellCharacter == nil {
             activeCombatSession = session
             return "Combat has no active characters"
         }
@@ -931,6 +933,16 @@ final class ShellSmokeState: ObservableObject {
             input.character = pendingCharacter
             input.attack_direction_x = direction.dx
             input.attack_direction_y = direction.dy
+        } else if let pendingCharacter = pendingCombatSpellCharacter {
+            guard let direction = Self.combatDirection(for: event.command) else {
+                pendingCombatSpellCharacter = nil
+                activeCombatSession = session
+                return "Combat spell cancelled"
+            }
+            input.command = UInt16(U3_COMBAT_COMMAND_SPELL)
+            input.character = pendingCharacter
+            input.attack_direction_x = direction.dx
+            input.attack_direction_y = direction.dy
         }
 
         let experience = combatExperienceTable()
@@ -943,6 +955,11 @@ final class ShellSmokeState: ObservableObject {
             return "Combat CONS \(session.screenResourceID) command \(inputAdapter.describeKey(event.command)) deferred"
         }
 
+        if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_DIRECTION_REQUIRED) {
+            pendingCombatSpellCharacter = input.character
+            activeCombatSession = session
+            return "Combat character \(input.character + 1) Mittar: choose direction"
+        }
         if result.attack_direction_required != 0 {
             pendingCombatAttackCharacter = input.character
             activeCombatSession = session
@@ -950,6 +967,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         pendingCombatAttackCharacter = nil
+        pendingCombatSpellCharacter = nil
         if result.redraw != 0 {
             resourceAdapter.refreshCombatSessionFrame(&session)
             renderFrame = session.frame
@@ -966,8 +984,12 @@ final class ShellSmokeState: ObservableObject {
 
         var description = describeCombatPlayerCommand(result, session: session)
         var damageResult = result.attack_result.damage_result
+        if result.spell_result.damage_result.damaged != 0 ||
+            result.spell_result.damage_result.award_experience != 0 {
+            damageResult = result.spell_result.damage_result
+        }
         let experienceAward = u3_combat_apply_experience_award(&session.combatState, &damageResult)
-        if (experienceAward.applied != 0 || result.attack_result.mutated_inventory != 0),
+        if (experienceAward.applied != 0 || result.attack_result.mutated_inventory != 0 || result.spell_result.spent_magic != 0),
            var documentData = currentSaveDocument,
            resourceAdapter.applyCombatPartyState(session, documentData: &documentData) {
             currentSaveDocument = documentData
@@ -983,7 +1005,10 @@ final class ShellSmokeState: ObservableObject {
         if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_MOVED) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_PASSED) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT) ||
-            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED) {
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED) ||
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_HIT) ||
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_MISSED) ||
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC) {
             advanceCombatCharacter(&session)
             description += runCombatMonsterTurn(session: &session)
         }
@@ -1034,6 +1059,7 @@ final class ShellSmokeState: ObservableObject {
         activeCombatSession = nil
         activeLocationSession = sourceSession
         pendingCombatAttackCharacter = nil
+        pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
         awaitingTalkDirection = false
         renderFrame = sourceSession.frame
@@ -1053,33 +1079,37 @@ final class ShellSmokeState: ObservableObject {
         return u3_combat_player_command_input(
             command: command,
             character: character,
+            spell: UInt8(U3_COMBAT_SPELL_MITTAR),
             attack_direction_x: 0,
             attack_direction_y: 0,
             weapon: roster.weapon,
             weapon_quantity: roster.weaponQuantity,
+            character_class: roster.characterClass,
+            magic: roster.magic,
             strength: roster.strength,
             dexterity: roster.dexterity,
             projectile_monster: UInt8(U3_COMBAT_NO_SLOT),
             exodus_castle_result: 0xFF,
             hit_chance_roll: rolls.hitChance,
             hit_dexterity_roll: rolls.hitDexterity,
-            damage_roll: rolls.damage
+            damage_roll: rolls.damage,
+            spell_damage_roll: rolls.damage
         )
     }
 
     private func combatRosterSnapshot(
         character: UInt8,
         session: ShellCombatSession
-    ) -> (strength: UInt8, dexterity: UInt8, weapon: UInt8, weaponQuantity: UInt8) {
+    ) -> (strength: UInt8, dexterity: UInt8, characterClass: UInt8, magic: UInt8, weapon: UInt8, weaponQuantity: UInt8) {
         let rosterID = combatRosterID(character: character, session: session)
         guard rosterID > 0,
               let currentSaveDocument else {
-            return (10, 10, 0, 0)
+            return (10, 10, 0, 0, 0, 0)
         }
 
         return currentSaveDocument.withUnsafeBytes { documentBuffer in
             guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
-                return (10, 10, 0, 0)
+                return (10, 10, 0, 0, 0, 0)
             }
 
             var document = u3_save_document()
@@ -1088,13 +1118,15 @@ final class ShellSmokeState: ObservableObject {
                   u3_save_find_record(&document, Self.fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
                   rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
                   let roster = rosterRecord.data else {
-                return (10, 10, 0, 0)
+                return (10, 10, 0, 0, 0, 0)
             }
 
             let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
             return (
                 record[18],
                 record[19],
+                record[23],
+                record[25],
                 record[48],
                 record[49]
             )
@@ -1248,6 +1280,17 @@ final class ShellSmokeState: ObservableObject {
             return "Combat character \(character) attack missed"
         case U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED:
             return "Combat character \(character) attack deferred"
+        case U3_COMBAT_PLAYER_STATUS_SPELL_HIT:
+            if result.spell_result.damage_result.defeated != 0 {
+                return "Combat character \(character) Mittar monster \(result.spell_result.target_monster) defeated damage \(result.spell_result.damage_amount) magic \(result.spell_result.magic_after)"
+            }
+            return "Combat character \(character) Mittar monster \(result.spell_result.target_monster) damage \(result.spell_result.damage_amount) magic \(result.spell_result.magic_after)"
+        case U3_COMBAT_PLAYER_STATUS_SPELL_MISSED:
+            return "Combat character \(character) Mittar missed magic \(result.spell_result.magic_after)"
+        case U3_COMBAT_PLAYER_STATUS_SPELL_INVALID_CASTER:
+            return "Combat character \(character) Mittar invalid caster"
+        case U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC:
+            return "Combat character \(character) Mittar insufficient magic \(result.spell_result.magic_before)"
         case U3_COMBAT_PLAYER_STATUS_UNSUPPORTED:
             return "Combat CONS \(session.screenResourceID) command deferred"
         default:
@@ -1654,6 +1697,7 @@ final class ShellSmokeState: ObservableObject {
             activeCombatSession = session
             activeLocationSession = nil
             pendingCombatAttackCharacter = nil
+            pendingCombatSpellCharacter = nil
             pendingDungeonInteractionCommand = nil
             awaitingTalkDirection = false
             renderFrame = session.frame
@@ -1801,6 +1845,7 @@ final class ShellSmokeState: ObservableObject {
         activeCombatSession = nil
         awaitingTalkDirection = false
         pendingCombatAttackCharacter = nil
+        pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
         currentSaveDocument = document
         saveStatus = resourceAdapter.describeSaveDomain(document, prefix: statusPrefix)
@@ -1922,6 +1967,7 @@ final class ShellSmokeState: ObservableObject {
         activeCombatSession = session
         activeLocationSession = nil
         pendingCombatAttackCharacter = nil
+        pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
         awaitingTalkDirection = false
         renderFrame = session.frame

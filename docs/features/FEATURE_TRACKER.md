@@ -101,7 +101,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-051 | First Monster Combat Turn Slice | Complete | Done | [F-051.md](./F-051.md) | 2026-07-17 | Deterministic one-monster turn wrapper, shell sequencing, roster mutation write-back, and validation complete. |
 | F-052 | Combat Victory and Return Flow | Complete | Done | [F-052.md](./F-052.md) | 2026-07-18 | First dungeon-origin combat victory detects all defeated monsters, applies bounded experience, discards combat, and restores the preserved dungeon session. |
 | F-053 | Player Ranged Combat Attack Slice | Complete | Done | [F-053.md](./F-053.md) | 2026-07-18 | Projectile weapons and thrown daggers now resolve bounded line attacks with thrown-dagger inventory write-back. |
-| F-054 | First Combat Spell Command Slice | Proposed | Proposed | [F-054.md](./F-054.md) | 2026-07-17 | Add the first bounded player combat spell command path and mutation/status handling. |
+| F-054 | First Combat Spell Command Slice | Complete | Done | [F-054.md](./F-054.md) | 2026-07-18 | Mittar now supports direction prompting, line targeting, magic spend, shell audio/status, and in-memory roster magic write-back. |
 | F-055 | Combat Flee and Defeat Flow | Proposed | Proposed | [F-055.md](./F-055.md) | 2026-07-17 | Add bounded flee attempts and all-party-defeated handling. |
 | F-056 | Dungeon Chest Trap and Equipment Rewards | Proposed | Proposed | [F-056.md](./F-056.md) | 2026-07-17 | Expand dungeon chest outcomes beyond gold to traps and first equipment rewards. |
 | F-057 | First Town Service Slice | Proposed | Proposed | [F-057.md](./F-057.md) | 2026-07-17 | Add one bounded useful town service with prompt and save-domain mutation handling. |

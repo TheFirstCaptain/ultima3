@@ -100,6 +100,15 @@ static uint8_t u3_combat_is_projectile_weapon(uint8_t weapon)
     return weapon == 3 || weapon == 5 || weapon == 9 || weapon == 13;
 }
 
+static uint8_t u3_combat_is_wizard_spell_class(uint8_t character_class)
+{
+    return character_class == 'W' ||
+           character_class == 'L' ||
+           character_class == 'A' ||
+           character_class == 'D' ||
+           character_class == 'R';
+}
+
 static uint8_t u3_combat_character_can_act(const u3_combat_state *state, uint8_t character)
 {
     if (state->character_status[character] == U3_COMBAT_STATUS_DEAD ||
@@ -737,6 +746,70 @@ u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
     return result;
 }
 
+static u3_combat_spell_result u3_combat_cast_mittar(u3_combat_state *state,
+                                                    const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
+                                                    const u3_combat_player_command_input *input)
+{
+    /* Legacy reference: Sources/UltimaSpellCombat.c ProcessMagic and Projectile, Mittar case. */
+    u3_combat_spell_result result = {0};
+    uint8_t target;
+
+    result.attempted = 1;
+    result.spell = U3_COMBAT_SPELL_MITTAR;
+    result.target_monster = U3_COMBAT_NO_SLOT;
+    result.magic_before = input->magic;
+    result.magic_after = input->magic;
+    result.magic_cost = U3_COMBAT_SPELL_MITTAR_COST;
+
+    if (input->attack_direction_x == 0 && input->attack_direction_y == 0) {
+        result.cancelled = 1;
+        return result;
+    }
+
+    if (!u3_combat_is_wizard_spell_class(input->character_class)) {
+        result.invalid_caster = 1;
+        result.play_failed_sound = 1;
+        return result;
+    }
+
+    if (input->magic < U3_COMBAT_SPELL_MITTAR_COST) {
+        result.insufficient_magic = 1;
+        result.play_failed_sound = 1;
+        return result;
+    }
+
+    result.spent_magic = 1;
+    result.magic_after = (uint8_t)(input->magic - U3_COMBAT_SPELL_MITTAR_COST);
+    state->character_magic[input->character] = result.magic_after;
+
+    target = u3_combat_projectile_monster(state,
+                                          input->character,
+                                          input->attack_direction_x,
+                                          input->attack_direction_y);
+    if (target >= U3_COMBAT_MONSTER_COUNT || state->monster_hp[target] == 0) {
+        result.miss = 1;
+        result.play_failed_sound = 1;
+        return result;
+    }
+
+    result.hit = 1;
+    result.redraw_tiles = 1;
+    result.play_spell_sound = 1;
+    result.target_monster = target;
+    result.hit_x = state->monster_x[target];
+    result.hit_y = state->monster_y[target];
+    result.hit_tile = U3_COMBAT_ATTACK_HIT_TILE;
+    result.damage_amount = (uint8_t)(input->spell_damage_roll | 0x10);
+
+    u3_combat_put_tile(state, state->monster_type, result.hit_x, result.hit_y);
+    result.damage_result = u3_combat_damage_monster(state,
+                                                     experience,
+                                                     target,
+                                                     result.damage_amount,
+                                                     input->character + 1);
+    return result;
+}
+
 u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
                                                           const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
                                                           const u3_combat_player_command_input *input)
@@ -772,6 +845,39 @@ u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
         result.handled = 1;
         result.passed = 1;
         result.status = U3_COMBAT_PLAYER_STATUS_PASSED;
+        return result;
+    }
+
+    if (input->command == U3_COMBAT_COMMAND_SPELL) {
+        result.handled = 1;
+        if (input->attack_direction_x == 0 && input->attack_direction_y == 0) {
+            result.attack_direction_required = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_SPELL_DIRECTION_REQUIRED;
+            return result;
+        }
+
+        if (input->spell != U3_COMBAT_SPELL_MITTAR) {
+            result.unsupported = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_UNSUPPORTED;
+            return result;
+        }
+
+        result.spell_result = u3_combat_cast_mittar(state, experience, input);
+        result.redraw = result.spell_result.redraw_tiles;
+        if (result.spell_result.play_spell_sound)
+            result.sound_id = U3_AUDIO_SOUND_IMMOLATE;
+        else if (result.spell_result.play_failed_sound)
+            result.sound_id = U3_AUDIO_SOUND_FAILED_SPELL;
+
+        if (result.spell_result.hit) {
+            result.status = U3_COMBAT_PLAYER_STATUS_SPELL_HIT;
+        } else if (result.spell_result.insufficient_magic) {
+            result.status = U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC;
+        } else if (result.spell_result.invalid_caster) {
+            result.status = U3_COMBAT_PLAYER_STATUS_SPELL_INVALID_CASTER;
+        } else {
+            result.status = U3_COMBAT_PLAYER_STATUS_SPELL_MISSED;
+        }
         return result;
     }
 

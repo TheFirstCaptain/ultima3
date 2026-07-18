@@ -37,8 +37,11 @@ static u3_combat_player_command_input base_input(uint16_t command)
     memset(&input, 0, sizeof(input));
     input.command = command;
     input.character = 0;
+    input.spell = U3_COMBAT_SPELL_MITTAR;
     input.weapon = 2;
     input.weapon_quantity = 1;
+    input.character_class = 'W';
+    input.magic = 25;
     input.strength = 20;
     input.dexterity = 50;
     input.projectile_monster = U3_COMBAT_NO_SLOT;
@@ -46,6 +49,7 @@ static u3_combat_player_command_input base_input(uint16_t command)
     input.hit_chance_roll = 128;
     input.hit_dexterity_roll = 99;
     input.damage_roll = 5;
+    input.spell_damage_roll = 5;
     return input;
 }
 
@@ -298,6 +302,121 @@ static void test_last_thrown_dagger_unequips_on_miss(void)
     ASSERT_EQ_INT(0, state.character_weapon_inventory[0][1]);
 }
 
+static void test_spell_without_direction_requests_direction(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.attack_direction_required);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_DIRECTION_REQUIRED, result.status);
+    ASSERT_EQ_INT(25, input.magic);
+    ASSERT_EQ_INT(0, state.character_magic[0]);
+}
+
+static void test_mittar_hits_first_monster_in_line_and_spends_magic(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.attack_direction_x = 1;
+    state.character_class[0] = input.character_class;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_HIT, result.status);
+    ASSERT_EQ_INT(1, result.spell_result.hit);
+    ASSERT_EQ_INT(1, result.spell_result.spent_magic);
+    ASSERT_EQ_INT(25, result.spell_result.magic_before);
+    ASSERT_EQ_INT(20, result.spell_result.magic_after);
+    ASSERT_EQ_INT(20, state.character_magic[0]);
+    ASSERT_EQ_INT(21, result.spell_result.damage_amount);
+    ASSERT_EQ_INT(19, state.monster_hp[2]);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_IMMOLATE, result.sound_id);
+}
+
+static void test_mittar_misses_empty_line_but_spends_magic(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.attack_direction_x = 1;
+    state.character_class[0] = input.character_class;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_MISSED, result.status);
+    ASSERT_EQ_INT(1, result.spell_result.miss);
+    ASSERT_EQ_INT(1, result.spell_result.spent_magic);
+    ASSERT_EQ_INT(20, result.spell_result.magic_after);
+    ASSERT_EQ_INT(20, state.character_magic[0]);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_FAILED_SPELL, result.sound_id);
+}
+
+static void test_mittar_rejects_invalid_caster_without_spending_magic(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.attack_direction_x = 1;
+    input.character_class = 'F';
+    state.character_class[0] = input.character_class;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_INVALID_CASTER, result.status);
+    ASSERT_EQ_INT(1, result.spell_result.invalid_caster);
+    ASSERT_EQ_INT(0, result.spell_result.spent_magic);
+    ASSERT_EQ_INT(25, result.spell_result.magic_after);
+    ASSERT_EQ_INT(25, state.character_magic[0]);
+    ASSERT_EQ_INT(40, state.monster_hp[2]);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_FAILED_SPELL, result.sound_id);
+}
+
+static void test_mittar_rejects_insufficient_magic_without_mutation(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.attack_direction_x = 1;
+    input.magic = 4;
+    state.character_class[0] = input.character_class;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC, result.status);
+    ASSERT_EQ_INT(1, result.spell_result.insufficient_magic);
+    ASSERT_EQ_INT(0, result.spell_result.spent_magic);
+    ASSERT_EQ_INT(4, result.spell_result.magic_after);
+    ASSERT_EQ_INT(4, state.character_magic[0]);
+    ASSERT_EQ_INT(40, state.monster_hp[2]);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_FAILED_SPELL, result.sound_id);
+}
+
 static void test_dead_character_command_reports_unsupported_without_mutation(void)
 {
     u3_combat_player_command_input input;
@@ -330,6 +449,11 @@ int main(void)
     test_projectile_weapon_misses_when_line_leaves_arena();
     test_thrown_dagger_decrements_inventory_and_uses_projectile_line();
     test_last_thrown_dagger_unequips_on_miss();
+    test_spell_without_direction_requests_direction();
+    test_mittar_hits_first_monster_in_line_and_spends_magic();
+    test_mittar_misses_empty_line_but_spends_magic();
+    test_mittar_rejects_invalid_caster_without_spending_magic();
+    test_mittar_rejects_insufficient_magic_without_mutation();
     test_dead_character_command_reports_unsupported_without_mutation();
 
     puts("combat player command characterization passed");

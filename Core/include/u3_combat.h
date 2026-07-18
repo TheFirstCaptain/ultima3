@@ -32,6 +32,7 @@
 #define U3_COMBAT_COMMAND_WEST 3
 #define U3_COMBAT_COMMAND_EAST 4
 #define U3_COMBAT_COMMAND_PASS 32
+#define U3_COMBAT_COMMAND_SPELL 77
 #define U3_COMBAT_COMMAND_ATTACK 65
 
 #define U3_COMBAT_PLAYER_STATUS_NONE 0
@@ -44,6 +45,14 @@
 #define U3_COMBAT_PLAYER_STATUS_ATTACK_HIT 7
 #define U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED 8
 #define U3_COMBAT_PLAYER_STATUS_UNSUPPORTED 9
+#define U3_COMBAT_PLAYER_STATUS_SPELL_DIRECTION_REQUIRED 10
+#define U3_COMBAT_PLAYER_STATUS_SPELL_HIT 11
+#define U3_COMBAT_PLAYER_STATUS_SPELL_MISSED 12
+#define U3_COMBAT_PLAYER_STATUS_SPELL_INVALID_CASTER 13
+#define U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC 14
+
+#define U3_COMBAT_SPELL_MITTAR 1
+#define U3_COMBAT_SPELL_MITTAR_COST 5
 
 #define U3_COMBAT_MONSTER_TURN_STATUS_NONE 0
 #define U3_COMBAT_MONSTER_TURN_STATUS_MOVED 1
@@ -60,6 +69,8 @@ typedef struct u3_combat_state {
     uint8_t character_tile[U3_COMBAT_CHARACTER_COUNT];
     uint8_t character_shape[U3_COMBAT_CHARACTER_COUNT];
     uint8_t character_status[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_class[U3_COMBAT_CHARACTER_COUNT];
+    uint8_t character_magic[U3_COMBAT_CHARACTER_COUNT];
     uint8_t character_armour[U3_COMBAT_CHARACTER_COUNT];
     uint8_t character_weapon[U3_COMBAT_CHARACTER_COUNT];
     uint16_t character_hp[U3_COMBAT_CHARACTER_COUNT];
@@ -146,10 +157,13 @@ typedef struct u3_combat_attack_result {
 typedef struct u3_combat_player_command_input {
     uint16_t command;
     uint8_t character;
+    uint8_t spell;
     int8_t attack_direction_x;
     int8_t attack_direction_y;
     uint8_t weapon;
     uint8_t weapon_quantity;
+    uint8_t character_class;
+    uint8_t magic;
     uint8_t strength;
     uint8_t dexterity;
     uint8_t projectile_monster;
@@ -157,7 +171,31 @@ typedef struct u3_combat_player_command_input {
     uint8_t hit_chance_roll;
     uint8_t hit_dexterity_roll;
     uint8_t damage_roll;
+    uint8_t spell_damage_roll;
 } u3_combat_player_command_input;
+
+typedef struct u3_combat_spell_result {
+    uint8_t attempted;
+    uint8_t cancelled;
+    uint8_t invalid_caster;
+    uint8_t insufficient_magic;
+    uint8_t spent_magic;
+    uint8_t miss;
+    uint8_t hit;
+    uint8_t redraw_tiles;
+    uint8_t play_spell_sound;
+    uint8_t play_failed_sound;
+    uint8_t target_monster;
+    uint8_t spell;
+    uint8_t magic_before;
+    uint8_t magic_after;
+    uint8_t magic_cost;
+    uint8_t hit_x;
+    uint8_t hit_y;
+    uint8_t hit_tile;
+    uint8_t damage_amount;
+    u3_combat_damage_result damage_result;
+} u3_combat_spell_result;
 
 typedef struct u3_combat_player_command_result {
     uint8_t handled;
@@ -177,6 +215,7 @@ typedef struct u3_combat_player_command_result {
     uint8_t target_y;
     uint8_t target_tile;
     u3_combat_attack_result attack_result;
+    u3_combat_spell_result spell_result;
 } u3_combat_player_command_result;
 
 typedef struct u3_combat_monster_action_input {

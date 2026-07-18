@@ -634,6 +634,7 @@ final class ShellResourceAdapter {
                 let hp = combatCharacterHitPoints(session.combatState, index: index)
                 let experience = combatCharacterExperience(session.combatState, index: index)
                 record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)] = combatCharacterStatus(session.combatState, index: index)
+                record[25] = combatCharacterMagic(session.combatState, index: index)
                 record[26] = UInt8((hp >> 8) & 0xFF)
                 record[27] = UInt8(hp & 0xFF)
                 record[30] = UInt8(experience / 100)
@@ -1279,6 +1280,8 @@ final class ShellResourceAdapter {
                 let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
                 let status = record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)]
                 setCombatCharacterStatus(&combatState, index: index, value: status)
+                setCombatCharacterClass(&combatState, index: index, value: record[23])
+                setCombatCharacterMagic(&combatState, index: index, value: record[25])
                 setCombatCharacterArmour(&combatState, index: index, value: record[40])
                 setCombatCharacterWeapon(&combatState, index: index, value: record[48])
                 setCombatCharacterHitPoints(&combatState, index: index, value: (UInt16(record[26]) << 8) | UInt16(record[27]))
@@ -1353,6 +1356,36 @@ final class ShellResourceAdapter {
             state.character_status.2 = value
         case 3:
             state.character_status.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterClass(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_class.0 = value
+        case 1:
+            state.character_class.1 = value
+        case 2:
+            state.character_class.2 = value
+        case 3:
+            state.character_class.3 = value
+        default:
+            break
+        }
+    }
+
+    private func setCombatCharacterMagic(_ state: inout u3_combat_state, index: Int, value: UInt8) {
+        switch index {
+        case 0:
+            state.character_magic.0 = value
+        case 1:
+            state.character_magic.1 = value
+        case 2:
+            state.character_magic.2 = value
+        case 3:
+            state.character_magic.3 = value
         default:
             break
         }
@@ -1465,6 +1498,21 @@ final class ShellResourceAdapter {
             return state.character_armour.2
         case 3:
             return state.character_armour.3
+        default:
+            return 0
+        }
+    }
+
+    private func combatCharacterMagic(_ state: u3_combat_state, index: Int) -> UInt8 {
+        switch index {
+        case 0:
+            return state.character_magic.0
+        case 1:
+            return state.character_magic.1
+        case 2:
+            return state.character_magic.2
+        case 3:
+            return state.character_magic.3
         default:
             return 0
         }
