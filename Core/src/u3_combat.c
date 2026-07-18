@@ -185,6 +185,56 @@ u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
     return result;
 }
 
+u3_combat_experience_award_result u3_combat_apply_experience_award(u3_combat_state *state,
+                                                                    const u3_combat_damage_result *damage_result)
+{
+    /* Legacy reference: Sources/UltimaMisc.c AddExp. */
+    u3_combat_experience_award_result result = {0};
+    uint8_t character;
+    uint16_t before;
+    uint16_t after;
+
+    if (state == 0 || damage_result == 0 || damage_result->award_experience == 0)
+        return result;
+    if (damage_result->character < 1 || damage_result->character > U3_COMBAT_CHARACTER_COUNT)
+        return result;
+
+    character = (uint8_t)(damage_result->character - 1);
+    before = state->character_experience[character];
+    after = (uint16_t)(before + damage_result->experience_awarded);
+    if (after > U3_COMBAT_EXPERIENCE_MAX || after < before)
+        after = U3_COMBAT_EXPERIENCE_MAX;
+
+    state->character_experience[character] = after;
+    result.applied = 1;
+    result.character = damage_result->character;
+    result.amount = damage_result->experience_awarded;
+    result.experience_before = before;
+    result.experience_after = after;
+    result.level_increased = (after / 100) > (before / 100) ? 1 : 0;
+    return result;
+}
+
+u3_combat_victory_result u3_combat_check_victory(const u3_combat_state *state)
+{
+    u3_combat_victory_result result = {0};
+    uint8_t monster;
+
+    if (state == 0)
+        return result;
+
+    result.checked = 1;
+    for (monster = 0; monster < U3_COMBAT_MONSTER_COUNT; monster++) {
+        if (state->monster_hp[monster] == 0) {
+            result.defeated_monsters++;
+        } else {
+            result.live_monsters++;
+        }
+    }
+    result.victorious = result.live_monsters == 0 ? 1 : 0;
+    return result;
+}
+
 static void u3_combat_move_monster(u3_combat_state *state,
                                    const u3_combat_monster_action_input *input,
                                    u3_combat_monster_action_result *result)

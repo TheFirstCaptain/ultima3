@@ -25,6 +25,7 @@
 #define U3_COMBAT_STATUS_DEAD 'D'
 #define U3_COMBAT_STATUS_ASH 'A'
 #define U3_COMBAT_STATUS_POISONED 'P'
+#define U3_COMBAT_EXPERIENCE_MAX 9899
 
 #define U3_COMBAT_COMMAND_NORTH 1
 #define U3_COMBAT_COMMAND_SOUTH 2
@@ -86,6 +87,22 @@ typedef struct u3_combat_damage_result {
     uint8_t monster_y;
     uint8_t restored_tile;
 } u3_combat_damage_result;
+
+typedef struct u3_combat_experience_award_result {
+    uint8_t applied;
+    uint8_t level_increased;
+    uint8_t character;
+    uint8_t amount;
+    uint16_t experience_before;
+    uint16_t experience_after;
+} u3_combat_experience_award_result;
+
+typedef struct u3_combat_victory_result {
+    uint8_t checked;
+    uint8_t victorious;
+    uint8_t live_monsters;
+    uint8_t defeated_monsters;
+} u3_combat_victory_result;
 
 typedef struct u3_combat_attack_input {
     uint8_t character;
@@ -261,6 +278,9 @@ u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
                                                   int16_t monster,
                                                   int16_t damage,
                                                   int16_t character);
+u3_combat_experience_award_result u3_combat_apply_experience_award(u3_combat_state *state,
+                                                                    const u3_combat_damage_result *damage_result);
+u3_combat_victory_result u3_combat_check_victory(const u3_combat_state *state);
 u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
                                           const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
                                           const u3_combat_attack_input *input);

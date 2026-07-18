@@ -632,9 +632,12 @@ final class ShellResourceAdapter {
 
                 let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
                 let hp = combatCharacterHitPoints(session.combatState, index: index)
+                let experience = combatCharacterExperience(session.combatState, index: index)
                 record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)] = combatCharacterStatus(session.combatState, index: index)
                 record[26] = UInt8((hp >> 8) & 0xFF)
                 record[27] = UInt8(hp & 0xFF)
+                record[30] = UInt8(experience / 100)
+                record[31] = UInt8(experience % 100)
                 record[40] = combatCharacterArmour(session.combatState, index: index)
                 record[48] = combatCharacterWeapon(session.combatState, index: index)
                 for item in 1..<8 {
@@ -1279,7 +1282,7 @@ final class ShellResourceAdapter {
                 setCombatCharacterArmour(&combatState, index: index, value: record[40])
                 setCombatCharacterWeapon(&combatState, index: index, value: record[48])
                 setCombatCharacterHitPoints(&combatState, index: index, value: (UInt16(record[26]) << 8) | UInt16(record[27]))
-                setCombatCharacterExperience(&combatState, index: index, value: (UInt16(record[28]) << 8) | UInt16(record[29]))
+                setCombatCharacterExperience(&combatState, index: index, value: (UInt16(record[30]) * 100) + UInt16(record[31]))
                 for item in 1..<8 {
                     setCombatCharacterArmourInventory(&combatState, character: index, item: item, value: record[40 + item])
                 }
@@ -1492,6 +1495,21 @@ final class ShellResourceAdapter {
             return state.character_hp.2
         case 3:
             return state.character_hp.3
+        default:
+            return 0
+        }
+    }
+
+    private func combatCharacterExperience(_ state: u3_combat_state, index: Int) -> UInt16 {
+        switch index {
+        case 0:
+            return state.character_experience.0
+        case 1:
+            return state.character_experience.1
+        case 2:
+            return state.character_experience.2
+        case 3:
+            return state.character_experience.3
         default:
             return 0
         }

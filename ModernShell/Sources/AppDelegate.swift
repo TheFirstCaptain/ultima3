@@ -504,6 +504,11 @@ final class ShellSmokeState: ObservableObject {
         damage: UInt8,
         exodusDamage: UInt8
     )
+    typealias CombatPlayerRolls = (
+        hitChance: UInt8,
+        hitDexterity: UInt8,
+        damage: UInt8
+    )
 
     @Published private(set) var lastCommand = "Ready"
     @Published private(set) var resourceStatus: String
@@ -519,6 +524,7 @@ final class ShellSmokeState: ObservableObject {
     private let locationTransitionAdapter: ShellLocationDocumentTransitioning
     private let dungeonRollProvider: (UInt8) -> (encounter: UInt16, monster: UInt16)
     private let dungeonChestRollProvider: () -> (trap: UInt16, gold: UInt16)
+    private let combatPlayerRollProvider: (UInt8) -> CombatPlayerRolls
     private let combatMonsterRollProvider: () -> CombatMonsterRolls
     private let combatSessionLoader: (String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
@@ -544,6 +550,7 @@ final class ShellSmokeState: ObservableObject {
         locationTransitionAdapter: ShellLocationDocumentTransitioning = ShellLocationDocumentTransitionAdapter(),
         dungeonRollProvider: @escaping (UInt8) -> (encounter: UInt16, monster: UInt16) = ShellSmokeState.makeDungeonRolls,
         dungeonChestRollProvider: @escaping () -> (trap: UInt16, gold: UInt16) = ShellSmokeState.makeDungeonChestRolls,
+        combatPlayerRollProvider: @escaping (UInt8) -> CombatPlayerRolls = ShellSmokeState.makeCombatPlayerRolls,
         combatMonsterRollProvider: @escaping () -> CombatMonsterRolls = ShellSmokeState.makeCombatMonsterRolls,
         combatSessionLoader: ((String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult)? = nil
     ) {
@@ -555,6 +562,7 @@ final class ShellSmokeState: ObservableObject {
         self.locationTransitionAdapter = locationTransitionAdapter
         self.dungeonRollProvider = dungeonRollProvider
         self.dungeonChestRollProvider = dungeonChestRollProvider
+        self.combatPlayerRollProvider = combatPlayerRollProvider
         self.combatMonsterRollProvider = combatMonsterRollProvider
         self.combatSessionLoader = combatSessionLoader ?? { resourceRootPath, encounter, sourceSession, documentData in
             resourceAdapter.loadCombatSession(
@@ -925,7 +933,7 @@ final class ShellSmokeState: ObservableObject {
             input.attack_direction_y = direction.dy
         }
 
-        let experience = [UInt8](repeating: 0, count: Int(U3_COMBAT_EXPERIENCE_COUNT))
+        let experience = combatExperienceTable()
         let result = experience.withUnsafeBufferPointer { buffer in
             u3_combat_player_command(&session.combatState, buffer.baseAddress, &input)
         }
@@ -957,6 +965,19 @@ final class ShellSmokeState: ObservableObject {
         }
 
         var description = describeCombatPlayerCommand(result, session: session)
+        var damageResult = result.attack_result.damage_result
+        let experienceAward = u3_combat_apply_experience_award(&session.combatState, &damageResult)
+        if experienceAward.applied != 0,
+           var documentData = currentSaveDocument,
+           resourceAdapter.applyCombatPartyState(session, documentData: &documentData) {
+            currentSaveDocument = documentData
+            hasUnsavedChanges = true
+            description += " exp \(experienceAward.experience_after)"
+        }
+        let victoryResult = u3_combat_check_victory(&session.combatState)
+        if victoryResult.victorious != 0 {
+            return restoreAfterCombatVictory(session: session, description: description, victory: victoryResult)
+        }
         if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_MOVED) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_PASSED) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT) ||
@@ -968,9 +989,65 @@ final class ShellSmokeState: ObservableObject {
         return description
     }
 
+    private func combatExperienceTable() -> [UInt8] {
+        guard let currentSaveDocument else {
+            return [UInt8](repeating: 0, count: Int(U3_COMBAT_EXPERIENCE_COUNT))
+        }
+
+        return currentSaveDocument.withUnsafeBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return [UInt8](repeating: 0, count: Int(U3_COMBAT_EXPERIENCE_COUNT))
+            }
+
+            var document = u3_save_document()
+            var experienceRecord = u3_save_record()
+            guard u3_save_open(documentBaseAddress, currentSaveDocument.count, &document) != 0,
+                  u3_save_find_record(&document, Self.fourCharacterCode("MISC"), Int16(U3_SAVE_ID_MISC_BASE + 5), &experienceRecord) != 0,
+                  let experience = experienceRecord.data else {
+                return [UInt8](repeating: 0, count: Int(U3_COMBAT_EXPERIENCE_COUNT))
+            }
+
+            var table = [UInt8](repeating: 0, count: Int(U3_COMBAT_EXPERIENCE_COUNT))
+            let copied = min(table.count, Int(experienceRecord.length))
+            for index in 0..<copied {
+                table[index] = experience[index]
+            }
+            return table
+        }
+    }
+
+    private func restoreAfterCombatVictory(
+        session: ShellCombatSession,
+        description: String,
+        victory: u3_combat_victory_result
+    ) -> String {
+        var sourceSession = session.sourceLocationSession
+        guard sourceSession.descriptor.active != 0,
+              sourceSession.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
+            activeCombatSession = session
+            return "\(description) | Combat victory restore failed"
+        }
+
+        resourceAdapter.refreshLocationSessionFrame(&sourceSession)
+        activeCombatSession = nil
+        activeLocationSession = sourceSession
+        pendingCombatAttackCharacter = nil
+        pendingDungeonInteractionCommand = nil
+        awaitingTalkDirection = false
+        renderFrame = sourceSession.frame
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: sourceSession.status
+        )
+        return "\(description) | Combat victory remaining \(victory.live_monsters) returned dungeon MAPS \(sourceSession.descriptor.resource_id)"
+    }
+
     private func makeCombatCommandInput(command: UInt16, session: ShellCombatSession) -> u3_combat_player_command_input {
         let character = session.activeCharacter
         let roster = combatRosterSnapshot(character: character, session: session)
+        let rolls = combatPlayerRollProvider(roster.strength)
         return u3_combat_player_command_input(
             command: command,
             character: character,
@@ -982,9 +1059,9 @@ final class ShellSmokeState: ObservableObject {
             dexterity: roster.dexterity,
             projectile_monster: UInt8(U3_COMBAT_NO_SLOT),
             exodus_castle_result: 0xFF,
-            hit_chance_roll: UInt8.random(in: 0...255),
-            hit_dexterity_roll: UInt8.random(in: 0...99),
-            damage_roll: UInt8.random(in: 0...(roster.strength | 1))
+            hit_chance_roll: rolls.hitChance,
+            hit_dexterity_roll: rolls.hitDexterity,
+            damage_roll: rolls.damage
         )
     }
 
@@ -1835,6 +1912,20 @@ final class ShellSmokeState: ObservableObject {
         return session.mapData[offset]
     }
 
+    func debugActiveLocationSession() -> ShellLocationSession? {
+        activeLocationSession
+    }
+
+    func debugInstallCombatSession(_ session: ShellCombatSession) -> Bool {
+        activeCombatSession = session
+        activeLocationSession = nil
+        pendingCombatAttackCharacter = nil
+        pendingDungeonInteractionCommand = nil
+        awaitingTalkDirection = false
+        renderFrame = session.frame
+        return true
+    }
+
     func debugCurrentSaveDocument() -> Data? {
         currentSaveDocument
     }
@@ -2084,6 +2175,14 @@ final class ShellSmokeState: ObservableObject {
         (
             UInt16.random(in: 0...255),
             UInt16.random(in: 0...100)
+        )
+    }
+
+    private static func makeCombatPlayerRolls(strength: UInt8) -> CombatPlayerRolls {
+        (
+            hitChance: UInt8.random(in: 0...255),
+            hitDexterity: UInt8.random(in: 0...99),
+            damage: UInt8.random(in: 0...(strength | 1))
         )
     }
 

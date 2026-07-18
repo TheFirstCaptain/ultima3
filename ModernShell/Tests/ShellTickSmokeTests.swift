@@ -545,6 +545,102 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
     }
 
+    func testCombatVictoryRestoresDungeonAndExperiencePersistsAfterReturn() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: noDungeonEncounterRolls,
+            combatPlayerRollProvider: { _ in (hitChance: 128, hitDexterity: 0, damage: 5) },
+            combatMonsterRollProvider: {
+                (
+                    shootChoice: 255,
+                    magicChoice: 0,
+                    magicTarget: 0,
+                    projectileHit: 0,
+                    poison: 255,
+                    pilferBranch: 0,
+                    pilferItem: 0,
+                    armourHit: 0,
+                    damage: 4,
+                    exodusDamage: 0
+                )
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        var encounter = u3_dungeon_post_turn_result()
+        encounter.encounter_requested = 1
+        encounter.combat_screen_resource_id = 402
+        encounter.monster_type = 52
+        encounter.marker_tile = 64
+        guard case .success(var session) = adapter.loadCombatSession(
+            resourceRootPath: resourceRootPath,
+            encounter: encounter,
+            sourceSession: try XCTUnwrap(state.debugActiveLocationSession()),
+            documentData: state.debugCurrentSaveDocument()
+        ) else {
+            return XCTFail("Expected combat session")
+        }
+        session.combatState.monster_hp.0 = 1
+        session.combatState.monster_x.0 = 5
+        session.combatState.monster_y.0 = 4
+        session.combatState.monster_tile.0 = 2
+        session.combatState.character_x.0 = 4
+        session.combatState.character_y.0 = 4
+        session.combatState.character_hp.0 = 100
+        session.combatState.character_status.0 = UInt8(ascii: "G")
+        session.combatState.character_shape.0 = 0x80
+        session.combatState.character_tile.0 = 2
+        withUnsafeMutableBytes(of: &session.combatState.tile_array) { buffer in
+            for index in 0..<Int(U3_RENDER_TILE_COUNT) {
+                buffer[index] = 2
+            }
+            buffer[(4 * 11) + 5] = session.monsterType
+            buffer[(4 * 11) + 4] = session.combatState.character_shape.0
+        }
+        adapter.refreshCombatSessionFrame(&session)
+        XCTAssertTrue(state.debugInstallCombatSession(session))
+
+        state.submitKeyboard(UInt8(ascii: "A"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Combat character 1 attack: choose direction")
+
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Combat character 1 hit monster 0 defeated damage 19 exp 6 | Combat victory remaining 0 returned dungeon MAPS 412 | Audio Sound Hit"
+        )
+        XCTAssertNil(state.debugActiveCombatStatus())
+        XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412"))
+        XCTAssertTrue(state.hasUnsavedChanges)
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_UP_LADDER)))
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterExperience(rosterID: 1, in: updatedDocument), 6)
+        XCTAssertEqual(activeRosterMaxHitPoints(rosterID: 1, in: updatedDocument), 100)
+    }
+
     func testFailedCombatEntryRetainsDungeonSessionAndDocument() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
@@ -1489,6 +1585,18 @@ final class ShellTickSmokeTests: XCTestCase {
 
     private func activeRosterGold(rosterID: UInt8, in documentData: Data) -> UInt16? {
         activeRosterUInt16(rosterID: rosterID, offset: 35, in: documentData)
+    }
+
+    private func activeRosterExperience(rosterID: UInt8, in documentData: Data) -> UInt16? {
+        guard let hundreds = activeRosterByte(rosterID: rosterID, offset: 30, in: documentData),
+              let remainder = activeRosterByte(rosterID: rosterID, offset: 31, in: documentData) else {
+            return nil
+        }
+        return UInt16(hundreds) * 100 + UInt16(remainder)
+    }
+
+    private func activeRosterMaxHitPoints(rosterID: UInt8, in documentData: Data) -> UInt16? {
+        activeRosterUInt16(rosterID: rosterID, offset: 28, in: documentData)
     }
 
     private func activeRosterUInt16(rosterID: UInt8, offset: Int, in documentData: Data) -> UInt16? {
