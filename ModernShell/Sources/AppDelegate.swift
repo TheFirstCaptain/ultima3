@@ -967,12 +967,14 @@ final class ShellSmokeState: ObservableObject {
         var description = describeCombatPlayerCommand(result, session: session)
         var damageResult = result.attack_result.damage_result
         let experienceAward = u3_combat_apply_experience_award(&session.combatState, &damageResult)
-        if experienceAward.applied != 0,
+        if (experienceAward.applied != 0 || result.attack_result.mutated_inventory != 0),
            var documentData = currentSaveDocument,
            resourceAdapter.applyCombatPartyState(session, documentData: &documentData) {
             currentSaveDocument = documentData
             hasUnsavedChanges = true
-            description += " exp \(experienceAward.experience_after)"
+            if experienceAward.applied != 0 {
+                description += " exp \(experienceAward.experience_after)"
+            }
         }
         let victoryResult = u3_combat_check_victory(&session.combatState)
         if victoryResult.victorious != 0 {

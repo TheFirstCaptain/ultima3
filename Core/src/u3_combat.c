@@ -47,6 +47,38 @@ uint8_t u3_combat_character_here(const u3_combat_state *state, int16_t x, int16_
     return U3_COMBAT_NO_SLOT;
 }
 
+uint8_t u3_combat_projectile_monster(const u3_combat_state *state,
+                                      uint8_t character,
+                                      int8_t direction_x,
+                                      int8_t direction_y)
+{
+    /* Legacy reference: Sources/UltimaSpellCombat.c Shoot. */
+    int16_t x;
+    int16_t y;
+
+    if (state == 0 || character >= U3_COMBAT_CHARACTER_COUNT)
+        return U3_COMBAT_NO_SLOT;
+    if (direction_x == 0 && direction_y == 0)
+        return U3_COMBAT_NO_SLOT;
+    if (state->character_x[character] > 10 || state->character_y[character] > 10)
+        return U3_COMBAT_NO_SLOT;
+
+    x = state->character_x[character];
+    y = state->character_y[character];
+    for (;;) {
+        uint8_t monster;
+
+        x += direction_x;
+        y += direction_y;
+        if (x < 0 || x > 10 || y < 0 || y > 10)
+            return U3_COMBAT_NO_SLOT;
+
+        monster = u3_combat_monster_here(state, x, y);
+        if (monster != U3_COMBAT_NO_SLOT)
+            return monster;
+    }
+}
+
 static void u3_combat_put_tile(u3_combat_state *state, int16_t value, int16_t x, int16_t y)
 {
     /* Legacy reference: Sources/UltimaMisc.c PutXYTile. */
@@ -753,21 +785,6 @@ u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
             return result;
         }
 
-        if (u3_combat_is_projectile_weapon(input->weapon)) {
-            result.unsupported = 1;
-            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED;
-            return result;
-        }
-
-        if (input->weapon == 1 &&
-            u3_combat_monster_here(state,
-                                   state->character_x[input->character] + input->attack_direction_x,
-                                   state->character_y[input->character] + input->attack_direction_y) == U3_COMBAT_NO_SLOT) {
-            result.unsupported = 1;
-            result.status = U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED;
-            return result;
-        }
-
         attack.character = input->character;
         attack.direction_x = input->attack_direction_x;
         attack.direction_y = input->attack_direction_y;
@@ -776,12 +793,26 @@ u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
         attack.strength = input->strength;
         attack.dexterity = input->dexterity;
         attack.projectile_monster = input->projectile_monster;
+        if (u3_combat_is_projectile_weapon(input->weapon) ||
+            (input->weapon == 1 &&
+             u3_combat_monster_here(state,
+                                    state->character_x[input->character] + input->attack_direction_x,
+                                    state->character_y[input->character] + input->attack_direction_y) == U3_COMBAT_NO_SLOT)) {
+            attack.projectile_monster = u3_combat_projectile_monster(state,
+                                                                     input->character,
+                                                                     input->attack_direction_x,
+                                                                     input->attack_direction_y);
+        }
         attack.exodus_castle_result = input->exodus_castle_result;
         attack.hit_chance_roll = input->hit_chance_roll;
         attack.hit_dexterity_roll = input->hit_dexterity_roll;
         attack.damage_roll = input->damage_roll;
 
         result.attack_result = u3_combat_attack(state, experience, &attack);
+        if (result.attack_result.mutated_inventory) {
+            state->character_weapon[input->character] = result.attack_result.weapon_after;
+            state->character_weapon_inventory[input->character][1] = result.attack_result.weapon_quantity_after;
+        }
         result.attacked = 1;
         result.redraw = result.attack_result.redraw_tiles;
         if (result.attack_result.play_hit_sound)

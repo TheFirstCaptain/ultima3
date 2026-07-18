@@ -100,7 +100,7 @@ Use this tracker to preserve feature state across sessions and agent handoffs. D
 | F-050 | First Player Combat Command Slice | Complete | Done | [F-050.md](./F-050.md) | 2026-07-17 | Basic combat movement/pass, non-blocking attack direction prompt, melee hit/miss, and explicit projectile/deferred paths complete. |
 | F-051 | First Monster Combat Turn Slice | Complete | Done | [F-051.md](./F-051.md) | 2026-07-17 | Deterministic one-monster turn wrapper, shell sequencing, roster mutation write-back, and validation complete. |
 | F-052 | Combat Victory and Return Flow | Complete | Done | [F-052.md](./F-052.md) | 2026-07-18 | First dungeon-origin combat victory detects all defeated monsters, applies bounded experience, discards combat, and restores the preserved dungeon session. |
-| F-053 | Player Ranged Combat Attack Slice | Proposed | Proposed | [F-053.md](./F-053.md) | 2026-07-17 | Add first projectile and thrown-dagger player attack paths with bounded inventory write-back. |
+| F-053 | Player Ranged Combat Attack Slice | Complete | Done | [F-053.md](./F-053.md) | 2026-07-18 | Projectile weapons and thrown daggers now resolve bounded line attacks with thrown-dagger inventory write-back. |
 | F-054 | First Combat Spell Command Slice | Proposed | Proposed | [F-054.md](./F-054.md) | 2026-07-17 | Add the first bounded player combat spell command path and mutation/status handling. |
 | F-055 | Combat Flee and Defeat Flow | Proposed | Proposed | [F-055.md](./F-055.md) | 2026-07-17 | Add bounded flee attempts and all-party-defeated handling. |
 | F-056 | Dungeon Chest Trap and Equipment Rewards | Proposed | Proposed | [F-056.md](./F-056.md) | 2026-07-17 | Expand dungeon chest outcomes beyond gold to traps and first equipment rewards. |

@@ -273,6 +273,10 @@ typedef struct u3_combat_monster_turn_result {
 uint8_t u3_combat_valid_move(const u3_combat_state *state, int16_t tile);
 uint8_t u3_combat_monster_here(const u3_combat_state *state, int16_t x, int16_t y);
 uint8_t u3_combat_character_here(const u3_combat_state *state, int16_t x, int16_t y);
+uint8_t u3_combat_projectile_monster(const u3_combat_state *state,
+                                      uint8_t character,
+                                      int8_t direction_x,
+                                      int8_t direction_y);
 u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
                                                   const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
                                                   int16_t monster,

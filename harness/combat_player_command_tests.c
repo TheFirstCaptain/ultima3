@@ -161,7 +161,77 @@ static void test_direction_supplied_melee_attack_misses_empty_tile(void)
     ASSERT_EQ_INT(1, result.attack_result.miss);
 }
 
-static void test_projectile_weapon_reports_deferred_status(void)
+static void test_projectile_weapon_hits_first_monster_in_line(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    input = base_input(U3_COMBAT_COMMAND_ATTACK);
+    input.attack_direction_x = 1;
+    input.weapon = 3;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.attacked);
+    ASSERT_EQ_INT(1, result.attack_result.used_projectile);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT, result.status);
+    ASSERT_EQ_INT(2, result.attack_result.target_monster);
+    ASSERT_EQ_INT(12, state.monster_hp[2]);
+}
+
+static void test_projectile_weapon_hits_nearest_monster_in_line(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    state.monster_x[1] = 6;
+    state.monster_y[1] = 4;
+    state.monster_hp[1] = 40;
+    input = base_input(U3_COMBAT_COMMAND_ATTACK);
+    input.attack_direction_x = 1;
+    input.weapon = 3;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.attacked);
+    ASSERT_EQ_INT(1, result.attack_result.used_projectile);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT, result.status);
+    ASSERT_EQ_INT(1, result.attack_result.target_monster);
+    ASSERT_EQ_INT(12, state.monster_hp[1]);
+    ASSERT_EQ_INT(40, state.monster_hp[2]);
+}
+
+static void test_projectile_weapon_line_ignores_terrain_and_characters(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    state.tile_array[(4 * 11) + 5] = 0x10;
+    state.character_x[1] = 6;
+    state.character_y[1] = 4;
+    input = base_input(U3_COMBAT_COMMAND_ATTACK);
+    input.attack_direction_x = 1;
+    input.weapon = 3;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.attacked);
+    ASSERT_EQ_INT(1, result.attack_result.used_projectile);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT, result.status);
+    ASSERT_EQ_INT(2, result.attack_result.target_monster);
+    ASSERT_EQ_INT(12, state.monster_hp[2]);
+}
+
+static void test_projectile_weapon_misses_when_line_leaves_arena(void)
 {
     u3_combat_player_command_input input;
     u3_combat_player_command_result result;
@@ -174,9 +244,58 @@ static void test_projectile_weapon_reports_deferred_status(void)
     result = u3_combat_player_command(&state, experience, &input);
 
     ASSERT_EQ_INT(1, result.handled);
-    ASSERT_EQ_INT(1, result.unsupported);
-    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED, result.status);
-    ASSERT_EQ_INT(0, result.attacked);
+    ASSERT_EQ_INT(1, result.attacked);
+    ASSERT_EQ_INT(1, result.attack_result.used_projectile);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED, result.status);
+    ASSERT_EQ_INT(U3_COMBAT_NO_SLOT, result.attack_result.target_monster);
+}
+
+static void test_thrown_dagger_decrements_inventory_and_uses_projectile_line(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    input = base_input(U3_COMBAT_COMMAND_ATTACK);
+    input.attack_direction_x = 1;
+    input.weapon = 1;
+    input.weapon_quantity = 2;
+    state.character_weapon[0] = 1;
+    state.character_weapon_inventory[0][1] = 2;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.attacked);
+    ASSERT_EQ_INT(1, result.attack_result.used_thrown_dagger);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_ATTACK_HIT, result.status);
+    ASSERT_EQ_INT(1, state.character_weapon[0]);
+    ASSERT_EQ_INT(1, state.character_weapon_inventory[0][1]);
+}
+
+static void test_last_thrown_dagger_unequips_on_miss(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    input = base_input(U3_COMBAT_COMMAND_ATTACK);
+    input.attack_direction_x = 1;
+    input.weapon = 1;
+    input.weapon_quantity = 1;
+    state.character_weapon[0] = 1;
+    state.character_weapon_inventory[0][1] = 1;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.attacked);
+    ASSERT_EQ_INT(1, result.attack_result.used_thrown_dagger);
+    ASSERT_EQ_INT(1, result.attack_result.unequipped_weapon);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED, result.status);
+    ASSERT_EQ_INT(0, state.character_weapon[0]);
+    ASSERT_EQ_INT(0, state.character_weapon_inventory[0][1]);
 }
 
 static void test_dead_character_command_reports_unsupported_without_mutation(void)
@@ -205,7 +324,12 @@ int main(void)
     test_attack_without_direction_requests_direction();
     test_direction_supplied_melee_attack_hits_adjacent_monster();
     test_direction_supplied_melee_attack_misses_empty_tile();
-    test_projectile_weapon_reports_deferred_status();
+    test_projectile_weapon_hits_first_monster_in_line();
+    test_projectile_weapon_hits_nearest_monster_in_line();
+    test_projectile_weapon_line_ignores_terrain_and_characters();
+    test_projectile_weapon_misses_when_line_leaves_arena();
+    test_thrown_dagger_decrements_inventory_and_uses_projectile_line();
+    test_last_thrown_dagger_unequips_on_miss();
     test_dead_character_command_reports_unsupported_without_mutation();
 
     puts("combat player command characterization passed");
