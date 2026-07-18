@@ -72,6 +72,12 @@ struct ShellDungeonInteractionResult {
     let message: String?
 }
 
+struct ShellTownServiceResult {
+    var service: u3_town_service_result
+    let documentMutated: Bool
+    let message: String?
+}
+
 final class ShellResourceAdapter {
     func validateMainResources(resourceRootPath: String?) -> String {
         guard let resourceRootPath else {
@@ -997,6 +1003,77 @@ final class ShellResourceAdapter {
         }
     }
 
+    func applyTownService(
+        _ session: ShellLocationSession,
+        documentData: inout Data?,
+        command: UInt16,
+        selectedActiveSlot: UInt8
+    ) -> ShellTownServiceResult {
+        var service = u3_town_service_result()
+        let input = u3_town_service_input(
+            command: command,
+            selected_active_slot: selectedActiveSlot
+        )
+
+        guard session.descriptor.destination_kind == U3_LOCATION_KIND_TOWN else {
+            var descriptor = session.descriptor
+            service = u3_town_service_apply(&descriptor, input, nil, 0, nil, 0)
+            return ShellTownServiceResult(service: service, documentMutated: false, message: townServiceMessage(service))
+        }
+
+        var documentMutated = false
+        if var currentDocument = documentData {
+            let documentLength = currentDocument.count
+            var descriptor = session.descriptor
+            service = currentDocument.withUnsafeMutableBytes { documentBuffer in
+                guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    var invalid = u3_town_service_result()
+                    invalid.handled = 1
+                    invalid.status = UInt8(U3_TOWN_SERVICE_STATUS_INVALID_INPUT)
+                    return invalid
+                }
+
+                var document = u3_save_document()
+                var partyRecord = u3_save_record()
+                var rosterRecord = u3_save_record()
+                guard u3_save_open(documentBaseAddress, documentLength, &document) != 0,
+                      u3_save_find_record(&document, fourCharacterCode("PRTY"), Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                      u3_save_find_record(&document, fourCharacterCode("ROST"), Int16(U3_SAVE_ID_ROSTER), &rosterRecord) != 0,
+                      partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                      rosterRecord.length == U3_SAVE_ROSTER_LENGTH,
+                      let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self),
+                      let roster = UnsafeMutableRawPointer(mutating: rosterRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                    var invalid = u3_town_service_result()
+                    invalid.handled = 1
+                    invalid.status = UInt8(U3_TOWN_SERVICE_STATUS_INVALID_INPUT)
+                    return invalid
+                }
+
+                return u3_town_service_apply(
+                    &descriptor,
+                    input,
+                    party,
+                    partyRecord.length,
+                    roster,
+                    rosterRecord.length
+                )
+            }
+            if service.status == UInt8(U3_TOWN_SERVICE_STATUS_HEALED) {
+                documentData = currentDocument
+                documentMutated = true
+            }
+        } else {
+            var descriptor = session.descriptor
+            service = u3_town_service_apply(&descriptor, input, nil, 0, nil, 0)
+        }
+
+        return ShellTownServiceResult(
+            service: service,
+            documentMutated: documentMutated,
+            message: townServiceMessage(service)
+        )
+    }
+
     func locationTalkMessage(_ result: inout u3_location_talk_result) -> String? {
         guard result.status == U3_LOCATION_TALK_STATUS_MESSAGE,
               result.message_length > 0,
@@ -1027,6 +1104,33 @@ final class ShellResourceAdapter {
             return "Talk: unsupported entry \(result.talk_index)"
         default:
             return "Talk: invalid direction"
+        }
+    }
+
+    private func townServiceMessage(_ service: u3_town_service_result) -> String? {
+        guard service.handled != 0 else {
+            return nil
+        }
+
+        switch Int32(service.status) {
+        case U3_TOWN_SERVICE_STATUS_SELECTION_REQUIRED:
+            return "Healer: choose character"
+        case U3_TOWN_SERVICE_STATUS_CANCELLED:
+            return "Healer cancelled"
+        case U3_TOWN_SERVICE_STATUS_INVALID_CHARACTER:
+            return "Healer invalid character"
+        case U3_TOWN_SERVICE_STATUS_INCAPACITATED:
+            return "Healer incapacitated slot \(service.active_slot)"
+        case U3_TOWN_SERVICE_STATUS_INSUFFICIENT_GOLD:
+            return "Healer insufficient gold roster \(service.roster_id) gold \(service.gold_before) cost \(service.cost)"
+        case U3_TOWN_SERVICE_STATUS_ALREADY_FULL:
+            return "Healer already full roster \(service.roster_id) HP \(service.hit_points_after)"
+        case U3_TOWN_SERVICE_STATUS_HEALED:
+            return "Healer healed roster \(service.roster_id) HP \(service.hit_points_after) gold \(service.gold_after) cost \(service.cost)"
+        case U3_TOWN_SERVICE_STATUS_INVALID_INPUT:
+            return "Healer invalid"
+        default:
+            return "Healer unsupported"
         }
     }
 

@@ -29,6 +29,7 @@ TESTS = \
 	$(BUILD_DIR)/location_transition_tests \
 	$(BUILD_DIR)/location_navigation_tests \
 	$(BUILD_DIR)/location_talk_tests \
+	$(BUILD_DIR)/town_service_tests \
 	$(BUILD_DIR)/character_creation_tests
 
 .PHONY: test clean
@@ -113,6 +114,9 @@ $(BUILD_DIR)/location_navigation_tests: location_navigation_tests.c $(CORE_SRC)/
 
 $(BUILD_DIR)/location_talk_tests: location_talk_tests.c $(CORE_SRC)/u3_location_talk.c $(CORE_INCLUDE)/u3_location_talk.h $(CORE_SRC)/u3_resource.c $(CORE_INCLUDE)/u3_resource.h ../Resources/English.lproj/MainResources.rsrc | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) location_talk_tests.c $(CORE_SRC)/u3_location_talk.c $(CORE_SRC)/u3_resource.c -o $@
+
+$(BUILD_DIR)/town_service_tests: town_service_tests.c $(CORE_SRC)/u3_town_service.c $(CORE_INCLUDE)/u3_town_service.h $(CORE_INCLUDE)/u3_audio.h $(CORE_INCLUDE)/u3_location.h $(CORE_INCLUDE)/u3_party.h $(CORE_INCLUDE)/u3_save.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) town_service_tests.c $(CORE_SRC)/u3_town_service.c -o $@
 
 $(BUILD_DIR)/character_creation_tests: character_creation_tests.c $(CORE_SRC)/u3_character.c $(CORE_INCLUDE)/u3_character.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(CORE_INCLUDE) character_creation_tests.c $(CORE_SRC)/u3_character.c -o $@

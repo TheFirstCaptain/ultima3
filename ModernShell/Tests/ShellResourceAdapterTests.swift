@@ -184,6 +184,85 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertEqual(adapter.describeLocationTalk(&talkResult), "Talk: HO! HO!")
     }
 
+    func testApplyTownHealerServiceMutatesSelectedRoster() throws {
+        let adapter = ShellResourceAdapter()
+        var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        var updatedDocument = try XCTUnwrap(document)
+        XCTAssertTrue(setRosterHitPoints(rosterID: 1, hitPoints: 50, in: &updatedDocument))
+        XCTAssertTrue(setRosterGold(rosterID: 1, gold: 250, in: &updatedDocument))
+        document = updatedDocument
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_TOWN), index: 2, x: 1, y: 32, heading: 2)
+        )
+        guard case .success(let town) = loadResult else {
+            return XCTFail("Expected LCB Towne session")
+        }
+
+        let prompt = adapter.applyTownService(
+            town,
+            documentData: &document,
+            command: UInt16(UInt8(ascii: "H")),
+            selectedActiveSlot: 0
+        )
+        XCTAssertEqual(prompt.service.status, UInt8(U3_TOWN_SERVICE_STATUS_SELECTION_REQUIRED))
+        XCTAssertEqual(prompt.message, "Healer: choose character")
+        XCTAssertFalse(prompt.documentMutated)
+
+        let healed = adapter.applyTownService(
+            town,
+            documentData: &document,
+            command: UInt16(UInt8(ascii: "H")),
+            selectedActiveSlot: 1
+        )
+
+        XCTAssertEqual(healed.service.status, UInt8(U3_TOWN_SERVICE_STATUS_HEALED))
+        XCTAssertEqual(healed.service.hit_points_after, 100)
+        XCTAssertEqual(healed.service.gold_after, 50)
+        XCTAssertEqual(healed.message, "Healer healed roster 1 HP 100 gold 50 cost 200")
+        XCTAssertTrue(healed.documentMutated)
+        let healedDocument = try XCTUnwrap(document)
+        XCTAssertEqual(rosterHitPoints(rosterID: 1, in: healedDocument), 100)
+        XCTAssertEqual(rosterGold(rosterID: 1, in: healedDocument), 50)
+    }
+
+    func testApplyTownHealerServiceRejectsInsufficientGoldAndCancelWithoutMutation() throws {
+        let adapter = ShellResourceAdapter()
+        var document: Data? = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        var updatedDocument = try XCTUnwrap(document)
+        XCTAssertTrue(setRosterHitPoints(rosterID: 1, hitPoints: 50, in: &updatedDocument))
+        document = updatedDocument
+        let loadResult = adapter.loadLocationSession(
+            resourceRootPath: resourceRootPath,
+            request: makeLocationRequest(kind: UInt8(U3_LOCATION_KIND_TOWN), index: 2, x: 1, y: 32, heading: 2)
+        )
+        guard case .success(let town) = loadResult else {
+            return XCTFail("Expected LCB Towne session")
+        }
+
+        let insufficient = adapter.applyTownService(
+            town,
+            documentData: &document,
+            command: UInt16(UInt8(ascii: "H")),
+            selectedActiveSlot: 1
+        )
+        XCTAssertEqual(insufficient.service.status, UInt8(U3_TOWN_SERVICE_STATUS_INSUFFICIENT_GOLD))
+        XCTAssertEqual(insufficient.message, "Healer insufficient gold roster 1 gold 150 cost 200")
+        XCTAssertFalse(insufficient.documentMutated)
+        let insufficientDocument = try XCTUnwrap(document)
+        XCTAssertEqual(rosterHitPoints(rosterID: 1, in: insufficientDocument), 50)
+        XCTAssertEqual(rosterGold(rosterID: 1, in: insufficientDocument), 150)
+
+        let cancelled = adapter.applyTownService(
+            town,
+            documentData: &document,
+            command: UInt16(UInt8(ascii: "H")),
+            selectedActiveSlot: UInt8(U3_PARTY_ACTIVE_SLOT_COUNT + 1)
+        )
+        XCTAssertEqual(cancelled.service.status, UInt8(U3_TOWN_SERVICE_STATUS_CANCELLED))
+        XCTAssertFalse(cancelled.documentMutated)
+    }
+
     func testLoadLocationSessionValidatesCastleAndDungeonFamilies() {
         let adapter = ShellResourceAdapter()
         let castleResult = adapter.loadLocationSession(
@@ -816,6 +895,13 @@ final class ShellResourceAdapterTests: XCTestCase {
         return (UInt16(record[26]) << 8) | UInt16(record[27])
     }
 
+    private func rosterGold(rosterID: UInt8, in documentData: Data) -> UInt16 {
+        guard let record = rosterRecord(rosterID: rosterID, in: documentData) else {
+            return 0
+        }
+        return (UInt16(record[35]) << 8) | UInt16(record[36])
+    }
+
     private func rosterFood(rosterID: UInt8, in documentData: Data) -> UInt16 {
         guard let record = rosterRecord(rosterID: rosterID, in: documentData) else {
             return 0
@@ -849,6 +935,16 @@ final class ShellResourceAdapterTests: XCTestCase {
         }
         documentData[offset + 26] = UInt8(hitPoints >> 8)
         documentData[offset + 27] = UInt8(hitPoints & 0xff)
+        return true
+    }
+
+    private func setRosterGold(rosterID: UInt8, gold: UInt16, in documentData: inout Data) -> Bool {
+        let offset = rosterPayloadOffset(in: documentData, rosterID: rosterID)
+        guard offset > 0, offset + Int(U3_PARTY_ROSTER_RECORD_LENGTH) <= documentData.count else {
+            return false
+        }
+        documentData[offset + 35] = UInt8(gold >> 8)
+        documentData[offset + 36] = UInt8(gold & 0xff)
         return true
     }
 

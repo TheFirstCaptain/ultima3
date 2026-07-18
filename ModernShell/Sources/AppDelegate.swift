@@ -536,6 +536,7 @@ final class ShellSmokeState: ObservableObject {
     private var activeLocationSession: ShellLocationSession?
     private var activeCombatSession: ShellCombatSession?
     private var awaitingTalkDirection = false
+    private var pendingTownServiceCommand: UInt16?
     private var pendingCombatAttackCharacter: UInt8?
     private var pendingCombatSpellCharacter: UInt8?
     private var pendingDungeonInteractionCommand: UInt16?
@@ -672,6 +673,7 @@ final class ShellSmokeState: ObservableObject {
     func refreshLocationStatus() {
         let locations = locationProvider.snapshot()
         awaitingTalkDirection = false
+        pendingTownServiceCommand = nil
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
@@ -799,6 +801,11 @@ final class ShellSmokeState: ObservableObject {
                     return "Ignite unavailable: not in dungeon"
                 }
 
+                if locationSession.descriptor.destination_kind == U3_LOCATION_KIND_TOWN,
+                   let pendingCommand = pendingTownServiceCommand {
+                    return consumeTownServiceSelection(event, session: &locationSession, command: pendingCommand)
+                }
+
                 if awaitingTalkDirection &&
                     locationSession.descriptor.destination_kind == U3_LOCATION_KIND_TOWN {
                     awaitingTalkDirection = false
@@ -812,6 +819,11 @@ final class ShellSmokeState: ObservableObject {
                     }
 
                     return resourceAdapter.describeLocationTalk(&talkResult)
+                }
+
+                if Self.normalizedKeyboardCommand(event.command) == UInt16(UInt8(ascii: "H")) &&
+                    locationSession.descriptor.destination_kind == U3_LOCATION_KIND_TOWN {
+                    return beginTownService(session: &locationSession, command: Self.normalizedKeyboardCommand(event.command))
                 }
 
                 if event.command == U3_LOCATION_TALK_COMMAND &&
@@ -1076,6 +1088,7 @@ final class ShellSmokeState: ObservableObject {
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
+        pendingTownServiceCommand = nil
         awaitingTalkDirection = false
         renderFrame = sourceSession.frame
         let locations = locationProvider.snapshot()
@@ -1105,6 +1118,7 @@ final class ShellSmokeState: ObservableObject {
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
+        pendingTownServiceCommand = nil
         awaitingTalkDirection = false
         renderFrame = sourceSession.frame
         let locations = locationProvider.snapshot()
@@ -1134,6 +1148,7 @@ final class ShellSmokeState: ObservableObject {
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
+        pendingTownServiceCommand = nil
         awaitingTalkDirection = false
         renderFrame = sourceSession.frame
         let locations = locationProvider.snapshot()
@@ -1552,6 +1567,52 @@ final class ShellSmokeState: ObservableObject {
         return "Dungeon command \(describeDungeonCommand(event.command)) \(describeDungeonPosition(session))\(describeLocationTurnDelta(locationResult))\(describeDungeonPostTurn(postTurnResult))\(describeDungeonSpecialEffect(specialEffectResult))\(interactionDescription)"
     }
 
+    private func beginTownService(session: inout ShellLocationSession, command: UInt16) -> String {
+        var documentData = currentSaveDocument
+        let result = resourceAdapter.applyTownService(
+            session,
+            documentData: &documentData,
+            command: command,
+            selectedActiveSlot: 0
+        )
+        if result.service.requires_selection != 0 {
+            pendingTownServiceCommand = command
+        }
+        activeLocationSession = session
+        return describeTownService(result)
+    }
+
+    private func consumeTownServiceSelection(
+        _ event: u3_input_event,
+        session: inout ShellLocationSession,
+        command: UInt16
+    ) -> String {
+        let selectedSlot = Self.dungeonInteractionSelection(from: event.command)
+        var documentData = currentSaveDocument
+        let result = resourceAdapter.applyTownService(
+            session,
+            documentData: &documentData,
+            command: command,
+            selectedActiveSlot: selectedSlot
+        )
+
+        if result.service.requires_selection != 0 {
+            activeLocationSession = session
+            return "Town service: choose character"
+        }
+
+        pendingTownServiceCommand = nil
+        if result.documentMutated {
+            currentSaveDocument = documentData
+            hasUnsavedChanges = true
+        }
+        if result.service.sound_id != 0 {
+            _ = audioAdapter.enqueueSound(Int32(result.service.sound_id))
+        }
+        activeLocationSession = session
+        return describeTownService(result)
+    }
+
     private func beginDungeonInteraction(session: inout ShellLocationSession, command: UInt16) -> String {
         var documentData = currentSaveDocument
         let result = resourceAdapter.applyDungeonInteraction(
@@ -1777,6 +1838,7 @@ final class ShellSmokeState: ObservableObject {
             pendingCombatAttackCharacter = nil
             pendingCombatSpellCharacter = nil
             pendingDungeonInteractionCommand = nil
+            pendingTownServiceCommand = nil
             awaitingTalkDirection = false
             renderFrame = session.frame
             resourceStatus = Self.describeResourceStatus(
@@ -1902,6 +1964,8 @@ final class ShellSmokeState: ObservableObject {
             currentSaveDocument = documentData
             hasUnsavedChanges = true
             activeLocationSession = nil
+            awaitingTalkDirection = false
+            pendingTownServiceCommand = nil
             overworldState = restoredState
             overworldMapData = restoredMap
             renderFrame = overworldSmoke.frame
@@ -1925,6 +1989,7 @@ final class ShellSmokeState: ObservableObject {
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
+        pendingTownServiceCommand = nil
         currentSaveDocument = document
         saveStatus = resourceAdapter.describeSaveDomain(document, prefix: statusPrefix)
         let overworldSmoke = resourceAdapter.buildOverworldSmoke(documentData: document, state: &overworldState)
@@ -2047,6 +2112,7 @@ final class ShellSmokeState: ObservableObject {
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
         pendingDungeonInteractionCommand = nil
+        pendingTownServiceCommand = nil
         awaitingTalkDirection = false
         renderFrame = session.frame
         return true
@@ -2182,6 +2248,34 @@ final class ShellSmokeState: ObservableObject {
             return " special invalid"
         default:
             return " special unsupported tile \(effect.current_tile)"
+        }
+    }
+
+    private func describeTownService(_ result: ShellTownServiceResult) -> String {
+        let service = result.service
+        guard service.handled != 0 else {
+            return "Town service unsupported"
+        }
+
+        switch Int32(service.status) {
+        case U3_TOWN_SERVICE_STATUS_SELECTION_REQUIRED:
+            return result.message ?? "Healer: choose character"
+        case U3_TOWN_SERVICE_STATUS_CANCELLED:
+            return "Town service cancelled"
+        case U3_TOWN_SERVICE_STATUS_INVALID_CHARACTER:
+            return "Town service invalid character"
+        case U3_TOWN_SERVICE_STATUS_INCAPACITATED:
+            return "Town healer incapacitated slot \(service.active_slot)"
+        case U3_TOWN_SERVICE_STATUS_INSUFFICIENT_GOLD:
+            return "Town healer insufficient gold roster \(service.roster_id) gold \(service.gold_before) cost \(service.cost)"
+        case U3_TOWN_SERVICE_STATUS_ALREADY_FULL:
+            return "Town healer already full roster \(service.roster_id) HP \(service.hit_points_after)"
+        case U3_TOWN_SERVICE_STATUS_HEALED:
+            return "Town healer healed roster \(service.roster_id) HP \(service.hit_points_after) gold \(service.gold_after) cost \(service.cost)"
+        case U3_TOWN_SERVICE_STATUS_INVALID_INPUT:
+            return "Town service invalid"
+        default:
+            return "Town service unsupported"
         }
     }
 

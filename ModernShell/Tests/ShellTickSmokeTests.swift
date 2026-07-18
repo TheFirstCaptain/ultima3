@@ -279,6 +279,78 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 8)
     }
 
+    func testTownHealerPromptMutatesSelectedCharacterAfterReturnAndSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertTrue(setActiveRosterHitPoints(rosterID: 1, hitPoints: 50, in: &document))
+        XCTAssertTrue(setActiveRosterGold(rosterID: 1, gold: 250, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "h"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Healer: choose character")
+        state.submitKeyboard(UInt8(ascii: "1"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Town healer healed roster 1 HP 100 gold 50 cost 200 | Audio Sound Heal")
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.submitOverworldCommand(moveWestCommand)
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Returned to Sosaria 46,19 moves 8 | Audio Sound Step")
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Game saved")
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: updatedDocument), 100)
+        XCTAssertEqual(activeRosterGold(rosterID: 1, in: updatedDocument), 50)
+    }
+
+    func testTownHealerCancelAndInsufficientGoldDoNotMutateRoster() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 46, y: 19, in: &document))
+        XCTAssertTrue(setActiveRosterHitPoints(rosterID: 1, hitPoints: 50, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(locationProvider: locationProvider, dungeonRollProvider: noDungeonEncounterRolls)
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        state.submitKeyboard(UInt8(ascii: "H"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Healer: choose character")
+        state.submitKeyboard(UInt8(ascii: "0"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Town service cancelled | Audio Sound Bump")
+
+        state.submitKeyboard(UInt8(ascii: "H"))
+        state.runTick()
+        state.submitKeyboard(UInt8(ascii: "1"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Town healer insufficient gold roster 1 gold 150 cost 200 | Audio Sound Bump")
+
+        state.submitOverworldCommand(moveWestCommand)
+        state.runTick()
+        state.saveGame()
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: updatedDocument), 50)
+        XCTAssertEqual(activeRosterGold(rosterID: 1, in: updatedDocument), 150)
+    }
+
     func testDungeonDoomEntryInitializesTransientSessionAndRejectsSave() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
@@ -2082,6 +2154,13 @@ final class ShellTickSmokeTests: XCTestCase {
             return false
         }
         return setActiveRosterByte(rosterID: rosterID, offset: 27, value: UInt8(hitPoints & 0xff), in: &documentData)
+    }
+
+    private func setActiveRosterGold(rosterID: UInt8, gold: UInt16, in documentData: inout Data) -> Bool {
+        guard setActiveRosterByte(rosterID: rosterID, offset: 35, value: UInt8(gold >> 8), in: &documentData) else {
+            return false
+        }
+        return setActiveRosterByte(rosterID: rosterID, offset: 36, value: UInt8(gold & 0xff), in: &documentData)
     }
 
     private func setActiveRosterWeapon(rosterID: UInt8, weapon: UInt8, quantity: UInt8, in documentData: inout Data) -> Bool {
