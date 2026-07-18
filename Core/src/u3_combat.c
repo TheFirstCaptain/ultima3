@@ -276,6 +276,36 @@ u3_combat_victory_result u3_combat_check_victory(const u3_combat_state *state)
     return result;
 }
 
+u3_combat_party_defeat_result u3_combat_check_party_defeat(const u3_combat_state *state,
+                                                            uint8_t party_size)
+{
+    /* Legacy reference: Sources/UltimaMain.c CheckAllDead. */
+    u3_combat_party_defeat_result result = {0};
+    uint8_t capped_party_size;
+    uint8_t character;
+
+    if (state == 0)
+        return result;
+
+    result.checked = 1;
+    capped_party_size = party_size < U3_COMBAT_CHARACTER_COUNT ? party_size : U3_COMBAT_CHARACTER_COUNT;
+    result.party_size = capped_party_size;
+    if (capped_party_size == 0) {
+        result.defeated = 1;
+        return result;
+    }
+
+    for (character = 0; character < capped_party_size; character++) {
+        if (u3_combat_character_can_act(state, character)) {
+            result.active_characters++;
+        } else {
+            result.defeated_characters++;
+        }
+    }
+    result.defeated = result.active_characters == 0 ? 1 : 0;
+    return result;
+}
+
 static void u3_combat_move_monster(u3_combat_state *state,
                                    const u3_combat_monster_action_input *input,
                                    u3_combat_monster_action_result *result)
@@ -845,6 +875,23 @@ u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
         result.handled = 1;
         result.passed = 1;
         result.status = U3_COMBAT_PLAYER_STATUS_PASSED;
+        return result;
+    }
+
+    if (input->command == U3_COMBAT_COMMAND_FLEE) {
+        result.handled = 1;
+        result.flee_result.attempted = 1;
+        result.flee_result.roll = input->flee_roll;
+        result.flee_result.threshold = U3_COMBAT_FLEE_SUCCESS_THRESHOLD;
+        if (input->flee_roll >= U3_COMBAT_FLEE_SUCCESS_THRESHOLD) {
+            result.flee_result.succeeded = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_FLEE_SUCCESS;
+            result.sound_id = U3_AUDIO_SOUND_STEP;
+        } else {
+            result.flee_result.failed = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_FLEE_FAILED;
+            result.sound_id = U3_AUDIO_SOUND_BUMP;
+        }
         return result;
     }
 

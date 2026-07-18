@@ -34,6 +34,7 @@
 #define U3_COMBAT_COMMAND_PASS 32
 #define U3_COMBAT_COMMAND_SPELL 77
 #define U3_COMBAT_COMMAND_ATTACK 65
+#define U3_COMBAT_COMMAND_FLEE 70
 
 #define U3_COMBAT_PLAYER_STATUS_NONE 0
 #define U3_COMBAT_PLAYER_STATUS_MOVED 1
@@ -50,6 +51,10 @@
 #define U3_COMBAT_PLAYER_STATUS_SPELL_MISSED 12
 #define U3_COMBAT_PLAYER_STATUS_SPELL_INVALID_CASTER 13
 #define U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC 14
+#define U3_COMBAT_PLAYER_STATUS_FLEE_SUCCESS 15
+#define U3_COMBAT_PLAYER_STATUS_FLEE_FAILED 16
+
+#define U3_COMBAT_FLEE_SUCCESS_THRESHOLD 128
 
 #define U3_COMBAT_SPELL_MITTAR 1
 #define U3_COMBAT_SPELL_MITTAR_COST 5
@@ -115,6 +120,14 @@ typedef struct u3_combat_victory_result {
     uint8_t defeated_monsters;
 } u3_combat_victory_result;
 
+typedef struct u3_combat_party_defeat_result {
+    uint8_t checked;
+    uint8_t defeated;
+    uint8_t party_size;
+    uint8_t active_characters;
+    uint8_t defeated_characters;
+} u3_combat_party_defeat_result;
+
 typedef struct u3_combat_attack_input {
     uint8_t character;
     int8_t direction_x;
@@ -172,7 +185,16 @@ typedef struct u3_combat_player_command_input {
     uint8_t hit_dexterity_roll;
     uint8_t damage_roll;
     uint8_t spell_damage_roll;
+    uint8_t flee_roll;
 } u3_combat_player_command_input;
+
+typedef struct u3_combat_flee_result {
+    uint8_t attempted;
+    uint8_t succeeded;
+    uint8_t failed;
+    uint8_t roll;
+    uint8_t threshold;
+} u3_combat_flee_result;
 
 typedef struct u3_combat_spell_result {
     uint8_t attempted;
@@ -216,6 +238,7 @@ typedef struct u3_combat_player_command_result {
     uint8_t target_tile;
     u3_combat_attack_result attack_result;
     u3_combat_spell_result spell_result;
+    u3_combat_flee_result flee_result;
 } u3_combat_player_command_result;
 
 typedef struct u3_combat_monster_action_input {
@@ -324,6 +347,8 @@ u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
 u3_combat_experience_award_result u3_combat_apply_experience_award(u3_combat_state *state,
                                                                     const u3_combat_damage_result *damage_result);
 u3_combat_victory_result u3_combat_check_victory(const u3_combat_state *state);
+u3_combat_party_defeat_result u3_combat_check_party_defeat(const u3_combat_state *state,
+                                                            uint8_t party_size);
 u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
                                           const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
                                           const u3_combat_attack_input *input);

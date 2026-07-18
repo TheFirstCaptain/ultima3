@@ -601,6 +601,16 @@ static uint8_t u3_dungeon_add_gold(uint8_t *record,
     return (uint8_t)(total != gold);
 }
 
+static uint8_t u3_dungeon_add_item(uint8_t *record, uint8_t offset)
+{
+    uint16_t total = (uint16_t)(record[offset] + 1);
+
+    if (total > 99)
+        total = 99;
+    record[offset] = (uint8_t)total;
+    return (uint8_t)total;
+}
+
 static uint8_t u3_dungeon_disarm_factor(const uint8_t *record)
 {
     uint16_t factor = record[19];
@@ -902,21 +912,71 @@ u3_dungeon_interaction_result u3_dungeon_apply_interaction(
         return result;
     case U3_DUNGEON_INTERACTION_KIND_CHEST: {
         uint16_t gold;
+        uint8_t reward_roll;
 
         if (input.chest_trap_roll > 127) {
-            result.status = U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED;
-            result.message_id = 42;
-            return result;
+            result.chest_trap_kind = (uint8_t)((input.chest_trap_roll & 0x03) + 1);
+            if ((uint8_t)input.chest_trap_roll > u3_dungeon_disarm_factor(record)) {
+                switch (result.chest_trap_kind) {
+                case U3_DUNGEON_CHEST_TRAP_POISON:
+                case U3_DUNGEON_CHEST_TRAP_POISON_CLOUD:
+                    record[U3_PARTY_ROSTER_STATUS_OFFSET] = 'P';
+                    result.status_after = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+                    result.message_id = result.chest_trap_kind == U3_DUNGEON_CHEST_TRAP_POISON ? 43 : 45;
+                    result.sound_id = U3_AUDIO_SOUND_HIT;
+                    break;
+                case U3_DUNGEON_CHEST_TRAP_BOMB:
+                    result.chest_trap_damage = (uint16_t)((input.chest_trap_roll & 0x77) + 8);
+                    (void)u3_dungeon_subtract_hp(record, result.chest_trap_damage);
+                    result.status_after = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+                    result.hit_points_after = u3_dungeon_read_u16(record, 26);
+                    result.message_id = 44;
+                    result.sound_id = U3_AUDIO_SOUND_HIT;
+                    break;
+                default:
+                    result.chest_trap_damage = (uint16_t)(input.chest_trap_roll & 0x37);
+                    if (result.chest_trap_damage == 0)
+                        result.chest_trap_damage = 8;
+                    (void)u3_dungeon_subtract_hp(record, result.chest_trap_damage);
+                    result.status_after = record[U3_PARTY_ROSTER_STATUS_OFFSET];
+                    result.hit_points_after = u3_dungeon_read_u16(record, 26);
+                    result.message_id = 42;
+                    result.sound_id = U3_AUDIO_SOUND_HIT;
+                    break;
+                }
+            } else {
+                result.chest_trap_disarmed = 1;
+                result.message_id = 46;
+                result.sound_id = U3_AUDIO_SOUND_OUCH;
+            }
         }
 
-        gold = (uint16_t)(input.chest_gold_roll % 101);
+        gold = (uint16_t)((input.chest_gold_roll & 0xff) % 101);
         if (gold < 30)
             gold = (uint16_t)(gold + 30);
         (void)u3_dungeon_add_gold(record, gold, &result);
+        reward_roll = (uint8_t)(input.chest_gold_roll >> 8);
+        if (reward_roll > 0 && reward_roll < 128) {
+            uint8_t weapon = (uint8_t)(reward_roll & 0x07);
+
+            if (weapon != 0) {
+                result.weapon_reward = weapon;
+                result.weapon_before = record[48 + weapon];
+                result.weapon_after = u3_dungeon_add_item(record, (uint8_t)(48 + weapon));
+            }
+        } else if (reward_roll >= 128) {
+            uint8_t armour = (uint8_t)(reward_roll & 0x03);
+
+            if (armour != 0) {
+                result.armour_reward = armour;
+                result.armour_before = record[40 + armour];
+                result.armour_after = u3_dungeon_add_item(record, (uint8_t)(40 + armour));
+            }
+        }
         result.status = U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED;
         result.clear_current_tile = 1;
-        result.message_id = 47;
-        result.sound_id = U3_AUDIO_SOUND_CREAK;
+        if (result.sound_id == 0)
+            result.sound_id = U3_AUDIO_SOUND_CREAK;
         return result;
     }
     default:

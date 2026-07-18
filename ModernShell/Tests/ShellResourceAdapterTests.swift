@@ -617,6 +617,42 @@ final class ShellResourceAdapterTests: XCTestCase {
         XCTAssertTrue(chest.documentMutated)
         XCTAssertTrue(chest.sessionMutated)
         XCTAssertEqual(currentDungeonTile(in: dungeon), 0)
+
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_CHEST), in: &dungeon)
+        let trappedChest = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: UInt16(UInt8(ascii: "G")),
+            selectedActiveSlot: 1,
+            chestTrapRoll: 200,
+            chestGoldRoll: UInt16((5 << 8) | 20)
+        )
+
+        XCTAssertEqual(trappedChest.interaction.status, UInt8(U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED))
+        XCTAssertEqual(trappedChest.interaction.chest_trap_kind, UInt8(U3_DUNGEON_CHEST_TRAP_DAMAGE))
+        XCTAssertEqual(trappedChest.interaction.chest_trap_damage, 8)
+        XCTAssertEqual(trappedChest.interaction.hit_points_after, 42)
+        XCTAssertEqual(trappedChest.interaction.weapon_reward, 5)
+        XCTAssertEqual(trappedChest.interaction.weapon_after, 1)
+        XCTAssertTrue(trappedChest.documentMutated)
+        let trappedDocument = try XCTUnwrap(document)
+        XCTAssertEqual(rosterHitPoints(rosterID: 1, in: trappedDocument), 42)
+        XCTAssertEqual(rosterByte(rosterID: 1, offset: 48 + 5, in: trappedDocument), 1)
+
+        setDungeonTile(UInt8(U3_DUNGEON_TILE_CHEST), in: &dungeon)
+        let armourChest = adapter.applyDungeonInteraction(
+            &dungeon,
+            documentData: &document,
+            command: UInt16(UInt8(ascii: "G")),
+            selectedActiveSlot: 1,
+            chestTrapRoll: 0,
+            chestGoldRoll: UInt16((131 << 8) | 20)
+        )
+
+        XCTAssertEqual(armourChest.interaction.armour_reward, 3)
+        XCTAssertEqual(armourChest.interaction.armour_after, 1)
+        let armourDocument = try XCTUnwrap(document)
+        XCTAssertEqual(rosterByte(rosterID: 1, offset: 40 + 3, in: armourDocument), 1)
     }
 
     func testApplyDungeonInteractionTimeLordAndCancelDoNotMutate() throws {
@@ -785,6 +821,15 @@ final class ShellResourceAdapterTests: XCTestCase {
             return 0
         }
         return UInt16(record[32]) * 100 + UInt16(record[33])
+    }
+
+    private func rosterByte(rosterID: UInt8, offset: Int, in documentData: Data) -> UInt8 {
+        guard let record = rosterRecord(rosterID: rosterID, in: documentData),
+              offset >= 0,
+              offset < record.count else {
+            return 0
+        }
+        return record[offset]
     }
 
     private func setRosterFood(rosterID: UInt8, hundreds: UInt8, remainder: UInt8, in documentData: inout Data) -> Bool {

@@ -773,6 +773,103 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(activeRosterMagic(rosterID: 1, in: currentDocument), 25)
     }
 
+    func testCombatFleeSuccessRestoresDungeonAndRejectsSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatFleeRollProvider: { UInt8(U3_COMBAT_FLEE_SUCCESS_THRESHOLD) }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.debugConfigureActiveCombat(
+            monsterX: 8,
+            monsterY: 4,
+            monsterHP: 40,
+            characterX: 4,
+            characterY: 4,
+            characterHP: 100
+        ))
+
+        state.submitKeyboard(UInt8(ascii: "F"))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Combat character 1 flee succeeded | Combat fled roll 128 returned dungeon MAPS 412 | Audio Sound Step"
+        )
+        XCTAssertNil(state.debugActiveCombatStatus())
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1 light 0"))
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testCombatFleeFailureConsumesTurnAndKeepsCombatActive() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatFleeRollProvider: { UInt8(U3_COMBAT_FLEE_SUCCESS_THRESHOLD - 1) },
+            combatMonsterRollProvider: {
+                (
+                    shootChoice: 255,
+                    magicChoice: 0,
+                    magicTarget: 0,
+                    projectileHit: 0,
+                    poison: 255,
+                    pilferBranch: 0,
+                    pilferItem: 0,
+                    armourHit: 0,
+                    damage: 4,
+                    exodusDamage: 0
+                )
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.debugConfigureActiveCombat(
+            monsterX: 8,
+            monsterY: 4,
+            monsterHP: 40,
+            characterX: 4,
+            characterY: 4,
+            characterHP: 100
+        ))
+
+        state.submitKeyboard(UInt8(ascii: "F"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Combat character 1 flee failed roll 127 | Monster 1 move 7,4 | Audio Sound Bump")
+        XCTAssertNotNil(state.debugActiveCombatStatus())
+        XCTAssertTrue(state.resourceStatus.contains("Combat OK CONS 402"))
+    }
+
     func testCombatPassRunsDeterministicMonsterMovementTurn() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
@@ -869,6 +966,69 @@ final class ShellTickSmokeTests: XCTestCase {
         state.runTick()
 
         XCTAssertEqual(state.lastCommand, "Combat character 1 pass | Monster 1 hit character 1 damage 5 defeated | Audio Sound Hit")
+        let currentDocument = try XCTUnwrap(state.debugCurrentSaveDocument())
+        XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: currentDocument), 0)
+        XCTAssertEqual(activeRosterStatus(rosterID: 1, in: currentDocument), UInt8(ascii: "D"))
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testCombatAllPartyDefeatedRestoresDungeonAndRejectsSave() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertTrue(setPartySize(1, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatMonsterRollProvider: {
+                (
+                    shootChoice: 255,
+                    magicChoice: 0,
+                    magicTarget: 0,
+                    projectileHit: 0,
+                    poison: 255,
+                    pilferBranch: 0,
+                    pilferItem: 0,
+                    armourHit: 0,
+                    damage: 4,
+                    exodusDamage: 0
+                )
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.debugConfigureActiveCombat(
+            monsterX: 4,
+            monsterY: 4,
+            monsterHP: 0x20,
+            characterX: 4,
+            characterY: 5,
+            characterHP: 5
+        ))
+
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+
+        XCTAssertEqual(
+            state.lastCommand,
+            "Combat character 1 pass | Monster 1 hit character 1 damage 5 defeated | Combat defeat active 0 defeated 1 returned dungeon MAPS 412 | Audio Sound Hit"
+        )
+        XCTAssertNil(state.debugActiveCombatStatus())
+        XCTAssertTrue(state.resourceStatus.contains("Dungeon OK MAPS 412 level 0 pos 1,1 heading 1 light 0"))
         let currentDocument = try XCTUnwrap(state.debugCurrentSaveDocument())
         XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: currentDocument), 0)
         XCTAssertEqual(activeRosterStatus(rosterID: 1, in: currentDocument), UInt8(ascii: "D"))
@@ -1342,7 +1502,7 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(reloadedState.debugCurrentDungeonTile(), UInt8(U3_DUNGEON_TILE_UP_LADDER))
     }
 
-    func testDungeonChestTrapDeferredConsumesTurnAndLeavesChest() throws {
+    func testDungeonChestTrapMutatesSelectedCharacterAndClearsChest() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
         var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
@@ -1366,8 +1526,8 @@ final class ShellTickSmokeTests: XCTestCase {
         state.submitKeyboard(UInt8(ascii: "1"))
         state.runTick()
 
-        XCTAssertEqual(state.lastCommand, "interaction chest trap deferred moves 8 passive")
-        XCTAssertEqual(state.debugCurrentDungeonTile(), UInt8(U3_DUNGEON_TILE_CHEST))
+        XCTAssertEqual(state.lastCommand, "interaction chest roster 1 gold 200 added 50 trap 1 damage 8 HP 92 moves 8 passive | Audio Sound Hit")
+        XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
         XCTAssertTrue(state.hasUnsavedChanges)
 
         XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_UP_LADDER)))
@@ -1376,7 +1536,56 @@ final class ShellTickSmokeTests: XCTestCase {
         state.saveGame()
         let updatedDocument = try Data(contentsOf: saveDocumentURL)
         XCTAssertEqual(partyPositionAndMoves(in: updatedDocument)?.moves, 12)
-        XCTAssertEqual(activeRosterGold(rosterID: 1, in: updatedDocument), 150)
+        XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: updatedDocument), 92)
+        XCTAssertEqual(activeRosterGold(rosterID: 1, in: updatedDocument), 200)
+    }
+
+    func testDungeonChestCanPersistWeaponAndArmourRewardsAfterReturn() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        var rewardRollCallCount = 0
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: noDungeonEncounterRolls,
+            dungeonChestRollProvider: {
+                rewardRollCallCount += 1
+                return rewardRollCallCount == 1 ?
+                    (trap: 0, gold: UInt16((5 << 8) | 20)) :
+                    (trap: 0, gold: UInt16((131 << 8) | 20))
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_CHEST)))
+
+        state.submitKeyboard(UInt8(ascii: "G"))
+        state.runTick()
+        state.submitKeyboard(UInt8(ascii: "1"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "interaction chest roster 1 gold 200 added 50 weapon 5 qty 1 moves 8 passive | Audio Sound Creak")
+
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_CHEST)))
+        state.submitKeyboard(UInt8(ascii: "G"))
+        state.runTick()
+        state.submitKeyboard(UInt8(ascii: "1"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "interaction chest roster 1 gold 250 added 50 armour 3 qty 1 moves 12 passive | Audio Sound Creak")
+
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(UInt8(U3_DUNGEON_TILE_UP_LADDER)))
+        state.submitKeyboard(UInt8(ascii: "K"))
+        state.runTick()
+        state.saveGame()
+
+        let updatedDocument = try Data(contentsOf: saveDocumentURL)
+        XCTAssertEqual(activeRosterByte(rosterID: 1, offset: 48 + 5, in: updatedDocument), 1)
+        XCTAssertEqual(activeRosterByte(rosterID: 1, offset: 40 + 3, in: updatedDocument), 1)
     }
 
     func testDungeonInteractionCancelAndTimeLordMessageDoNotMutate() throws {
@@ -1788,6 +1997,33 @@ final class ShellTickSmokeTests: XCTestCase {
 
             party[Int(U3_OVERWORLD_PARTY_X_OFFSET)] = x
             party[Int(U3_OVERWORLD_PARTY_Y_OFFSET)] = y
+            return true
+        }
+    }
+
+    private func setPartySize(_ partySize: UInt8, in documentData: inout Data) -> Bool {
+        let documentLength = documentData.count
+        return documentData.withUnsafeMutableBytes { documentBuffer in
+            guard let documentBaseAddress = documentBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return false
+            }
+
+            var document = u3_save_document()
+            guard u3_save_open(documentBaseAddress, documentLength, &document) != 0 else {
+                return false
+            }
+
+            var partyRecord = u3_save_record()
+            guard u3_save_find_record(&document, 0x50525459, Int16(U3_SAVE_ID_PARTY), &partyRecord) != 0,
+                  partyRecord.length == U3_SAVE_PARTY_LENGTH,
+                  let party = UnsafeMutableRawPointer(mutating: partyRecord.data)?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+
+            party[Int(U3_OVERWORLD_PARTY_SIZE_OFFSET)] = partySize
+            for index in Int(partySize)..<Int(U3_PARTY_ACTIVE_SLOT_COUNT) {
+                party[6 + index] = 0
+            }
             return true
         }
     }

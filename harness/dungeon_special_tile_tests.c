@@ -273,11 +273,114 @@ static void test_chest_opens_current_tile_and_adds_bounded_gold(void)
     ASSERT_EQ_INT(50, result.gold_added);
     ASSERT_EQ_INT(50, result.gold_after);
     ASSERT_EQ_INT(U3_AUDIO_SOUND_CREAK, result.sound_id);
+}
 
+static void test_chest_trap_damages_selected_character_and_still_adds_gold(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_CHEST;
+    input.command = U3_DUNGEON_COMMAND_GET_CHEST;
+    input.selected_active_slot = 1;
     input.chest_trap_roll = 200;
+    input.chest_gold_roll = 20;
+
     result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
-    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED, result.status);
-    ASSERT_FALSE(result.clear_current_tile);
+
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED, result.status);
+    ASSERT_TRUE(result.clear_current_tile);
+    ASSERT_EQ_INT(U3_DUNGEON_CHEST_TRAP_DAMAGE, result.chest_trap_kind);
+    ASSERT_EQ_INT(0, result.chest_trap_disarmed);
+    ASSERT_EQ_INT(0x08, result.chest_trap_damage);
+    ASSERT_EQ_INT(92, result.hit_points_after);
+    ASSERT_EQ_INT(50, result.gold_added);
+    ASSERT_EQ_INT(50, result.gold_after);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_HIT, result.sound_id);
+}
+
+static void test_chest_trap_can_be_disarmed_before_gold(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    roster[19] = 250;
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_CHEST;
+    input.command = U3_DUNGEON_COMMAND_GET_CHEST;
+    input.selected_active_slot = 1;
+    input.chest_trap_roll = 200;
+    input.chest_gold_roll = 20;
+
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+
+    ASSERT_EQ_INT(U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED, result.status);
+    ASSERT_TRUE(result.clear_current_tile);
+    ASSERT_EQ_INT(U3_DUNGEON_CHEST_TRAP_DAMAGE, result.chest_trap_kind);
+    ASSERT_EQ_INT(1, result.chest_trap_disarmed);
+    ASSERT_EQ_INT(100, result.hit_points_after);
+    ASSERT_EQ_INT(50, result.gold_added);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_OUCH, result.sound_id);
+}
+
+static void test_chest_poison_trap_sets_selected_character_status(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_CHEST;
+    input.command = U3_DUNGEON_COMMAND_GET_CHEST;
+    input.selected_active_slot = 1;
+    input.chest_trap_roll = 201;
+
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+
+    ASSERT_EQ_INT(U3_DUNGEON_CHEST_TRAP_POISON, result.chest_trap_kind);
+    ASSERT_EQ_INT('P', result.status_after);
+    ASSERT_EQ_INT('P', roster[U3_PARTY_ROSTER_STATUS_OFFSET]);
+}
+
+static void test_chest_adds_first_weapon_or_armour_reward_from_high_gold_roll_byte(void)
+{
+    uint8_t party[U3_SAVE_PARTY_LENGTH];
+    uint8_t roster[U3_SAVE_ROSTER_LENGTH];
+    u3_dungeon_interaction_input input;
+    u3_dungeon_interaction_result result;
+
+    make_party(party, roster);
+    memset(&input, 0, sizeof(input));
+    input.current_tile = U3_DUNGEON_TILE_CHEST;
+    input.command = U3_DUNGEON_COMMAND_GET_CHEST;
+    input.selected_active_slot = 1;
+    input.chest_gold_roll = (uint16_t)((5 << 8) | 20);
+
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+
+    ASSERT_EQ_INT(5, result.weapon_reward);
+    ASSERT_EQ_INT(0, result.weapon_before);
+    ASSERT_EQ_INT(1, result.weapon_after);
+    ASSERT_EQ_INT(1, roster[48 + 5]);
+    ASSERT_EQ_INT(0, result.armour_reward);
+
+    input.chest_gold_roll = (uint16_t)((131 << 8) | 20);
+    result = u3_dungeon_apply_interaction(input, party, sizeof(party), roster, sizeof(roster));
+
+    ASSERT_EQ_INT(3, result.armour_reward);
+    ASSERT_EQ_INT(0, result.armour_before);
+    ASSERT_EQ_INT(1, result.armour_after);
+    ASSERT_EQ_INT(1, roster[40 + 3]);
+    ASSERT_EQ_INT(0, result.weapon_reward);
 }
 
 static void test_prompt_cancel_invalid_and_time_lord_paths(void)
@@ -320,6 +423,10 @@ int main(void)
     test_fountain_variants_mutate_selected_living_character();
     test_mark_sets_position_bit_and_charges_hp();
     test_chest_opens_current_tile_and_adds_bounded_gold();
+    test_chest_trap_damages_selected_character_and_still_adds_gold();
+    test_chest_trap_can_be_disarmed_before_gold();
+    test_chest_poison_trap_sets_selected_character_status();
+    test_chest_adds_first_weapon_or_armour_reward_from_high_gold_roll_byte();
     test_prompt_cancel_invalid_and_time_lord_paths();
 
     puts("dungeon special tile tests passed");

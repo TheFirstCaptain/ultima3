@@ -1164,8 +1164,6 @@ final class ShellResourceAdapter {
             default:
                 return "Interaction: choose character"
             }
-        case U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED:
-            return "Chest trap deferred"
         default:
             return nil
         }

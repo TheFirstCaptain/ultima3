@@ -60,9 +60,14 @@
 #define U3_DUNGEON_INTERACTION_STATUS_FOUNTAIN_CURE 9
 #define U3_DUNGEON_INTERACTION_STATUS_MARK 10
 #define U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED 11
-#define U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED 12
-#define U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT 13
-#define U3_DUNGEON_INTERACTION_STATUS_UNSUPPORTED 14
+#define U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT 12
+#define U3_DUNGEON_INTERACTION_STATUS_UNSUPPORTED 13
+
+#define U3_DUNGEON_CHEST_TRAP_NONE 0
+#define U3_DUNGEON_CHEST_TRAP_DAMAGE 1
+#define U3_DUNGEON_CHEST_TRAP_POISON 2
+#define U3_DUNGEON_CHEST_TRAP_BOMB 3
+#define U3_DUNGEON_CHEST_TRAP_POISON_CLOUD 4
 
 #define U3_DUNGEON_COMMAND_GET_CHEST 'G'
 
@@ -175,6 +180,15 @@ typedef struct u3_dungeon_interaction_result {
     uint16_t gold_before;
     uint16_t gold_after;
     uint16_t gold_added;
+    uint8_t chest_trap_kind;
+    uint8_t chest_trap_disarmed;
+    uint16_t chest_trap_damage;
+    uint8_t weapon_reward;
+    uint8_t weapon_before;
+    uint8_t weapon_after;
+    uint8_t armour_reward;
+    uint8_t armour_before;
+    uint8_t armour_after;
     uint16_t message_id;
     uint16_t sound_id;
 } u3_dungeon_interaction_result;

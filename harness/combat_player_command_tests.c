@@ -50,6 +50,7 @@ static u3_combat_player_command_input base_input(uint16_t command)
     input.hit_dexterity_roll = 99;
     input.damage_roll = 5;
     input.spell_damage_roll = 5;
+    input.flee_roll = 255;
     return input;
 }
 
@@ -74,6 +75,48 @@ static void test_pass_is_handled_without_redraw(void)
     ASSERT_EQ_INT(1, result.passed);
     ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_PASSED, result.status);
     ASSERT_EQ_INT(0, result.redraw);
+}
+
+static void test_flee_success_reports_escape_without_mutation(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    input = base_input(U3_COMBAT_COMMAND_FLEE);
+    input.flee_roll = U3_COMBAT_FLEE_SUCCESS_THRESHOLD;
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_FLEE_SUCCESS, result.status);
+    ASSERT_EQ_INT(1, result.flee_result.attempted);
+    ASSERT_EQ_INT(1, result.flee_result.succeeded);
+    ASSERT_EQ_INT(0, result.flee_result.failed);
+    ASSERT_EQ_INT(U3_COMBAT_FLEE_SUCCESS_THRESHOLD, result.flee_result.roll);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_STEP, result.sound_id);
+    ASSERT_EQ_INT(4, state.character_x[0]);
+    ASSERT_EQ_INT(4, state.character_y[0]);
+}
+
+static void test_flee_failure_consumes_turn_without_mutation(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    input = base_input(U3_COMBAT_COMMAND_FLEE);
+    input.flee_roll = U3_COMBAT_FLEE_SUCCESS_THRESHOLD - 1;
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_FLEE_FAILED, result.status);
+    ASSERT_EQ_INT(1, result.flee_result.attempted);
+    ASSERT_EQ_INT(0, result.flee_result.succeeded);
+    ASSERT_EQ_INT(1, result.flee_result.failed);
+    ASSERT_EQ_INT(U3_COMBAT_FLEE_SUCCESS_THRESHOLD - 1, result.flee_result.roll);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_BUMP, result.sound_id);
+    ASSERT_EQ_INT(4, state.character_x[0]);
+    ASSERT_EQ_INT(4, state.character_y[0]);
 }
 
 static void test_cardinal_move_updates_character_coordinate(void)
@@ -435,9 +478,69 @@ static void test_dead_character_command_reports_unsupported_without_mutation(voi
     ASSERT_EQ_INT(4, state.character_y[0]);
 }
 
+static void test_party_defeat_reports_no_active_party_members(void)
+{
+    u3_combat_party_defeat_result result;
+
+    reset_state();
+    state.character_status[0] = U3_COMBAT_STATUS_DEAD;
+    state.character_x[0] = 0xFF;
+    state.character_y[0] = 0xFF;
+    state.character_status[1] = U3_COMBAT_STATUS_ASH;
+    state.character_x[1] = 0xFF;
+    state.character_y[1] = 0xFF;
+
+    result = u3_combat_check_party_defeat(&state, 2);
+
+    ASSERT_EQ_INT(1, result.checked);
+    ASSERT_EQ_INT(1, result.defeated);
+    ASSERT_EQ_INT(2, result.party_size);
+    ASSERT_EQ_INT(0, result.active_characters);
+    ASSERT_EQ_INT(2, result.defeated_characters);
+}
+
+static void test_party_defeat_ignores_inactive_slots(void)
+{
+    u3_combat_party_defeat_result result;
+
+    reset_state();
+    state.character_status[0] = U3_COMBAT_STATUS_DEAD;
+    state.character_x[0] = 0xFF;
+    state.character_y[0] = 0xFF;
+    state.character_status[1] = U3_COMBAT_STATUS_GOOD;
+    state.character_x[1] = 4;
+    state.character_y[1] = 5;
+
+    result = u3_combat_check_party_defeat(&state, 1);
+
+    ASSERT_EQ_INT(1, result.checked);
+    ASSERT_EQ_INT(1, result.defeated);
+    ASSERT_EQ_INT(1, result.party_size);
+    ASSERT_EQ_INT(0, result.active_characters);
+    ASSERT_EQ_INT(1, result.defeated_characters);
+}
+
+static void test_party_defeat_reports_surviving_poisoned_character(void)
+{
+    u3_combat_party_defeat_result result;
+
+    reset_state();
+    state.character_status[0] = U3_COMBAT_STATUS_POISONED;
+
+    result = u3_combat_check_party_defeat(&state, 1);
+
+    ASSERT_EQ_INT(1, result.checked);
+    ASSERT_EQ_INT(0, result.defeated);
+    ASSERT_EQ_INT(1, result.party_size);
+    ASSERT_EQ_INT(1, result.active_characters);
+    ASSERT_EQ_INT(0, result.defeated_characters);
+}
+
 int main(void)
 {
     test_pass_is_handled_without_redraw();
+    test_flee_success_reports_escape_without_mutation();
+    test_flee_failure_consumes_turn_without_mutation();
     test_cardinal_move_updates_character_coordinate();
     test_blocked_move_preserves_character_coordinate();
     test_attack_without_direction_requests_direction();
@@ -455,6 +558,9 @@ int main(void)
     test_mittar_rejects_invalid_caster_without_spending_magic();
     test_mittar_rejects_insufficient_magic_without_mutation();
     test_dead_character_command_reports_unsupported_without_mutation();
+    test_party_defeat_reports_no_active_party_members();
+    test_party_defeat_ignores_inactive_slots();
+    test_party_defeat_reports_surviving_poisoned_character();
 
     puts("combat player command characterization passed");
     return 0;

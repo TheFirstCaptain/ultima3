@@ -525,6 +525,7 @@ final class ShellSmokeState: ObservableObject {
     private let dungeonRollProvider: (UInt8) -> (encounter: UInt16, monster: UInt16)
     private let dungeonChestRollProvider: () -> (trap: UInt16, gold: UInt16)
     private let combatPlayerRollProvider: (UInt8) -> CombatPlayerRolls
+    private let combatFleeRollProvider: () -> UInt8
     private let combatMonsterRollProvider: () -> CombatMonsterRolls
     private let combatSessionLoader: (String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
@@ -552,6 +553,7 @@ final class ShellSmokeState: ObservableObject {
         dungeonRollProvider: @escaping (UInt8) -> (encounter: UInt16, monster: UInt16) = ShellSmokeState.makeDungeonRolls,
         dungeonChestRollProvider: @escaping () -> (trap: UInt16, gold: UInt16) = ShellSmokeState.makeDungeonChestRolls,
         combatPlayerRollProvider: @escaping (UInt8) -> CombatPlayerRolls = ShellSmokeState.makeCombatPlayerRolls,
+        combatFleeRollProvider: @escaping () -> UInt8 = ShellSmokeState.makeCombatFleeRoll,
         combatMonsterRollProvider: @escaping () -> CombatMonsterRolls = ShellSmokeState.makeCombatMonsterRolls,
         combatSessionLoader: ((String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult)? = nil
     ) {
@@ -564,6 +566,7 @@ final class ShellSmokeState: ObservableObject {
         self.dungeonRollProvider = dungeonRollProvider
         self.dungeonChestRollProvider = dungeonChestRollProvider
         self.combatPlayerRollProvider = combatPlayerRollProvider
+        self.combatFleeRollProvider = combatFleeRollProvider
         self.combatMonsterRollProvider = combatMonsterRollProvider
         self.combatSessionLoader = combatSessionLoader ?? { resourceRootPath, encounter, sourceSession, documentData in
             resourceAdapter.loadCombatSession(
@@ -917,6 +920,10 @@ final class ShellSmokeState: ObservableObject {
            let activeCharacter = playableCombatCharacter(in: session, startingAt: session.activeCharacter) {
             session.activeCharacter = activeCharacter
         } else if pendingCombatAttackCharacter == nil && pendingCombatSpellCharacter == nil {
+            let defeat = u3_combat_check_party_defeat(&session.combatState, session.partySize)
+            if defeat.defeated != 0 {
+                return restoreAfterCombatDefeat(session: session, description: "Combat party defeated", defeat: defeat)
+            }
             activeCombatSession = session
             return "Combat has no active characters"
         }
@@ -983,6 +990,9 @@ final class ShellSmokeState: ObservableObject {
         }
 
         var description = describeCombatPlayerCommand(result, session: session)
+        if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_FLEE_SUCCESS) {
+            return restoreAfterCombatFlee(session: session, description: description, flee: result.flee_result)
+        }
         var damageResult = result.attack_result.damage_result
         if result.spell_result.damage_result.damaged != 0 ||
             result.spell_result.damage_result.award_experience != 0 {
@@ -1008,9 +1018,14 @@ final class ShellSmokeState: ObservableObject {
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_ATTACK_MISSED) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_HIT) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_MISSED) ||
-            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC) {
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC) ||
+            result.status == UInt8(U3_COMBAT_PLAYER_STATUS_FLEE_FAILED) {
             advanceCombatCharacter(&session)
             description += runCombatMonsterTurn(session: &session)
+            let defeat = u3_combat_check_party_defeat(&session.combatState, session.partySize)
+            if defeat.defeated != 0 {
+                return restoreAfterCombatDefeat(session: session, description: description, defeat: defeat)
+            }
         }
         activeCombatSession = session
         return description
@@ -1072,6 +1087,64 @@ final class ShellSmokeState: ObservableObject {
         return "\(description) | Combat victory remaining \(victory.live_monsters) returned dungeon MAPS \(sourceSession.descriptor.resource_id)"
     }
 
+    private func restoreAfterCombatFlee(
+        session: ShellCombatSession,
+        description: String,
+        flee: u3_combat_flee_result
+    ) -> String {
+        var sourceSession = session.sourceLocationSession
+        guard sourceSession.descriptor.active != 0,
+              sourceSession.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
+            activeCombatSession = session
+            return "\(description) | Combat flee restore failed"
+        }
+
+        resourceAdapter.refreshLocationSessionFrame(&sourceSession)
+        activeCombatSession = nil
+        activeLocationSession = sourceSession
+        pendingCombatAttackCharacter = nil
+        pendingCombatSpellCharacter = nil
+        pendingDungeonInteractionCommand = nil
+        awaitingTalkDirection = false
+        renderFrame = sourceSession.frame
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: sourceSession.status
+        )
+        return "\(description) | Combat fled roll \(flee.roll) returned dungeon MAPS \(sourceSession.descriptor.resource_id)"
+    }
+
+    private func restoreAfterCombatDefeat(
+        session: ShellCombatSession,
+        description: String,
+        defeat: u3_combat_party_defeat_result
+    ) -> String {
+        var sourceSession = session.sourceLocationSession
+        guard sourceSession.descriptor.active != 0,
+              sourceSession.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
+            activeCombatSession = session
+            return "\(description) | Combat defeat restore failed"
+        }
+
+        resourceAdapter.refreshLocationSessionFrame(&sourceSession)
+        activeCombatSession = nil
+        activeLocationSession = sourceSession
+        pendingCombatAttackCharacter = nil
+        pendingCombatSpellCharacter = nil
+        pendingDungeonInteractionCommand = nil
+        awaitingTalkDirection = false
+        renderFrame = sourceSession.frame
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: sourceSession.status
+        )
+        return "\(description) | Combat defeat active \(defeat.active_characters) defeated \(defeat.defeated_characters) returned dungeon MAPS \(sourceSession.descriptor.resource_id)"
+    }
+
     private func makeCombatCommandInput(command: UInt16, session: ShellCombatSession) -> u3_combat_player_command_input {
         let character = session.activeCharacter
         let roster = combatRosterSnapshot(character: character, session: session)
@@ -1093,7 +1166,8 @@ final class ShellSmokeState: ObservableObject {
             hit_chance_roll: rolls.hitChance,
             hit_dexterity_roll: rolls.hitDexterity,
             damage_roll: rolls.damage,
-            spell_damage_roll: rolls.damage
+            spell_damage_roll: rolls.damage,
+            flee_roll: combatFleeRollProvider()
         )
     }
 
@@ -1271,6 +1345,10 @@ final class ShellSmokeState: ObservableObject {
             return "Combat character \(character) blocked \(result.target_x),\(result.target_y) tile \(result.target_tile)"
         case U3_COMBAT_PLAYER_STATUS_PASSED:
             return "Combat character \(character) pass"
+        case U3_COMBAT_PLAYER_STATUS_FLEE_SUCCESS:
+            return "Combat character \(character) flee succeeded"
+        case U3_COMBAT_PLAYER_STATUS_FLEE_FAILED:
+            return "Combat character \(character) flee failed roll \(result.flee_result.roll)"
         case U3_COMBAT_PLAYER_STATUS_ATTACK_HIT:
             if result.attack_result.damage_result.defeated != 0 {
                 return "Combat character \(character) hit monster \(result.attack_result.target_monster) defeated damage \(result.attack_result.damage_amount)"
@@ -2135,9 +2213,23 @@ final class ShellSmokeState: ObservableObject {
         case U3_DUNGEON_INTERACTION_STATUS_MARK:
             return " interaction mark roster \(interaction.roster_id) marks \(interaction.mark_after) HP \(interaction.hit_points_after)"
         case U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED:
-            return " interaction chest roster \(interaction.roster_id) gold \(interaction.gold_after) added \(interaction.gold_added)"
-        case U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED:
-            return " interaction chest trap deferred"
+            var parts = ["interaction chest roster \(interaction.roster_id) gold \(interaction.gold_after) added \(interaction.gold_added)"]
+            if interaction.chest_trap_kind != 0 {
+                if interaction.chest_trap_disarmed != 0 {
+                    parts.append("trap \(interaction.chest_trap_kind) disarmed")
+                } else if interaction.chest_trap_damage != 0 {
+                    parts.append("trap \(interaction.chest_trap_kind) damage \(interaction.chest_trap_damage) HP \(interaction.hit_points_after)")
+                } else {
+                    parts.append("trap \(interaction.chest_trap_kind) status \(characterCode(interaction.status_after))")
+                }
+            }
+            if interaction.weapon_reward != 0 {
+                parts.append("weapon \(interaction.weapon_reward) qty \(interaction.weapon_after)")
+            }
+            if interaction.armour_reward != 0 {
+                parts.append("armour \(interaction.armour_reward) qty \(interaction.armour_after)")
+            }
+            return " " + parts.joined(separator: " ")
         case U3_DUNGEON_INTERACTION_STATUS_INVALID_INPUT:
             return " interaction invalid"
         default:
@@ -2202,8 +2294,7 @@ final class ShellSmokeState: ObservableObject {
         }
 
         switch Int32(result.interaction.status) {
-        case U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED,
-             U3_DUNGEON_INTERACTION_STATUS_CHEST_TRAP_DEFERRED:
+        case U3_DUNGEON_INTERACTION_STATUS_CHEST_OPENED:
             return true
         default:
             return false
@@ -2222,7 +2313,7 @@ final class ShellSmokeState: ObservableObject {
     private static func makeDungeonChestRolls() -> (trap: UInt16, gold: UInt16) {
         (
             UInt16.random(in: 0...255),
-            UInt16.random(in: 0...100)
+            UInt16.random(in: 0...100) | (UInt16.random(in: 0...255) << 8)
         )
     }
 
@@ -2232,6 +2323,10 @@ final class ShellSmokeState: ObservableObject {
             hitDexterity: UInt8.random(in: 0...99),
             damage: UInt8.random(in: 0...(strength | 1))
         )
+    }
+
+    private static func makeCombatFleeRoll() -> UInt8 {
+        UInt8.random(in: 0...255)
     }
 
     private static func makeCombatMonsterRolls() -> CombatMonsterRolls {
