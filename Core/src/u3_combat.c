@@ -109,6 +109,33 @@ static uint8_t u3_combat_is_wizard_spell_class(uint8_t character_class)
            character_class == 'R';
 }
 
+static uint8_t u3_combat_spell_requires_direction(uint8_t spell)
+{
+    return spell == U3_COMBAT_SPELL_MITTAR ||
+           spell == U3_COMBAT_SPELL_FULGAR;
+}
+
+static uint8_t u3_combat_spell_supported(uint8_t spell)
+{
+    return spell == U3_COMBAT_SPELL_MITTAR ||
+           spell == U3_COMBAT_SPELL_FULGAR ||
+           spell == U3_COMBAT_SPELL_NOXUM;
+}
+
+static uint8_t u3_combat_spell_cost(uint8_t spell)
+{
+    switch (spell) {
+    case U3_COMBAT_SPELL_MITTAR:
+        return U3_COMBAT_SPELL_MITTAR_COST;
+    case U3_COMBAT_SPELL_FULGAR:
+        return U3_COMBAT_SPELL_FULGAR_COST;
+    case U3_COMBAT_SPELL_NOXUM:
+        return U3_COMBAT_SPELL_NOXUM_COST;
+    default:
+        return 0;
+    }
+}
+
 static uint8_t u3_combat_character_can_act(const u3_combat_state *state, uint8_t character)
 {
     if (state->character_status[character] == U3_COMBAT_STATUS_DEAD ||
@@ -256,6 +283,36 @@ u3_combat_experience_award_result u3_combat_apply_experience_award(u3_combat_sta
     return result;
 }
 
+u3_combat_experience_award_result u3_combat_apply_spell_experience_award(u3_combat_state *state,
+                                                                         const u3_combat_spell_result *spell_result)
+{
+    u3_combat_experience_award_result result = {0};
+    uint8_t character;
+    uint16_t before;
+    uint16_t after;
+
+    if (state == 0 || spell_result == 0 || spell_result->award_experience == 0)
+        return result;
+    if (spell_result->damage_result.character < 1 ||
+        spell_result->damage_result.character > U3_COMBAT_CHARACTER_COUNT)
+        return result;
+
+    character = (uint8_t)(spell_result->damage_result.character - 1);
+    before = state->character_experience[character];
+    after = (uint16_t)(before + spell_result->experience_awarded);
+    if (after > U3_COMBAT_EXPERIENCE_MAX || after < before)
+        after = U3_COMBAT_EXPERIENCE_MAX;
+
+    state->character_experience[character] = after;
+    result.applied = 1;
+    result.character = spell_result->damage_result.character;
+    result.amount = spell_result->experience_awarded > 255 ? 255 : (uint8_t)spell_result->experience_awarded;
+    result.experience_before = before;
+    result.experience_after = after;
+    result.level_increased = (after / 100) > (before / 100) ? 1 : 0;
+    return result;
+}
+
 u3_combat_victory_result u3_combat_check_victory(const u3_combat_state *state)
 {
     u3_combat_victory_result result = {0};
@@ -303,6 +360,91 @@ u3_combat_party_defeat_result u3_combat_check_party_defeat(const u3_combat_state
         }
     }
     result.defeated = result.active_characters == 0 ? 1 : 0;
+    return result;
+}
+
+static uint8_t u3_combat_add_reward_item(uint8_t *quantity,
+                                         uint8_t *before,
+                                         uint8_t *after,
+                                         uint8_t *full)
+{
+    *before = *quantity;
+    *after = *quantity;
+    if (*quantity >= U3_COMBAT_REWARD_ITEM_MAX) {
+        *full = 1;
+        return 0;
+    }
+
+    *quantity = (uint8_t)(*quantity + 1);
+    *after = *quantity;
+    return 1;
+}
+
+u3_combat_victory_reward_result u3_combat_apply_victory_reward(
+    u3_combat_state *state,
+    const u3_combat_victory_result *victory,
+    const u3_combat_victory_reward_input *input)
+{
+    u3_combat_victory_reward_result result = {0};
+    uint32_t gold_total;
+
+    result.checked = 1;
+    if (state == 0 || victory == 0 || input == 0)
+        return result;
+    if (victory->victorious == 0) {
+        result.status = U3_COMBAT_REWARD_STATUS_NO_VICTORY;
+        return result;
+    }
+    if (input->character >= U3_COMBAT_CHARACTER_COUNT) {
+        result.status = U3_COMBAT_REWARD_STATUS_INVALID_CHARACTER;
+        return result;
+    }
+    if (input->gold == 0 && input->weapon == 0 && input->armour == 0) {
+        result.status = U3_COMBAT_REWARD_STATUS_NO_REWARD;
+        result.character = (uint8_t)(input->character + 1);
+        return result;
+    }
+
+    result.character = (uint8_t)(input->character + 1);
+    result.gold_before = state->character_gold[input->character];
+    result.gold_after = result.gold_before;
+    if (input->gold != 0) {
+        if (result.gold_before >= U3_COMBAT_GOLD_MAX) {
+            result.gold_capped = 1;
+        } else {
+            gold_total = (uint32_t)result.gold_before + input->gold;
+            if (gold_total > U3_COMBAT_GOLD_MAX) {
+                gold_total = U3_COMBAT_GOLD_MAX;
+                result.gold_capped = 1;
+            }
+            state->character_gold[input->character] = (uint16_t)gold_total;
+            result.gold_after = (uint16_t)gold_total;
+            result.gold_awarded = (uint16_t)(result.gold_after - result.gold_before);
+            if (result.gold_awarded != 0)
+                result.applied = 1;
+        }
+    }
+
+    if (input->weapon > 0 && input->weapon < 16) {
+        result.weapon_reward = input->weapon;
+        if (u3_combat_add_reward_item(&state->character_weapon_inventory[input->character][input->weapon],
+                                      &result.weapon_before,
+                                      &result.weapon_after,
+                                      &result.weapon_full) != 0)
+            result.applied = 1;
+    }
+    if (input->armour > 0 && input->armour < 8) {
+        result.armour_reward = input->armour;
+        if (u3_combat_add_reward_item(&state->character_armour_inventory[input->character][input->armour],
+                                      &result.armour_before,
+                                      &result.armour_after,
+                                      &result.armour_full) != 0)
+            result.applied = 1;
+    }
+
+    result.status = result.applied != 0 ?
+        U3_COMBAT_REWARD_STATUS_APPLIED :
+        U3_COMBAT_REWARD_STATUS_SKIPPED;
     return result;
 }
 
@@ -776,41 +918,60 @@ u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
     return result;
 }
 
-static u3_combat_spell_result u3_combat_cast_mittar(u3_combat_state *state,
-                                                    const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
-                                                    const u3_combat_player_command_input *input)
+static u3_combat_spell_result u3_combat_spell_base_result(const u3_combat_player_command_input *input)
 {
-    /* Legacy reference: Sources/UltimaSpellCombat.c ProcessMagic and Projectile, Mittar case. */
     u3_combat_spell_result result = {0};
-    uint8_t target;
 
     result.attempted = 1;
-    result.spell = U3_COMBAT_SPELL_MITTAR;
+    result.spell = input->spell;
     result.target_monster = U3_COMBAT_NO_SLOT;
     result.magic_before = input->magic;
     result.magic_after = input->magic;
-    result.magic_cost = U3_COMBAT_SPELL_MITTAR_COST;
+    result.magic_cost = u3_combat_spell_cost(input->spell);
+    result.damage_result.character = (uint8_t)(input->character + 1);
+    return result;
+}
 
+static uint8_t u3_combat_spell_validate_wizard(u3_combat_state *state,
+                                               const u3_combat_player_command_input *input,
+                                               u3_combat_spell_result *result)
+{
     if (input->attack_direction_x == 0 && input->attack_direction_y == 0) {
-        result.cancelled = 1;
-        return result;
+        if (u3_combat_spell_requires_direction(input->spell)) {
+            result->cancelled = 1;
+            return 0;
+        }
     }
 
     if (!u3_combat_is_wizard_spell_class(input->character_class)) {
-        result.invalid_caster = 1;
-        result.play_failed_sound = 1;
-        return result;
+        result->invalid_caster = 1;
+        result->play_failed_sound = 1;
+        return 0;
     }
 
-    if (input->magic < U3_COMBAT_SPELL_MITTAR_COST) {
-        result.insufficient_magic = 1;
-        result.play_failed_sound = 1;
-        return result;
+    if (input->magic < result->magic_cost) {
+        result->insufficient_magic = 1;
+        result->play_failed_sound = 1;
+        return 0;
     }
 
-    result.spent_magic = 1;
-    result.magic_after = (uint8_t)(input->magic - U3_COMBAT_SPELL_MITTAR_COST);
-    state->character_magic[input->character] = result.magic_after;
+    result->spent_magic = 1;
+    result->magic_after = (uint8_t)(input->magic - result->magic_cost);
+    state->character_magic[input->character] = result->magic_after;
+    return 1;
+}
+
+static u3_combat_spell_result u3_combat_cast_projectile_spell(u3_combat_state *state,
+                                                              const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
+                                                              const u3_combat_player_command_input *input,
+                                                              uint8_t damage)
+{
+    /* Legacy reference: Sources/UltimaSpellCombat.c ProcessMagic and Projectile, Mittar/Fulgar cases. */
+    u3_combat_spell_result result = u3_combat_spell_base_result(input);
+    uint8_t target;
+
+    if (!u3_combat_spell_validate_wizard(state, input, &result))
+        return result;
 
     target = u3_combat_projectile_monster(state,
                                           input->character,
@@ -829,7 +990,7 @@ static u3_combat_spell_result u3_combat_cast_mittar(u3_combat_state *state,
     result.hit_x = state->monster_x[target];
     result.hit_y = state->monster_y[target];
     result.hit_tile = U3_COMBAT_ATTACK_HIT_TILE;
-    result.damage_amount = (uint8_t)(input->spell_damage_roll | 0x10);
+    result.damage_amount = damage;
 
     u3_combat_put_tile(state, state->monster_type, result.hit_x, result.hit_y);
     result.damage_result = u3_combat_damage_monster(state,
@@ -837,6 +998,60 @@ static u3_combat_spell_result u3_combat_cast_mittar(u3_combat_state *state,
                                                      target,
                                                      result.damage_amount,
                                                      input->character + 1);
+    return result;
+}
+
+static u3_combat_spell_result u3_combat_cast_noxum(u3_combat_state *state,
+                                                   const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
+                                                   const u3_combat_player_command_input *input)
+{
+    /* Legacy reference: Sources/UltimaSpellCombat.c ProcessMagic and BigDeath, Noxum case. */
+    u3_combat_spell_result result = u3_combat_spell_base_result(input);
+    uint8_t monster;
+
+    if (!u3_combat_spell_validate_wizard(state, input, &result))
+        return result;
+
+    result.multi_target = 1;
+    result.damage_amount = U3_COMBAT_SPELL_NOXUM_DAMAGE;
+    result.play_big_death_sound = 1;
+
+    for (monster = U3_COMBAT_MONSTER_COUNT; monster > 0; monster--) {
+        uint8_t index = (uint8_t)(monster - 1);
+        u3_combat_damage_result damage_result;
+
+        if (state->monster_hp[index] == 0)
+            continue;
+
+        if (result.target_monster == U3_COMBAT_NO_SLOT) {
+            result.target_monster = index;
+            result.hit_x = state->monster_x[index];
+            result.hit_y = state->monster_y[index];
+            result.hit_tile = U3_COMBAT_ATTACK_HIT_TILE;
+        }
+
+        result.hit = 1;
+        result.redraw_tiles = 1;
+        result.damaged_monsters++;
+        u3_combat_put_tile(state, state->monster_type, state->monster_x[index], state->monster_y[index]);
+        damage_result = u3_combat_damage_monster(state,
+                                                 experience,
+                                                 index,
+                                                 U3_COMBAT_SPELL_NOXUM_DAMAGE,
+                                                 input->character + 1);
+        result.damage_result = damage_result;
+        if (damage_result.award_experience != 0) {
+            result.award_experience = 1;
+            result.defeated_monsters++;
+            result.experience_awarded = (uint16_t)(result.experience_awarded + damage_result.experience_awarded);
+        }
+    }
+
+    if (result.hit == 0) {
+        result.miss = 1;
+        result.play_failed_sound = 1;
+        result.play_big_death_sound = 0;
+    }
     return result;
 }
 
@@ -897,21 +1112,36 @@ u3_combat_player_command_result u3_combat_player_command(u3_combat_state *state,
 
     if (input->command == U3_COMBAT_COMMAND_SPELL) {
         result.handled = 1;
-        if (input->attack_direction_x == 0 && input->attack_direction_y == 0) {
-            result.attack_direction_required = 1;
-            result.status = U3_COMBAT_PLAYER_STATUS_SPELL_DIRECTION_REQUIRED;
-            return result;
-        }
-
-        if (input->spell != U3_COMBAT_SPELL_MITTAR) {
+        if (!u3_combat_spell_supported(input->spell)) {
             result.unsupported = 1;
             result.status = U3_COMBAT_PLAYER_STATUS_UNSUPPORTED;
             return result;
         }
 
-        result.spell_result = u3_combat_cast_mittar(state, experience, input);
+        if (u3_combat_spell_requires_direction(input->spell) &&
+            input->attack_direction_x == 0 && input->attack_direction_y == 0) {
+            result.attack_direction_required = 1;
+            result.status = U3_COMBAT_PLAYER_STATUS_SPELL_DIRECTION_REQUIRED;
+            return result;
+        }
+
+        if (input->spell == U3_COMBAT_SPELL_MITTAR) {
+            result.spell_result = u3_combat_cast_projectile_spell(state,
+                                                                  experience,
+                                                                  input,
+                                                                  (uint8_t)(input->spell_damage_roll | 0x10));
+        } else if (input->spell == U3_COMBAT_SPELL_FULGAR) {
+            result.spell_result = u3_combat_cast_projectile_spell(state,
+                                                                  experience,
+                                                                  input,
+                                                                  U3_COMBAT_SPELL_FULGAR_DAMAGE);
+        } else {
+            result.spell_result = u3_combat_cast_noxum(state, experience, input);
+        }
         result.redraw = result.spell_result.redraw_tiles;
-        if (result.spell_result.play_spell_sound)
+        if (result.spell_result.play_big_death_sound)
+            result.sound_id = U3_AUDIO_SOUND_BIG_DEATH;
+        else if (result.spell_result.play_spell_sound)
             result.sound_id = U3_AUDIO_SOUND_IMMOLATE;
         else if (result.spell_result.play_failed_sound)
             result.sound_id = U3_AUDIO_SOUND_FAILED_SPELL;

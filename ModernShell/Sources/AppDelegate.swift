@@ -509,6 +509,11 @@ final class ShellSmokeState: ObservableObject {
         hitDexterity: UInt8,
         damage: UInt8
     )
+    typealias CombatVictoryReward = (
+        gold: UInt16,
+        weapon: UInt8,
+        armour: UInt8
+    )
 
     @Published private(set) var lastCommand = "Ready"
     @Published private(set) var resourceStatus: String
@@ -526,6 +531,7 @@ final class ShellSmokeState: ObservableObject {
     private let dungeonChestRollProvider: () -> (trap: UInt16, gold: UInt16)
     private let combatPlayerRollProvider: (UInt8) -> CombatPlayerRolls
     private let combatFleeRollProvider: () -> UInt8
+    private let combatVictoryRewardProvider: () -> CombatVictoryReward
     private let combatMonsterRollProvider: () -> CombatMonsterRolls
     private let combatSessionLoader: (String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult
     private let characterCreationAdapter = ShellCharacterCreationAdapter()
@@ -539,6 +545,7 @@ final class ShellSmokeState: ObservableObject {
     private var pendingTownServiceCommand: UInt16?
     private var pendingCombatAttackCharacter: UInt8?
     private var pendingCombatSpellCharacter: UInt8?
+    private var pendingCombatSpellID: UInt8?
     private var pendingDungeonInteractionCommand: UInt16?
     private var currentSaveDocument: Data?
     @Published private(set) var hasUnsavedChanges = false
@@ -555,6 +562,7 @@ final class ShellSmokeState: ObservableObject {
         dungeonChestRollProvider: @escaping () -> (trap: UInt16, gold: UInt16) = ShellSmokeState.makeDungeonChestRolls,
         combatPlayerRollProvider: @escaping (UInt8) -> CombatPlayerRolls = ShellSmokeState.makeCombatPlayerRolls,
         combatFleeRollProvider: @escaping () -> UInt8 = ShellSmokeState.makeCombatFleeRoll,
+        combatVictoryRewardProvider: @escaping () -> CombatVictoryReward = ShellSmokeState.makeCombatVictoryReward,
         combatMonsterRollProvider: @escaping () -> CombatMonsterRolls = ShellSmokeState.makeCombatMonsterRolls,
         combatSessionLoader: ((String?, u3_dungeon_post_turn_result, ShellLocationSession, Data?) -> ShellCombatSessionLoadResult)? = nil
     ) {
@@ -568,6 +576,7 @@ final class ShellSmokeState: ObservableObject {
         self.dungeonChestRollProvider = dungeonChestRollProvider
         self.combatPlayerRollProvider = combatPlayerRollProvider
         self.combatFleeRollProvider = combatFleeRollProvider
+        self.combatVictoryRewardProvider = combatVictoryRewardProvider
         self.combatMonsterRollProvider = combatMonsterRollProvider
         self.combatSessionLoader = combatSessionLoader ?? { resourceRootPath, encounter, sourceSession, documentData in
             resourceAdapter.loadCombatSession(
@@ -676,6 +685,7 @@ final class ShellSmokeState: ObservableObject {
         pendingTownServiceCommand = nil
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
+        pendingCombatSpellID = nil
         pendingDungeonInteractionCommand = nil
         if let activeCombatSession {
             renderFrame = activeCombatSession.frame
@@ -955,11 +965,13 @@ final class ShellSmokeState: ObservableObject {
         } else if let pendingCharacter = pendingCombatSpellCharacter {
             guard let direction = Self.combatDirection(for: event.command) else {
                 pendingCombatSpellCharacter = nil
+                pendingCombatSpellID = nil
                 activeCombatSession = session
                 return "Combat spell cancelled"
             }
             input.command = UInt16(U3_COMBAT_COMMAND_SPELL)
             input.character = pendingCharacter
+            input.spell = pendingCombatSpellID ?? UInt8(U3_COMBAT_SPELL_MITTAR)
             input.attack_direction_x = direction.dx
             input.attack_direction_y = direction.dy
         }
@@ -976,8 +988,9 @@ final class ShellSmokeState: ObservableObject {
 
         if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_DIRECTION_REQUIRED) {
             pendingCombatSpellCharacter = input.character
+            pendingCombatSpellID = input.spell
             activeCombatSession = session
-            return "Combat character \(input.character + 1) Mittar: choose direction"
+            return "Combat character \(input.character + 1) \(Self.combatSpellName(input.spell)): choose direction"
         }
         if result.attack_direction_required != 0 {
             pendingCombatAttackCharacter = input.character
@@ -987,21 +1000,14 @@ final class ShellSmokeState: ObservableObject {
 
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
-        if result.redraw != 0 {
-            resourceAdapter.refreshCombatSessionFrame(&session)
-            renderFrame = session.frame
-            let locations = locationProvider.snapshot()
-            resourceStatus = Self.describeResourceStatus(
-                locations: locations,
-                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
-                renderStatus: session.status
-            )
-        }
+        pendingCombatSpellID = nil
+        let playerPresentation = result.redraw != 0 ? result : nil
         if result.sound_id != 0 {
             _ = audioAdapter.enqueueSound(Int32(result.sound_id))
         }
 
         var description = describeCombatPlayerCommand(result, session: session)
+        var ranMonsterTurn = false
         if result.status == UInt8(U3_COMBAT_PLAYER_STATUS_FLEE_SUCCESS) {
             return restoreAfterCombatFlee(session: session, description: description, flee: result.flee_result)
         }
@@ -1010,7 +1016,13 @@ final class ShellSmokeState: ObservableObject {
             result.spell_result.damage_result.award_experience != 0 {
             damageResult = result.spell_result.damage_result
         }
-        let experienceAward = u3_combat_apply_experience_award(&session.combatState, &damageResult)
+        let experienceAward: u3_combat_experience_award_result
+        if result.spell_result.award_experience != 0 {
+            var spellResult = result.spell_result
+            experienceAward = u3_combat_apply_spell_experience_award(&session.combatState, &spellResult)
+        } else {
+            experienceAward = u3_combat_apply_experience_award(&session.combatState, &damageResult)
+        }
         if (experienceAward.applied != 0 || result.attack_result.mutated_inventory != 0 || result.spell_result.spent_magic != 0),
            var documentData = currentSaveDocument,
            resourceAdapter.applyCombatPartyState(session, documentData: &documentData) {
@@ -1033,11 +1045,15 @@ final class ShellSmokeState: ObservableObject {
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC) ||
             result.status == UInt8(U3_COMBAT_PLAYER_STATUS_FLEE_FAILED) {
             advanceCombatCharacter(&session)
-            description += runCombatMonsterTurn(session: &session)
+            ranMonsterTurn = true
+            description += runCombatMonsterTurn(session: &session, playerPresentation: playerPresentation)
             let defeat = u3_combat_check_party_defeat(&session.combatState, session.partySize)
             if defeat.defeated != 0 {
                 return restoreAfterCombatDefeat(session: session, description: description, defeat: defeat)
             }
+        }
+        if playerPresentation != nil && !ranMonsterTurn {
+            refreshCombatRender(&session, playerPresentation: playerPresentation)
         }
         activeCombatSession = session
         return description
@@ -1075,10 +1091,31 @@ final class ShellSmokeState: ObservableObject {
         description: String,
         victory: u3_combat_victory_result
     ) -> String {
-        var sourceSession = session.sourceLocationSession
+        var rewardSession = session
+        var rewardDescription = describeCombatVictoryReward(nil)
+        if currentSaveDocument != nil {
+            let reward = combatVictoryRewardProvider()
+            var rewardVictory = victory
+            var rewardInput = u3_combat_victory_reward_input(
+                character: rewardSession.activeCharacter,
+                gold: reward.gold,
+                weapon: reward.weapon,
+                armour: reward.armour
+            )
+            let rewardResult = u3_combat_apply_victory_reward(&rewardSession.combatState, &rewardVictory, &rewardInput)
+            rewardDescription = describeCombatVictoryReward(rewardResult)
+            if rewardResult.applied != 0,
+               var documentData = currentSaveDocument,
+                resourceAdapter.applyCombatPartyState(rewardSession, documentData: &documentData) {
+                currentSaveDocument = documentData
+                hasUnsavedChanges = true
+            }
+        }
+
+        var sourceSession = rewardSession.sourceLocationSession
         guard sourceSession.descriptor.active != 0,
               sourceSession.descriptor.destination_kind == U3_LOCATION_KIND_DUNGEON else {
-            activeCombatSession = session
+            activeCombatSession = rewardSession
             return "\(description) | Combat victory restore failed"
         }
 
@@ -1087,6 +1124,7 @@ final class ShellSmokeState: ObservableObject {
         activeLocationSession = sourceSession
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
+        pendingCombatSpellID = nil
         pendingDungeonInteractionCommand = nil
         pendingTownServiceCommand = nil
         awaitingTalkDirection = false
@@ -1097,7 +1135,7 @@ final class ShellSmokeState: ObservableObject {
             validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
             renderStatus: sourceSession.status
         )
-        return "\(description) | Combat victory remaining \(victory.live_monsters) returned dungeon MAPS \(sourceSession.descriptor.resource_id)"
+        return "\(description) | Combat victory remaining \(victory.live_monsters) \(rewardDescription) returned dungeon MAPS \(sourceSession.descriptor.resource_id)"
     }
 
     private func restoreAfterCombatFlee(
@@ -1117,6 +1155,7 @@ final class ShellSmokeState: ObservableObject {
         activeLocationSession = sourceSession
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
+        pendingCombatSpellID = nil
         pendingDungeonInteractionCommand = nil
         pendingTownServiceCommand = nil
         awaitingTalkDirection = false
@@ -1147,6 +1186,7 @@ final class ShellSmokeState: ObservableObject {
         activeLocationSession = sourceSession
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
+        pendingCombatSpellID = nil
         pendingDungeonInteractionCommand = nil
         pendingTownServiceCommand = nil
         awaitingTalkDirection = false
@@ -1160,14 +1200,55 @@ final class ShellSmokeState: ObservableObject {
         return "\(description) | Combat defeat active \(defeat.active_characters) defeated \(defeat.defeated_characters) returned dungeon MAPS \(sourceSession.descriptor.resource_id)"
     }
 
+    private func describeCombatVictoryReward(_ reward: u3_combat_victory_reward_result?) -> String {
+        guard let reward else {
+            return "reward skipped document missing"
+        }
+
+        switch Int32(reward.status) {
+        case U3_COMBAT_REWARD_STATUS_APPLIED:
+            var parts = ["reward character \(reward.character) gold \(reward.gold_after) added \(reward.gold_awarded)"]
+            if reward.gold_capped != 0 {
+                parts.append("gold capped")
+            }
+            if reward.weapon_reward != 0 {
+                if reward.weapon_full != 0 {
+                    parts.append("weapon \(reward.weapon_reward) full")
+                } else {
+                    parts.append("weapon \(reward.weapon_reward) qty \(reward.weapon_after)")
+                }
+            }
+            if reward.armour_reward != 0 {
+                if reward.armour_full != 0 {
+                    parts.append("armour \(reward.armour_reward) full")
+                } else {
+                    parts.append("armour \(reward.armour_reward) qty \(reward.armour_after)")
+                }
+            }
+            return parts.joined(separator: " ")
+        case U3_COMBAT_REWARD_STATUS_NO_REWARD:
+            return "reward none"
+        case U3_COMBAT_REWARD_STATUS_NO_VICTORY:
+            return "reward skipped no victory"
+        case U3_COMBAT_REWARD_STATUS_INVALID_CHARACTER:
+            return "reward skipped invalid character"
+        case U3_COMBAT_REWARD_STATUS_SKIPPED:
+            return "reward skipped"
+        default:
+            return "reward skipped invalid input"
+        }
+    }
+
     private func makeCombatCommandInput(command: UInt16, session: ShellCombatSession) -> u3_combat_player_command_input {
         let character = session.activeCharacter
         let roster = combatRosterSnapshot(character: character, session: session)
         let rolls = combatPlayerRollProvider(roster.strength)
+        let normalizedCommand = Self.normalizedKeyboardCommand(command)
+        let spell = Self.combatSpell(for: normalizedCommand)
         return u3_combat_player_command_input(
-            command: command,
+            command: spell == nil ? command : UInt16(U3_COMBAT_COMMAND_SPELL),
             character: character,
-            spell: UInt8(U3_COMBAT_SPELL_MITTAR),
+            spell: spell ?? UInt8(U3_COMBAT_SPELL_MITTAR),
             attack_direction_x: 0,
             attack_direction_y: 0,
             weapon: roster.weapon,
@@ -1247,19 +1328,19 @@ final class ShellSmokeState: ObservableObject {
         session.activeCharacter = playableCombatCharacter(in: session, startingAt: nextCharacter) ?? session.activeCharacter
     }
 
-    private func runCombatMonsterTurn(session: inout ShellCombatSession) -> String {
+    private func runCombatMonsterTurn(
+        session: inout ShellCombatSession,
+        playerPresentation: u3_combat_player_command_result?
+    ) -> String {
         var input = makeCombatMonsterTurnInput(session: session)
         let result = u3_combat_monster_turn(&session.combatState, &input)
         session.nextMonster = result.next_starting_monster
 
-        if result.redraw != 0 {
-            resourceAdapter.refreshCombatSessionFrame(&session)
-            renderFrame = session.frame
-            let locations = locationProvider.snapshot()
-            resourceStatus = Self.describeResourceStatus(
-                locations: locations,
-                validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
-                renderStatus: session.status
+        if result.redraw != 0 || playerPresentation != nil {
+            refreshCombatRender(
+                &session,
+                playerPresentation: playerPresentation,
+                monsterPresentation: result.redraw != 0 ? result : nil
             )
         }
         if result.sound_id != 0 {
@@ -1273,6 +1354,28 @@ final class ShellSmokeState: ObservableObject {
         }
 
         return " | \(describeCombatMonsterTurn(result))"
+    }
+
+    private func refreshCombatRender(
+        _ session: inout ShellCombatSession,
+        playerPresentation: u3_combat_player_command_result? = nil,
+        monsterPresentation: u3_combat_monster_turn_result? = nil
+    ) {
+        resourceAdapter.refreshCombatSessionFrame(&session)
+        var presentedFrame = session.frame
+        if var playerPresentation {
+            _ = u3_combat_render_add_player_presentation(&presentedFrame, &playerPresentation)
+        }
+        if var monsterPresentation {
+            _ = u3_combat_render_add_monster_presentation(&presentedFrame, &monsterPresentation)
+        }
+        renderFrame = presentedFrame
+        let locations = locationProvider.snapshot()
+        resourceStatus = Self.describeResourceStatus(
+            locations: locations,
+            validation: resourceAdapter.validateMainResources(resourceRootPath: locations.resourceRootPath),
+            renderStatus: session.status
+        )
     }
 
     private func makeCombatMonsterTurnInput(session: ShellCombatSession) -> u3_combat_monster_turn_input {
@@ -1374,16 +1477,20 @@ final class ShellSmokeState: ObservableObject {
         case U3_COMBAT_PLAYER_STATUS_ATTACK_DEFERRED:
             return "Combat character \(character) attack deferred"
         case U3_COMBAT_PLAYER_STATUS_SPELL_HIT:
-            if result.spell_result.damage_result.defeated != 0 {
-                return "Combat character \(character) Mittar monster \(result.spell_result.target_monster) defeated damage \(result.spell_result.damage_amount) magic \(result.spell_result.magic_after)"
+            let spellName = Self.combatSpellName(result.spell_result.spell)
+            if result.spell_result.multi_target != 0 {
+                return "Combat character \(character) \(spellName) damaged \(result.spell_result.damaged_monsters) defeated \(result.spell_result.defeated_monsters) magic \(result.spell_result.magic_after)"
             }
-            return "Combat character \(character) Mittar monster \(result.spell_result.target_monster) damage \(result.spell_result.damage_amount) magic \(result.spell_result.magic_after)"
+            if result.spell_result.damage_result.defeated != 0 {
+                return "Combat character \(character) \(spellName) monster \(result.spell_result.target_monster) defeated damage \(result.spell_result.damage_amount) magic \(result.spell_result.magic_after)"
+            }
+            return "Combat character \(character) \(spellName) monster \(result.spell_result.target_monster) damage \(result.spell_result.damage_amount) magic \(result.spell_result.magic_after)"
         case U3_COMBAT_PLAYER_STATUS_SPELL_MISSED:
-            return "Combat character \(character) Mittar missed magic \(result.spell_result.magic_after)"
+            return "Combat character \(character) \(Self.combatSpellName(result.spell_result.spell)) missed magic \(result.spell_result.magic_after)"
         case U3_COMBAT_PLAYER_STATUS_SPELL_INVALID_CASTER:
-            return "Combat character \(character) Mittar invalid caster"
+            return "Combat character \(character) \(Self.combatSpellName(result.spell_result.spell)) invalid caster"
         case U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC:
-            return "Combat character \(character) Mittar insufficient magic \(result.spell_result.magic_before)"
+            return "Combat character \(character) \(Self.combatSpellName(result.spell_result.spell)) insufficient magic \(result.spell_result.magic_before)"
         case U3_COMBAT_PLAYER_STATUS_UNSUPPORTED:
             return "Combat CONS \(session.screenResourceID) command deferred"
         default:
@@ -1837,6 +1944,7 @@ final class ShellSmokeState: ObservableObject {
             activeLocationSession = nil
             pendingCombatAttackCharacter = nil
             pendingCombatSpellCharacter = nil
+            pendingCombatSpellID = nil
             pendingDungeonInteractionCommand = nil
             pendingTownServiceCommand = nil
             awaitingTalkDirection = false
@@ -1988,6 +2096,7 @@ final class ShellSmokeState: ObservableObject {
         awaitingTalkDirection = false
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
+        pendingCombatSpellID = nil
         pendingDungeonInteractionCommand = nil
         pendingTownServiceCommand = nil
         currentSaveDocument = document
@@ -2111,6 +2220,7 @@ final class ShellSmokeState: ObservableObject {
         activeLocationSession = nil
         pendingCombatAttackCharacter = nil
         pendingCombatSpellCharacter = nil
+        pendingCombatSpellID = nil
         pendingDungeonInteractionCommand = nil
         pendingTownServiceCommand = nil
         awaitingTalkDirection = false
@@ -2372,6 +2482,32 @@ final class ShellSmokeState: ObservableObject {
         }
     }
 
+    private static func combatSpell(for command: UInt16) -> UInt8? {
+        switch normalizedKeyboardCommand(command) {
+        case UInt16(UInt8(ascii: "M")):
+            return UInt8(U3_COMBAT_SPELL_MITTAR)
+        case UInt16(UInt8(ascii: "U")):
+            return UInt8(U3_COMBAT_SPELL_FULGAR)
+        case UInt16(UInt8(ascii: "O")):
+            return UInt8(U3_COMBAT_SPELL_NOXUM)
+        default:
+            return nil
+        }
+    }
+
+    private static func combatSpellName(_ spell: UInt8) -> String {
+        switch Int32(spell) {
+        case U3_COMBAT_SPELL_FULGAR:
+            return "Fulgar"
+        case U3_COMBAT_SPELL_NOXUM:
+            return "Noxum"
+        case U3_COMBAT_SPELL_MITTAR:
+            fallthrough
+        default:
+            return "Mittar"
+        }
+    }
+
     private static func dungeonInteractionSelection(from command: UInt16) -> UInt8 {
         if command >= UInt16(UInt8(ascii: "1")) && command <= UInt16(UInt8(ascii: "4")) {
             return UInt8(command - UInt16(UInt8(ascii: "0")))
@@ -2421,6 +2557,26 @@ final class ShellSmokeState: ObservableObject {
 
     private static func makeCombatFleeRoll() -> UInt8 {
         UInt8.random(in: 0...255)
+    }
+
+    private static func makeCombatVictoryReward() -> CombatVictoryReward {
+        let rewardRoll = UInt8.random(in: 0...255)
+        let goldRoll = UInt16.random(in: 0...100)
+        let gold = goldRoll < 30 ? goldRoll + 30 : goldRoll
+        var weapon: UInt8 = 0
+        var armour: UInt8 = 0
+
+        if rewardRoll > 0 && rewardRoll < 128 {
+            weapon = rewardRoll & 0x07
+        } else if rewardRoll >= 128 {
+            armour = rewardRoll & 0x03
+        }
+
+        return (
+            gold: UInt16(gold),
+            weapon: weapon,
+            armour: armour
+        )
     }
 
     private static func makeCombatMonsterRolls() -> CombatMonsterRolls {

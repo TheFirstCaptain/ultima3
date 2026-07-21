@@ -460,6 +460,115 @@ static void test_mittar_rejects_insufficient_magic_without_mutation(void)
     ASSERT_EQ_INT(U3_AUDIO_SOUND_FAILED_SPELL, result.sound_id);
 }
 
+static void test_fulgar_hits_first_monster_in_line_with_fixed_damage(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 100);
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.spell = U3_COMBAT_SPELL_FULGAR;
+    input.attack_direction_x = 1;
+    input.magic = 30;
+    state.character_class[0] = input.character_class;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_HIT, result.status);
+    ASSERT_EQ_INT(U3_COMBAT_SPELL_FULGAR, result.spell_result.spell);
+    ASSERT_EQ_INT(U3_COMBAT_SPELL_FULGAR_COST, result.spell_result.magic_cost);
+    ASSERT_EQ_INT(5, result.spell_result.magic_after);
+    ASSERT_EQ_INT(U3_COMBAT_SPELL_FULGAR_DAMAGE, result.spell_result.damage_amount);
+    ASSERT_EQ_INT(25, state.monster_hp[2]);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_IMMOLATE, result.sound_id);
+}
+
+static void test_noxum_damages_all_live_monsters_and_aggregates_experience(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+    u3_combat_experience_award_result award;
+
+    reset_state();
+    experience[(state.monster_type / 2) & 0x0F] = 6;
+    state.monster_x[1] = 6;
+    state.monster_y[1] = 4;
+    state.monster_tile[1] = 0x02;
+    state.monster_hp[1] = 50;
+    place_monster(8, 4, 100);
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.spell = U3_COMBAT_SPELL_NOXUM;
+    input.attack_direction_x = 0;
+    input.magic = 55;
+    state.character_class[0] = input.character_class;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_HIT, result.status);
+    ASSERT_EQ_INT(U3_COMBAT_SPELL_NOXUM, result.spell_result.spell);
+    ASSERT_EQ_INT(1, result.spell_result.multi_target);
+    ASSERT_EQ_INT(U3_COMBAT_SPELL_NOXUM_COST, result.spell_result.magic_cost);
+    ASSERT_EQ_INT(5, result.spell_result.magic_after);
+    ASSERT_EQ_INT(2, result.spell_result.damaged_monsters);
+    ASSERT_EQ_INT(1, result.spell_result.defeated_monsters);
+    ASSERT_EQ_INT(6, result.spell_result.experience_awarded);
+    ASSERT_EQ_INT(0, state.monster_hp[1]);
+    ASSERT_EQ_INT(25, state.monster_hp[2]);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_BIG_DEATH, result.sound_id);
+
+    award = u3_combat_apply_spell_experience_award(&state, &result.spell_result);
+    ASSERT_EQ_INT(1, award.applied);
+    ASSERT_EQ_INT(6, state.character_experience[0]);
+}
+
+static void test_noxum_rejects_insufficient_magic_without_direction_prompt(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.spell = U3_COMBAT_SPELL_NOXUM;
+    input.magic = U3_COMBAT_SPELL_NOXUM_COST - 1;
+    state.character_class[0] = input.character_class;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(0, result.attack_direction_required);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_SPELL_INSUFFICIENT_MAGIC, result.status);
+    ASSERT_EQ_INT(0, result.spell_result.spent_magic);
+    ASSERT_EQ_INT(U3_AUDIO_SOUND_FAILED_SPELL, result.sound_id);
+}
+
+static void test_unsupported_spell_reports_explicit_no_mutation_status(void)
+{
+    u3_combat_player_command_input input;
+    u3_combat_player_command_result result;
+
+    reset_state();
+    place_monster(8, 4, 40);
+    input = base_input(U3_COMBAT_COMMAND_SPELL);
+    input.spell = 31;
+    input.attack_direction_x = 1;
+    state.character_magic[0] = input.magic;
+
+    result = u3_combat_player_command(&state, experience, &input);
+
+    ASSERT_EQ_INT(1, result.handled);
+    ASSERT_EQ_INT(1, result.unsupported);
+    ASSERT_EQ_INT(U3_COMBAT_PLAYER_STATUS_UNSUPPORTED, result.status);
+    ASSERT_EQ_INT(25, state.character_magic[0]);
+    ASSERT_EQ_INT(40, state.monster_hp[2]);
+}
+
 static void test_dead_character_command_reports_unsupported_without_mutation(void)
 {
     u3_combat_player_command_input input;
@@ -557,6 +666,10 @@ int main(void)
     test_mittar_misses_empty_line_but_spends_magic();
     test_mittar_rejects_invalid_caster_without_spending_magic();
     test_mittar_rejects_insufficient_magic_without_mutation();
+    test_fulgar_hits_first_monster_in_line_with_fixed_damage();
+    test_noxum_damages_all_live_monsters_and_aggregates_experience();
+    test_noxum_rejects_insufficient_magic_without_direction_prompt();
+    test_unsupported_spell_reports_explicit_no_mutation_status();
     test_dead_character_command_reports_unsupported_without_mutation();
     test_party_defeat_reports_no_active_party_members();
     test_party_defeat_ignores_inactive_slots();

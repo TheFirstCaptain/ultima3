@@ -58,6 +58,21 @@
 
 #define U3_COMBAT_SPELL_MITTAR 1
 #define U3_COMBAT_SPELL_MITTAR_COST 5
+#define U3_COMBAT_SPELL_FULGAR 5
+#define U3_COMBAT_SPELL_FULGAR_COST 25
+#define U3_COMBAT_SPELL_FULGAR_DAMAGE 75
+#define U3_COMBAT_SPELL_NOXUM 10
+#define U3_COMBAT_SPELL_NOXUM_COST 50
+#define U3_COMBAT_SPELL_NOXUM_DAMAGE 75
+#define U3_COMBAT_GOLD_MAX 9999
+#define U3_COMBAT_REWARD_ITEM_MAX 99
+
+#define U3_COMBAT_REWARD_STATUS_NONE 0
+#define U3_COMBAT_REWARD_STATUS_APPLIED 1
+#define U3_COMBAT_REWARD_STATUS_NO_VICTORY 2
+#define U3_COMBAT_REWARD_STATUS_INVALID_CHARACTER 3
+#define U3_COMBAT_REWARD_STATUS_NO_REWARD 4
+#define U3_COMBAT_REWARD_STATUS_SKIPPED 5
 
 #define U3_COMBAT_MONSTER_TURN_STATUS_NONE 0
 #define U3_COMBAT_MONSTER_TURN_STATUS_MOVED 1
@@ -80,6 +95,7 @@ typedef struct u3_combat_state {
     uint8_t character_weapon[U3_COMBAT_CHARACTER_COUNT];
     uint16_t character_hp[U3_COMBAT_CHARACTER_COUNT];
     uint16_t character_experience[U3_COMBAT_CHARACTER_COUNT];
+    uint16_t character_gold[U3_COMBAT_CHARACTER_COUNT];
     uint8_t character_armour_inventory[U3_COMBAT_CHARACTER_COUNT][8];
     uint8_t character_weapon_inventory[U3_COMBAT_CHARACTER_COUNT][16];
     uint8_t monster_x[U3_COMBAT_MONSTER_COUNT];
@@ -127,6 +143,32 @@ typedef struct u3_combat_party_defeat_result {
     uint8_t active_characters;
     uint8_t defeated_characters;
 } u3_combat_party_defeat_result;
+
+typedef struct u3_combat_victory_reward_input {
+    uint8_t character;
+    uint16_t gold;
+    uint8_t weapon;
+    uint8_t armour;
+} u3_combat_victory_reward_input;
+
+typedef struct u3_combat_victory_reward_result {
+    uint8_t checked;
+    uint8_t status;
+    uint8_t applied;
+    uint8_t character;
+    uint16_t gold_before;
+    uint16_t gold_after;
+    uint16_t gold_awarded;
+    uint8_t gold_capped;
+    uint8_t weapon_reward;
+    uint8_t weapon_before;
+    uint8_t weapon_after;
+    uint8_t weapon_full;
+    uint8_t armour_reward;
+    uint8_t armour_before;
+    uint8_t armour_after;
+    uint8_t armour_full;
+} u3_combat_victory_reward_result;
 
 typedef struct u3_combat_attack_input {
     uint8_t character;
@@ -204,8 +246,11 @@ typedef struct u3_combat_spell_result {
     uint8_t spent_magic;
     uint8_t miss;
     uint8_t hit;
+    uint8_t multi_target;
+    uint8_t award_experience;
     uint8_t redraw_tiles;
     uint8_t play_spell_sound;
+    uint8_t play_big_death_sound;
     uint8_t play_failed_sound;
     uint8_t target_monster;
     uint8_t spell;
@@ -216,6 +261,9 @@ typedef struct u3_combat_spell_result {
     uint8_t hit_y;
     uint8_t hit_tile;
     uint8_t damage_amount;
+    uint8_t damaged_monsters;
+    uint8_t defeated_monsters;
+    uint16_t experience_awarded;
     u3_combat_damage_result damage_result;
 } u3_combat_spell_result;
 
@@ -346,9 +394,15 @@ u3_combat_damage_result u3_combat_damage_monster(u3_combat_state *state,
                                                   int16_t character);
 u3_combat_experience_award_result u3_combat_apply_experience_award(u3_combat_state *state,
                                                                     const u3_combat_damage_result *damage_result);
+u3_combat_experience_award_result u3_combat_apply_spell_experience_award(u3_combat_state *state,
+                                                                         const u3_combat_spell_result *spell_result);
 u3_combat_victory_result u3_combat_check_victory(const u3_combat_state *state);
 u3_combat_party_defeat_result u3_combat_check_party_defeat(const u3_combat_state *state,
                                                             uint8_t party_size);
+u3_combat_victory_reward_result u3_combat_apply_victory_reward(
+    u3_combat_state *state,
+    const u3_combat_victory_result *victory,
+    const u3_combat_victory_reward_input *input);
 u3_combat_attack_result u3_combat_attack(u3_combat_state *state,
                                           const uint8_t experience[U3_COMBAT_EXPERIENCE_COUNT],
                                           const u3_combat_attack_input *input);

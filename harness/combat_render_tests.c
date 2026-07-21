@@ -167,6 +167,117 @@ static void test_render_null_state_uses_safe_fallback(void)
     ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2, frame.command_count);
 }
 
+static void test_player_melee_hit_adds_target_flash_overlay(void)
+{
+    uint8_t screen[200];
+    u3_combat_state state;
+    u3_render_frame frame;
+    u3_combat_player_command_result command;
+    u3_combat_presentation_result presentation;
+
+    fill_screen(screen);
+    (void)u3_combat_state_init_from_screen(&state, screen, 200, 0x34, 1, 1);
+    frame = u3_combat_make_frame(&state, NULL);
+    memset(&command, 0, sizeof(command));
+    command.status = U3_COMBAT_PLAYER_STATUS_ATTACK_HIT;
+    command.attack_result.hit_x = 5;
+    command.attack_result.hit_y = 4;
+
+    presentation = u3_combat_render_add_player_presentation(&frame, &command);
+
+    ASSERT_EQ_INT(1, presentation.applied);
+    ASSERT_EQ_INT(U3_COMBAT_PRESENTATION_HIT_FLASH, presentation.effect_kind);
+    ASSERT_EQ_INT(0, presentation.trace_commands);
+    ASSERT_EQ_INT(1, presentation.flash_commands);
+    ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2 + 1 + 1 + 1, frame.command_count);
+    ASSERT_EQ_INT(U3_RENDER_COMMAND_RECT, frame.commands[frame.command_count - 1].kind);
+    ASSERT_EQ_INT(6, frame.commands[frame.command_count - 1].x);
+    ASSERT_EQ_INT(5, frame.commands[frame.command_count - 1].y);
+}
+
+static void test_player_projectile_hit_adds_trace_and_flash_overlay(void)
+{
+    uint8_t screen[200];
+    u3_combat_state state;
+    u3_render_frame frame;
+    u3_combat_player_command_result command;
+    u3_combat_presentation_result presentation;
+
+    fill_screen(screen);
+    (void)u3_combat_state_init_from_screen(&state, screen, 200, 0x34, 1, 1);
+    frame = u3_combat_make_frame(&state, NULL);
+    memset(&command, 0, sizeof(command));
+    command.status = U3_COMBAT_PLAYER_STATUS_ATTACK_HIT;
+    command.x = 3;
+    command.y = 4;
+    command.attack_result.used_projectile = 1;
+    command.attack_result.hit_x = 8;
+    command.attack_result.hit_y = 4;
+
+    presentation = u3_combat_render_add_player_presentation(&frame, &command);
+
+    ASSERT_EQ_INT(1, presentation.applied);
+    ASSERT_EQ_INT(U3_COMBAT_PRESENTATION_PROJECTILE_TRACE, presentation.effect_kind);
+    ASSERT_EQ_INT(1, presentation.trace_commands);
+    ASSERT_EQ_INT(1, presentation.flash_commands);
+    ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2 + 1 + 1 + 2, frame.command_count);
+    ASSERT_EQ_INT(U3_RENDER_COMMAND_RECT, frame.commands[frame.command_count - 2].kind);
+    ASSERT_EQ_INT(4, frame.commands[frame.command_count - 2].x);
+    ASSERT_EQ_INT(5, frame.commands[frame.command_count - 2].y);
+    ASSERT_EQ_INT(6, frame.commands[frame.command_count - 2].width);
+    ASSERT_EQ_INT(1, frame.commands[frame.command_count - 2].height);
+}
+
+static void test_monster_hit_adds_target_flash_overlay(void)
+{
+    uint8_t screen[200];
+    u3_combat_state state;
+    u3_render_frame frame;
+    u3_combat_monster_turn_result turn;
+    u3_combat_presentation_result presentation;
+
+    fill_screen(screen);
+    (void)u3_combat_state_init_from_screen(&state, screen, 200, 0x34, 1, 1);
+    frame = u3_combat_make_frame(&state, NULL);
+    memset(&turn, 0, sizeof(turn));
+    turn.status = U3_COMBAT_MONSTER_TURN_STATUS_ATTACK_HIT;
+    turn.action_result.hit = 1;
+    turn.action_result.hit_x = 3;
+    turn.action_result.hit_y = 7;
+
+    presentation = u3_combat_render_add_monster_presentation(&frame, &turn);
+
+    ASSERT_EQ_INT(1, presentation.applied);
+    ASSERT_EQ_INT(U3_COMBAT_PRESENTATION_HIT_FLASH, presentation.effect_kind);
+    ASSERT_EQ_INT(1, presentation.flash_commands);
+    ASSERT_EQ_INT(U3_RENDER_TILE_COUNT + 2 + 1 + 1 + 1, frame.command_count);
+    ASSERT_EQ_INT(4, frame.commands[frame.command_count - 1].x);
+    ASSERT_EQ_INT(8, frame.commands[frame.command_count - 1].y);
+}
+
+static void test_monster_projectile_miss_does_not_add_fake_flash(void)
+{
+    uint8_t screen[200];
+    u3_combat_state state;
+    u3_render_frame frame;
+    uint16_t before;
+    u3_combat_monster_turn_result turn;
+    u3_combat_presentation_result presentation;
+
+    fill_screen(screen);
+    (void)u3_combat_state_init_from_screen(&state, screen, 200, 0x34, 1, 1);
+    frame = u3_combat_make_frame(&state, NULL);
+    before = frame.command_count;
+    memset(&turn, 0, sizeof(turn));
+    turn.status = U3_COMBAT_MONSTER_TURN_STATUS_SHOT;
+    turn.action_result.projectile_missed = 1;
+
+    presentation = u3_combat_render_add_monster_presentation(&frame, &turn);
+
+    ASSERT_EQ_INT(0, presentation.applied);
+    ASSERT_EQ_INT(before, frame.command_count);
+}
+
 int main(void)
 {
     test_initializes_state_from_full_screen_and_renders_occupants();
@@ -174,6 +285,10 @@ int main(void)
     test_invalid_screen_reports_safe_result();
     test_invalid_occupant_coordinates_are_skipped();
     test_render_null_state_uses_safe_fallback();
+    test_player_melee_hit_adds_target_flash_overlay();
+    test_player_projectile_hit_adds_trace_and_flash_overlay();
+    test_monster_hit_adds_target_flash_overlay();
+    test_monster_projectile_miss_does_not_add_fake_flash();
 
     printf("combat render characterization passed\n");
     return 0;

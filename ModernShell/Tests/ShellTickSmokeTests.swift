@@ -564,6 +564,15 @@ final class ShellTickSmokeTests: XCTestCase {
         state.runTick()
 
         XCTAssertEqual(state.lastCommand, "Combat character 1 hit monster 0 damage 16 | Monster 1 move 7,4 | Audio Sound Hit")
+        let traceCommand = renderCommand(in: state.renderFrame, index: Int(state.renderFrame.command_count) - 2)
+        let flashCommand = renderCommand(in: state.renderFrame, index: Int(state.renderFrame.command_count) - 1)
+        XCTAssertEqual(traceCommand.kind, UInt8(U3_RENDER_COMMAND_RECT))
+        XCTAssertEqual(traceCommand.x, 5)
+        XCTAssertEqual(traceCommand.y, 5)
+        XCTAssertEqual(traceCommand.width, 5)
+        XCTAssertEqual(flashCommand.kind, UInt8(U3_RENDER_COMMAND_RECT))
+        XCTAssertEqual(flashCommand.x, 9)
+        XCTAssertEqual(flashCommand.y, 5)
         let currentDocument = try XCTUnwrap(state.debugCurrentSaveDocument())
         XCTAssertEqual(activeRosterWeapon(rosterID: 1, in: currentDocument), 0)
         XCTAssertEqual(activeRosterWeaponQuantity(rosterID: 1, in: currentDocument), 0)
@@ -636,6 +645,125 @@ final class ShellTickSmokeTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
     }
 
+    func testFulgarSpellPromptsSpendsMagicAndUsesFixedDamage() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertTrue(setActiveRosterClass(rosterID: 1, characterClass: UInt8(ascii: "W"), in: &document))
+        XCTAssertTrue(setActiveRosterMagic(rosterID: 1, magic: 30, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatMonsterRollProvider: {
+                (
+                    shootChoice: 255,
+                    magicChoice: 0,
+                    magicTarget: 0,
+                    projectileHit: 0,
+                    poison: 255,
+                    pilferBranch: 0,
+                    pilferItem: 0,
+                    armourHit: 0,
+                    damage: 4,
+                    exodusDamage: 0
+                )
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.debugConfigureActiveCombat(
+            monsterX: 8,
+            monsterY: 4,
+            monsterHP: 100,
+            characterX: 4,
+            characterY: 4,
+            characterHP: 100
+        ))
+
+        state.submitKeyboard(UInt8(ascii: "U"))
+        state.runTick()
+        XCTAssertEqual(state.lastCommand, "Combat character 1 Fulgar: choose direction")
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Combat character 1 Fulgar monster 0 damage 75 magic 5 | Monster 1 move 7,4 | Audio Sound Immolate")
+        let currentDocument = try XCTUnwrap(state.debugCurrentSaveDocument())
+        XCTAssertEqual(activeRosterMagic(rosterID: 1, in: currentDocument), 5)
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
+    func testNoxumSpellDoesNotPromptAndUsesBigDeathFeedback() throws {
+        let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
+        let adapter = ShellResourceAdapter()
+        var document = try XCTUnwrap(adapter.buildNativeNewGameSmokeDocument(resourceRootPath: resourceRootPath))
+        XCTAssertTrue(setPartyPosition(x: 19, y: 57, in: &document))
+        XCTAssertTrue(setActiveRosterClass(rosterID: 1, characterClass: UInt8(ascii: "W"), in: &document))
+        XCTAssertTrue(setActiveRosterMagic(rosterID: 1, magic: 55, in: &document))
+        XCTAssertEqual(
+            ShellSaveAdapter().writeDocument(document, saveDocumentPath: saveDocumentURL.path),
+            .saved
+        )
+        let savedDocument = try Data(contentsOf: saveDocumentURL)
+        let state = ShellSmokeState(
+            locationProvider: locationProvider,
+            dungeonRollProvider: { _ in (encounter: 128, monster: 2) },
+            combatMonsterRollProvider: {
+                (
+                    shootChoice: 255,
+                    magicChoice: 0,
+                    magicTarget: 0,
+                    projectileHit: 0,
+                    poison: 255,
+                    pilferBranch: 0,
+                    pilferItem: 0,
+                    armourHit: 0,
+                    damage: 4,
+                    exodusDamage: 0
+                )
+            }
+        )
+        state.loadGame()
+        state.submitKeyboard(UInt8(ascii: "E"))
+        state.runTick()
+        XCTAssertTrue(state.debugSetCurrentDungeonTile(0))
+        state.submitKeyboard(UInt8(ascii: " "))
+        state.runTick()
+        XCTAssertTrue(state.debugConfigureActiveCombat(
+            monsterX: 8,
+            monsterY: 4,
+            monsterHP: 100,
+            characterX: 4,
+            characterY: 4,
+            characterHP: 100
+        ))
+
+        state.submitKeyboard(UInt8(ascii: "O"))
+        state.runTick()
+
+        XCTAssertEqual(state.lastCommand, "Combat character 1 Noxum damaged 1 defeated 0 magic 5 | Monster 1 move 7,4 | Audio Sound BigDeath")
+        let currentDocument = try XCTUnwrap(state.debugCurrentSaveDocument())
+        XCTAssertEqual(activeRosterMagic(rosterID: 1, in: currentDocument), 5)
+        XCTAssertTrue(state.hasUnsavedChanges)
+
+        state.saveGame()
+        XCTAssertEqual(state.lastCommand, "Save rejected")
+        XCTAssertEqual(try Data(contentsOf: saveDocumentURL), savedDocument)
+    }
+
     func testMittarVictoryAppliesExperienceAndPersistsAfterReturn() throws {
         let locationProvider = ShellLocationProvider(saveDocumentURL: saveDocumentURL)
         let adapter = ShellResourceAdapter()
@@ -652,6 +780,7 @@ final class ShellTickSmokeTests: XCTestCase {
             locationProvider: locationProvider,
             dungeonRollProvider: noDungeonEncounterRolls,
             combatPlayerRollProvider: { _ in (hitChance: 128, hitDexterity: 0, damage: 5) },
+            combatVictoryRewardProvider: { (gold: 75, weapon: 5, armour: 3) },
             combatMonsterRollProvider: {
                 (
                     shootChoice: 255,
@@ -714,7 +843,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         XCTAssertEqual(
             state.lastCommand,
-            "Combat character 1 Mittar monster 0 defeated damage 21 magic 20 exp 6 | Combat victory remaining 0 returned dungeon MAPS 412 | Audio Sound Immolate"
+            "Combat character 1 Mittar monster 0 defeated damage 21 magic 20 exp 6 | Combat victory remaining 0 reward character 1 gold 225 added 75 weapon 5 qty 1 armour 3 qty 1 returned dungeon MAPS 412 | Audio Sound Immolate"
         )
         XCTAssertNil(state.debugActiveCombatStatus())
         XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
@@ -1038,6 +1167,10 @@ final class ShellTickSmokeTests: XCTestCase {
         state.runTick()
 
         XCTAssertEqual(state.lastCommand, "Combat character 1 pass | Monster 1 hit character 1 damage 5 defeated | Audio Sound Hit")
+        let feedbackCommand = renderCommand(in: state.renderFrame, index: Int(state.renderFrame.command_count) - 1)
+        XCTAssertEqual(feedbackCommand.kind, UInt8(U3_RENDER_COMMAND_RECT))
+        XCTAssertEqual(feedbackCommand.x, 5)
+        XCTAssertEqual(feedbackCommand.y, 6)
         let currentDocument = try XCTUnwrap(state.debugCurrentSaveDocument())
         XCTAssertEqual(activeRosterHitPoints(rosterID: 1, in: currentDocument), 0)
         XCTAssertEqual(activeRosterStatus(rosterID: 1, in: currentDocument), UInt8(ascii: "D"))
@@ -1125,6 +1258,7 @@ final class ShellTickSmokeTests: XCTestCase {
             locationProvider: locationProvider,
             dungeonRollProvider: noDungeonEncounterRolls,
             combatPlayerRollProvider: { _ in (hitChance: 128, hitDexterity: 0, damage: 5) },
+            combatVictoryRewardProvider: { (gold: 75, weapon: 5, armour: 3) },
             combatMonsterRollProvider: {
                 (
                     shootChoice: 255,
@@ -1186,7 +1320,7 @@ final class ShellTickSmokeTests: XCTestCase {
 
         XCTAssertEqual(
             state.lastCommand,
-            "Combat character 1 hit monster 0 defeated damage 19 exp 6 | Combat victory remaining 0 returned dungeon MAPS 412 | Audio Sound Hit"
+            "Combat character 1 hit monster 0 defeated damage 19 exp 6 | Combat victory remaining 0 reward character 1 gold 225 added 75 weapon 5 qty 1 armour 3 qty 1 returned dungeon MAPS 412 | Audio Sound Hit"
         )
         XCTAssertNil(state.debugActiveCombatStatus())
         XCTAssertEqual(state.debugCurrentDungeonTile(), 0)
@@ -1204,6 +1338,9 @@ final class ShellTickSmokeTests: XCTestCase {
 
         let updatedDocument = try Data(contentsOf: saveDocumentURL)
         XCTAssertEqual(activeRosterExperience(rosterID: 1, in: updatedDocument), 6)
+        XCTAssertEqual(activeRosterGold(rosterID: 1, in: updatedDocument), 225)
+        XCTAssertEqual(activeRosterByte(rosterID: 1, offset: 48 + 5, in: updatedDocument), 1)
+        XCTAssertEqual(activeRosterByte(rosterID: 1, offset: 40 + 3, in: updatedDocument), 1)
         XCTAssertEqual(activeRosterMaxHitPoints(rosterID: 1, in: updatedDocument), 100)
     }
 

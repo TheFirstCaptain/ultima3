@@ -639,12 +639,15 @@ final class ShellResourceAdapter {
                 let record = roster + ((Int(rosterID) - 1) * Int(U3_PARTY_ROSTER_RECORD_LENGTH))
                 let hp = combatCharacterHitPoints(session.combatState, index: index)
                 let experience = combatCharacterExperience(session.combatState, index: index)
+                let gold = combatCharacterGold(session.combatState, index: index)
                 record[Int(U3_PARTY_ROSTER_STATUS_OFFSET)] = combatCharacterStatus(session.combatState, index: index)
                 record[25] = combatCharacterMagic(session.combatState, index: index)
                 record[26] = UInt8((hp >> 8) & 0xFF)
                 record[27] = UInt8(hp & 0xFF)
                 record[30] = UInt8(experience / 100)
                 record[31] = UInt8(experience % 100)
+                record[35] = UInt8((gold >> 8) & 0xFF)
+                record[36] = UInt8(gold & 0xFF)
                 record[40] = combatCharacterArmour(session.combatState, index: index)
                 record[48] = combatCharacterWeapon(session.combatState, index: index)
                 for item in 1..<8 {
@@ -1388,6 +1391,7 @@ final class ShellResourceAdapter {
                 setCombatCharacterWeapon(&combatState, index: index, value: record[48])
                 setCombatCharacterHitPoints(&combatState, index: index, value: (UInt16(record[26]) << 8) | UInt16(record[27]))
                 setCombatCharacterExperience(&combatState, index: index, value: (UInt16(record[30]) * 100) + UInt16(record[31]))
+                setCombatCharacterGold(&combatState, index: index, value: (UInt16(record[35]) << 8) | UInt16(record[36]))
                 for item in 1..<8 {
                     setCombatCharacterArmourInventory(&combatState, character: index, item: item, value: record[40 + item])
                 }
@@ -1553,6 +1557,21 @@ final class ShellResourceAdapter {
         }
     }
 
+    private func setCombatCharacterGold(_ state: inout u3_combat_state, index: Int, value: UInt16) {
+        switch index {
+        case 0:
+            state.character_gold.0 = value
+        case 1:
+            state.character_gold.1 = value
+        case 2:
+            state.character_gold.2 = value
+        case 3:
+            state.character_gold.3 = value
+        default:
+            break
+        }
+    }
+
     private func setCombatCharacterArmourInventory(_ state: inout u3_combat_state, character: Int, item: Int, value: UInt8) {
         guard character >= 0 && character < Int(U3_COMBAT_CHARACTER_COUNT),
               item >= 0 && item < 8 else {
@@ -1660,6 +1679,21 @@ final class ShellResourceAdapter {
             return state.character_experience.2
         case 3:
             return state.character_experience.3
+        default:
+            return 0
+        }
+    }
+
+    private func combatCharacterGold(_ state: u3_combat_state, index: Int) -> UInt16 {
+        switch index {
+        case 0:
+            return state.character_gold.0
+        case 1:
+            return state.character_gold.1
+        case 2:
+            return state.character_gold.2
+        case 3:
+            return state.character_gold.3
         default:
             return 0
         }
